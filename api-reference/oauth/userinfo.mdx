@@ -1,0 +1,27 @@
+---
+title: "User Info"
+description: "Retrieve identity claims for an OAuth access token"
+---
+
+```http
+GET /api/v1/oauth/userinfo
+Authorization: Bearer <access_token>
+```
+
+## Response
+
+```json
+{
+  "sub": "uuid",
+  "email": "user@example.com",
+  "email_verified": true,
+  "given_name": "John",
+  "family_name": "Doe",
+  "firmId": "uuid",
+  "firmName": "Firm Name",
+  "scope": "openid email profile cases:read"
+}
+```
+
+Use this endpoint to hydrate user profiles in your application after completing the authorization code flow.
+

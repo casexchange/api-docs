@@ -1,0 +1,44 @@
+---
+title: "Login"
+description: "Exchange credentials for a JWT session"
+---
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+```
+
+## Request
+
+```json
+{
+  "email": "user@example.com",
+  "password": "your-password"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "role": "member",
+      "firmId": "uuid",
+      "isActive": true
+    }
+  }
+}
+```
+
+Notes:
+
+- Response sets HttpOnly cookies (`auth_token`, `refresh_token_id`) for browsers.
+- Non-browser clients should capture the bearer token from headers/body.
+- Rate limiting applies per email and IP.
+

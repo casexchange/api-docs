@@ -1,0 +1,40 @@
+---
+title: "Get Case"
+description: "Retrieve a case by ID"
+---
+
+```http
+GET /api/v1/cases/{id}
+Authorization: Bearer <token>
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "title": "Case Title",
+    "referenceNumber": "FIRM-0001",
+    "status": "under_evaluation",
+    "caseType": "personal_injury",
+    "jurisdiction": "CA",
+    "clientFirstName": "John",
+    "clientLastName": "Doe",
+    "referringFirm": { "id": "uuid", "name": "Firm Name" },
+    "referentFirm": { "id": "uuid", "name": "Receiving Firm" },
+    "statusUpdates": [],
+    "documents": [],
+    "createdAt": "2024-01-01T00:00:00Z",
+    "updatedAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+## Notes
+
+- Includes nested firm details.
+- `statusUpdates` and `documents` arrays may be empty or large; paginate on the client when rendering.
+- Permissions mirror the caller’s firm: only cases visible to the JWT subject can be retrieved.
+

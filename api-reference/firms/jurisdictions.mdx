@@ -1,0 +1,40 @@
+---
+title: "Get Jurisdictions"
+description: "List supported jurisdictions"
+---
+
+```http
+GET /api/v1/firms/jurisdictions/list
+Authorization: Bearer <token>
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": ["CA", "NY", "TX", "FL", "IL"]
+}
+```
+
+For detailed metadata use:
+
+```http
+GET /api/v1/firms/jurisdictions
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "code": "CA",
+      "name": "California",
+      "type": "state"
+    }
+  ]
+}
+```
+
+Use the list endpoint for lightweight validation and the detailed endpoint to power UI copy or filters with friendly names.
+

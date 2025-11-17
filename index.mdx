@@ -1,97 +1,68 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "CaseXchange Public API"
+description: "Everything you need to build with the CaseXchange platform"
 ---
 
-## Setting up
+## Build with Confidence
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
+CaseXchange connects law firms with the referrals, routing logic, and case data they need to collaborate securely. This guide gives third parties a single place to learn the platform, authenticate, and ship integrations faster.
 
 <Columns cols={2}>
   <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+    horizontal
   >
-    Edit your docs locally and preview them in real time.
+    Spin up an integration-ready workspace in minutes.
   </Card>
   <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
+    title="API Reference"
     icon="terminal"
-    href="/api-reference/introduction"
+    href="/api-reference/cases/create"
   >
-    Auto-generate API documentation from OpenAPI specifications.
+    Explore every public endpoint with examples.
   </Card>
 </Columns>
 
-## Create beautiful pages
+## Platform Highlights
 
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
+<Columns cols={3}>
   <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
+    title="JWT + OAuth"
+    icon="key"
+    href="/auth/jwt"
   >
-    Use MDX to style your docs pages.
+    Secure requests with JWT sessions or OAuth 2.0 Authorization Code flow.
   </Card>
   <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
+    title="Referral Engine"
+    icon="shuffle"
+    href="/concepts/cases"
   >
-    Add sample code to demonstrate how to use your product.
+    Standardized objects for cases, referrals, routing, and firm handoffs.
   </Card>
   <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
+    title="Routing Intelligence"
+    icon="diagram-project"
+    href="/api-reference/routing/evaluate"
   >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+    Evaluate routing rules to recommend the best firm automatically.
   </Card>
 </Columns>
 
-## Need inspiration?
+## What’s Inside
+
+- `Authentication` – Complete JWT and OAuth 2.0 flows plus refresh logic.
+- `Case APIs` – Create, update, re-refer, or bulk manage referrals.
+- `Directory APIs` – Discover firms, jurisdictions, and case types.
+- `Routing` – Evaluate routing rules to automate firm suggestions.
+- `Error Handling` – Consistent response schemas and rate-limit headers.
 
 <Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
+  title="Need help?"
+  icon="life-ring"
+  href="mailto:help@casexchange.com"
 >
-  Browse our showcase of exceptional documentation sites.
+  Contact support for OAuth client registration or onboarding assistance.
 </Card>

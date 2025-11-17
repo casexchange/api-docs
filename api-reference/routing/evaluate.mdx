@@ -1,0 +1,50 @@
+---
+title: "Evaluate Routing Rules"
+description: "Ask CaseXchange which firm should receive a case"
+---
+
+```http
+POST /api/v1/routing/evaluate-api
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+## Request Body
+
+```json
+{
+  "severity": 3,
+  "caseType": "personal_injury",
+  "jurisdiction": "CA"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "firm": {
+      "id": "uuid",
+      "name": "Routed Firm Name",
+      "contactEmail": "contact@firm.com",
+      "contactPhone": "+1234567890",
+      "isExternalContact": false
+    },
+    "isActive": true,
+    "rule": {
+      "id": "uuid",
+      "name": "Rule Name",
+      "description": "Rule description"
+    }
+  }
+}
+```
+
+## Notes
+
+- Evaluation runs within the caller’s firm context (derived from the JWT).
+- Use this endpoint for “preview” experiences before creating the case.
+- If no rule matches, expect a `resource_not_found` error.
+

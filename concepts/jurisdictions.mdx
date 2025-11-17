@@ -1,0 +1,40 @@
+---
+title: "Jurisdictions"
+description: "Reference data for state and regional coverage"
+---
+
+## Endpoints
+
+- List codes only: `GET /api/v1/firms/jurisdictions/list`
+- Detailed metadata: `GET /api/v1/firms/jurisdictions`
+
+## Sample Response
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "code": "CA",
+      "name": "California",
+      "type": "state"
+    },
+    {
+      "code": "NY",
+      "name": "New York",
+      "type": "state"
+    }
+  ]
+}
+```
+
+## Use Cases
+
+- Power dropdowns when creating cases.
+- Validate inputs client-side before calling `/api/v1/cases`.
+- Combine with firm specialties to filter destinations.
+
+<Note>
+Jurisdiction codes follow standard postal abbreviations. Use uppercase strings in requests.
+</Note>
+

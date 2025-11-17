@@ -1,0 +1,55 @@
+---
+title: "List Cases"
+description: "Paginate and filter cases"
+---
+
+```http
+GET /api/v1/cases
+Authorization: Bearer <token>
+```
+
+## Query Parameters
+
+- `page` – defaults to 1
+- `limit` – defaults to 20
+- `search` – by title or client name
+- `status` – comma separated list (`under_evaluation,investigating`)
+- `caseType`
+- `jurisdiction`
+- `view` – `sent`, `received`, or `all`
+- `fromDate` / `toDate` (ISO8601)
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "title": "Case Title",
+      "referenceNumber": "FIRM-0001",
+      "status": "under_evaluation",
+      "caseType": "personal_injury",
+      "jurisdiction": "CA",
+      "clientName": "John Doe",
+      "referringFirm": { "id": "uuid", "name": "Firm Name" },
+      "referentFirm": { "id": "uuid", "name": "Receiving Firm" },
+      "createdAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 50,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 3
+  }
+}
+```
+
+## Tips
+
+- Use `view=sent` to see cases your firm has originated, `view=received` for inbound referrals.
+- Apply `fromDate` / `toDate` to limit large result sets during nightly syncs.
+- Cache pagination cursors to avoid missing updates between syncs.
+

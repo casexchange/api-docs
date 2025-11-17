@@ -1,0 +1,45 @@
+---
+title: "Get Case Types"
+description: "Retrieve case type metadata"
+---
+
+```http
+GET /api/v1/firms/case-types
+Authorization: Bearer <token>
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "name": "personal_injury",
+      "description": "Personal injury cases"
+    },
+    {
+      "id": "uuid",
+      "name": "medical_malpractice",
+      "description": "Medical malpractice cases"
+    }
+  ]
+}
+```
+
+Alternative endpoint for simple lists:
+
+```http
+GET /api/v1/firms/specialties/list
+```
+
+```json
+{
+  "success": true,
+  "data": ["personal_injury", "medical_malpractice", "product_liability"]
+}
+```
+
+Use the structured endpoint when you need descriptions or IDs, and the list endpoint for effortless dropdowns.
+

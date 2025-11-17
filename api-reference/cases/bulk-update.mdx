@@ -1,0 +1,66 @@
+---
+title: "Bulk Update Cases"
+description: "Update multiple cases via CSV upload"
+---
+
+```http
+POST /api/v1/cases/bulk-update
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+## Requirements
+
+- Role: Admin or Firm Admin.
+- Payload: `file` field with CSV.
+
+## CSV Format
+
+```csv
+Reference Number,Status,Salesforce Id,Salesforce Object,Case Status ID,Settlement Amount,Attorney Fees,Closure Reason
+FIRM-0001,under_evaluation,a0X1234567890ABC,Case,P-55443,,
+FIRM-0002,signed,,,P-55444,100000.00,33333.33,
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "fileName": "bulk-update.csv",
+    "totalRows": 2,
+    "successful": 2,
+    "failed": 0,
+    "created": 0,
+    "updated": 2,
+    "successfulCases": [
+      {
+        "id": "uuid",
+        "title": "Case Title",
+        "status": "under_evaluation",
+        "referenceNumber": "FIRM-0001",
+        "operation": "update"
+      }
+    ],
+    "failedRows": []
+  }
+}
+```
+
+## Supported Fields
+
+- `Reference Number` (required) – identifies the case.
+- `Status`
+- `Salesforce Id` + `Salesforce Object` (must appear together)
+- `Case Status ID`
+- `Settlement Amount`
+- `Attorney Fees`
+- `Closure Reason`
+
+## Notes
+
+- Only active referrals (non-terminal statuses) can be updated.
+- Firms can update only cases they own; admins bypass this restriction.
+- Validate CSV headers before uploading to avoid `validation_error`.
+

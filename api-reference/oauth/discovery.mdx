@@ -1,0 +1,32 @@
+---
+title: "Discovery"
+description: "Retrieve OAuth/OpenID configuration"
+---
+
+```http
+GET /.well-known/openid-configuration
+```
+
+## Response
+
+```json
+{
+  "issuer": "https://api.casexchange.com/api/v1",
+  "authorization_endpoint": "https://api.casexchange.com/api/v1/oauth/authorize",
+  "token_endpoint": "https://api.casexchange.com/api/v1/oauth/token",
+  "userinfo_endpoint": "https://api.casexchange.com/api/v1/oauth/userinfo",
+  "revocation_endpoint": "https://api.casexchange.com/api/v1/oauth/revoke",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "scopes_supported": [
+    "openid",
+    "email",
+    "profile",
+    "cases:read",
+    "cases:write"
+  ]
+}
+```
+
+Use the discovery metadata to configure SDKs automatically. The issuer matches the `/api/v1` base path; enforce exact matches when validating tokens.
+

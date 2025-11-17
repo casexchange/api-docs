@@ -1,0 +1,59 @@
+---
+title: "List Firms"
+description: "Retrieve all firms visible to your organization"
+---
+
+```http
+GET /api/v1/firms
+Authorization: Bearer <token>
+```
+
+## Query Parameters
+
+- `page` – default 1
+- `limit` – default 20, max 100
+- `search` – firm name filter
+- `isInternal` – boolean, restricted to System Admins
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Law Firm Name",
+      "description": "Firm description",
+      "contactEmail": "contact@firm.com",
+      "contactPhone": "+1234567890",
+      "website": "https://firm.com",
+      "canSendReferrals": true,
+      "caseStatusSubscriber": false,
+      "specialties": ["personal_injury", "medical_malpractice"],
+      "jurisdictions": ["CA", "NY"],
+      "address": {
+        "street": "123 Main St",
+        "city": "Los Angeles",
+        "state": "CA",
+        "zipCode": "90001",
+        "country": "USA"
+      },
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 100,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 5
+  }
+}
+```
+
+## Additional Routes
+
+- `GET /api/v1/firms/{id}` – direct lookup by ID.
+- `GET /api/v1/firms/directory` – curated list suitable for public browsing with advanced filters.
+

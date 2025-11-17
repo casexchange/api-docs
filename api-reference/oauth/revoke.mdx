@@ -1,0 +1,32 @@
+---
+title: "Revoke Token"
+description: "Invalidate access or refresh tokens"
+---
+
+```http
+POST /api/v1/oauth/revoke
+Content-Type: application/json
+Authorization: Basic <client_id:client_secret>
+```
+
+## Request
+
+```json
+{
+  "token": "<token-to-revoke>",
+  "token_type_hint": "access_token"
+}
+```
+
+Use `refresh_token` as the hint when invalidating refresh tokens.
+
+## Response
+
+Success does not return a body beyond HTTP 200. Handle errors using the standard error envelope.
+
+## Notes
+
+- Revocation requires valid client credentials.
+- Call this endpoint immediately if you suspect token leakage.
+- Pair with audit logs to trace suspicious sessions.
+

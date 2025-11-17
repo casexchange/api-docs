@@ -1,0 +1,82 @@
+---
+title: "Create Case"
+description: "Create a new case referral"
+---
+
+```http
+POST /api/v1/cases
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+## Request Body
+
+```json
+{
+  "title": "Personal Injury Case",
+  "description": "Case description",
+  "caseType": "personal_injury",
+  "jurisdiction": "CA",
+  "clientFirstName": "John",
+  "clientLastName": "Doe",
+  "clientEmail": "john.doe@example.com",
+  "clientPhone": "+1234567890",
+  "referentFirmId": "uuid-of-receiving-firm",
+  "notes": "Additional notes",
+  "salesforceRecordId": "a0X1234567890ABC",
+  "salesforceObjectType": "Case"
+}
+```
+
+## Required Fields
+
+- `title`
+- `caseType`
+- `jurisdiction`
+- `clientFirstName`
+- `clientLastName`
+
+## Optional Fields
+
+- `description`
+- `clientEmail`
+- `clientPhone`
+- `referentFirmId` – if omitted, the case is created as `draft`
+- `notes`
+- `salesforceRecordId` (must include `salesforceObjectType`)
+- `salesforceObjectType` (must include `salesforceRecordId`)
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "title": "Personal Injury Case",
+    "referenceNumber": "FIRM-0001",
+    "status": "sent",
+    "caseType": "personal_injury",
+    "jurisdiction": "CA",
+    "clientFirstName": "John",
+    "clientLastName": "Doe",
+    "referringFirm": {
+      "id": "uuid",
+      "name": "Your Firm Name"
+    },
+    "referentFirm": {
+      "id": "uuid",
+      "name": "Receiving Firm Name"
+    },
+    "createdAt": "2024-01-01T00:00:00Z",
+    "updatedAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+## Notes
+
+- Status defaults to `draft` unless `referentFirmId` is supplied.
+- Use firm directory endpoints to discover valid `referentFirmId` values.
+- Salesforce fields allow linking to external CRMs; both fields must be present together.
+

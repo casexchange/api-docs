@@ -1,0 +1,49 @@
+---
+title: "Re-Refer Case"
+description: "Send a case to a new firm after rejection or routing changes"
+---
+
+```http
+POST /api/v1/cases/{id}/re-refer
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+## Path Parameters
+
+- `id` – UUID of the base case (not the referral).
+
+## Request Body
+
+```json
+{
+  "referentFirmId": "uuid-of-new-receiving-firm",
+  "notes": "Optional notes for re-referral"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "message": "Case successfully re-referred",
+  "data": {
+    "id": "uuid",
+    "baseCaseId": "uuid",
+    "status": "sent",
+    "referringFirmId": "uuid",
+    "referentFirmId": "uuid",
+    "sequenceNumber": 2,
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+## Business Rules
+
+- Only the case owner (referring firm) can re-refer.
+- An active relationship must exist between the firms.
+- Creates a new referral record while preserving base case history.
+- Prior referral history remains in the timeline for auditing.
+

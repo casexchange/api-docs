@@ -1,0 +1,51 @@
+---
+title: "Token Endpoint"
+description: "Exchange authorization codes or refresh tokens"
+---
+
+```http
+POST /api/v1/oauth/token
+Content-Type: application/json
+```
+
+## Authorization Code Grant
+
+```json
+{
+  "grant_type": "authorization_code",
+  "code": "<authorization_code>",
+  "redirect_uri": "<redirect_uri>",
+  "client_id": "<client_id>",
+  "client_secret": "<client_secret>"
+}
+```
+
+Response:
+
+```json
+{
+  "access_token": "<jwt-access-token>",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "refresh_token": "<refresh-token>",
+  "scope": "cases:read cases:write"
+}
+```
+
+## Refresh Token Grant
+
+```json
+{
+  "grant_type": "refresh_token",
+  "refresh_token": "<refresh-token>",
+  "client_id": "<client_id>",
+  "client_secret": "<client_secret>"
+}
+```
+
+## Notes
+
+- Rotate refresh tokens when issuing new ones.
+- `expires_in` is measured in seconds.
+- Always send `client_secret` over TLS; do not expose it in browser code.
+

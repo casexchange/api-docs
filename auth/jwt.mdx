@@ -1,0 +1,88 @@
+---
+title: "JWT Authentication"
+description: "Authenticate directly with CaseXchange using username/password plus refresh cookies"
+---
+
+## Overview
+
+JWT authentication is ideal for first-party web apps and server integrations that can safely store user credentials.
+
+- `POST /api/v1/auth/login` exchanges credentials for an access token.
+- HttpOnly cookies (`auth_token`, `refresh_token_id`) are also set for browser clients.
+- Use `POST /api/v1/auth/refresh-session` to rotate short-lived tokens.
+
+<Callout icon="key" color="blue">
+Access tokens expire quickly (15 minutes). Always implement refresh logic.
+</Callout>
+
+## Login Flow
+
+1. Collect email/password from the integration user.
+2. Send the payload to `/api/v1/auth/login`.
+3. Cache the returned JWT for Authorization headers.
+4. Store refresh identifiers securely.
+
+```json
+POST /api/v1/auth/login
+{
+  "email": "user@example.com",
+  "password": "password"
+}
+```
+
+Response snippet:
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "role": "member",
+      "firmId": "uuid",
+      "isActive": true
+    }
+  }
+}
+```
+
+## Using Tokens
+
+Include the JWT in every request:
+
+```
+Authorization: Bearer <jwt>
+```
+
+## Refresh Sessions
+
+- Endpoint: `POST /api/v1/auth/refresh-session`
+- Requires the `refresh_token_id` cookie or refresh token in the request.
+- Returns a brand new JWT and rotates refresh identifiers.
+
+```json
+POST /api/v1/auth/refresh-session
+{}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "message": "Session refreshed successfully"
+}
+```
+
+<Tip>
+Use server-side storage for refresh tokens. Browser integrations should rely on HttpOnly cookies.
+</Tip>
+
+## Error Codes
+
+- `no_token` – Missing Authorization header.
+- `token_expired` – Access token exceeded its TTL.
+- `token_invalid` – Token signature or claims invalid.
+- `rate_limited_email` / `rate_limited_ip` – Too many login attempts.
+

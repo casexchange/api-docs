@@ -1,0 +1,51 @@
+---
+title: "Update Case"
+description: "Update an existing case by ID"
+---
+
+```http
+PUT /api/v1/cases/{id}
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+## Path Parameters
+
+- `id` – UUID of the case.
+
+## Request Body
+
+```json
+{
+  "title": "Updated Case Title",
+  "description": "Updated description",
+  "notes": "Updated notes",
+  "clientEmail": "newemail@example.com",
+  "clientPhone": "+1987654321"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "title": "Updated Case Title",
+    "status": "under_evaluation",
+    "updatedAt": "2024-01-01T12:00:00Z"
+  }
+}
+```
+
+## Permissions
+
+- Referring firm: full edit before acknowledgment; limited fields afterward.
+- Receiving firm: edit notes once acknowledged.
+- System admin: unrestricted.
+
+<Callout icon="shield" color="blue">
+Authorization derives from the JWT token. Ensure the user has access to the case’s firm context.
+</Callout>
+

@@ -1,0 +1,34 @@
+---
+title: "Refresh Session"
+description: "Rotate expired JWTs using refresh identifiers"
+---
+
+```http
+POST /api/v1/auth/refresh-session
+Authorization: Bearer <optional>
+Content-Type: application/json
+```
+
+## Request
+
+No body is required when using refresh cookies. For server-to-server integrations, include a refresh token explicitly.
+
+```json
+{}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "message": "Session refreshed successfully"
+}
+```
+
+Notes:
+
+- Refresh tokens are typically stored as HttpOnly cookies.
+- Server-to-server workflows can provide a refresh token in the request body if approved by support.
+- Rotate refresh tokens on a schedule to reduce exposure.
+
