@@ -41,36 +41,47 @@
       },
       {
         "tab": "API reference",
+        "openapi": "api-reference/openapi.json",
         "groups": [
           {
             "group": "Case Endpoints",
             "pages": [
-              "api-reference/cases/create",
-              "api-reference/cases/update",
-              "api-reference/cases/bulk-update",
-              "api-reference/cases/re-refer",
-              "api-reference/cases/get",
-              "api-reference/cases/list"
+              "POST /cases",
+              "GET /cases",
+              "GET /cases/{id}",
+              "PUT /cases/{id}",
+              "POST /cases/{id}/re-refer",
+              "POST /cases/bulk-update"
             ]
           },
           {
             "group": "Firm & Metadata",
             "pages": [
-              "api-reference/firms/list",
-              "api-reference/firms/jurisdictions",
-              "api-reference/firms/case-types",
-              "api-reference/routing/evaluate"
+              "GET /firms",
+              "GET /firms/{id}",
+              "GET /firms/jurisdictions/list",
+              "GET /firms/jurisdictions",
+              "GET /firms/case-types",
+              "GET /firms/specialties/list",
+              "POST /routing/evaluate-api"
             ]
           },
           {
             "group": "Auth & Profile",
             "pages": [
-              "api-reference/auth/login",
-              "api-reference/auth/refresh",
-              "api-reference/auth/me",
-              "api-reference/oauth/discovery",
-              "api-reference/oauth/token",
-              "api-reference/oauth/revoke"
+              "POST /auth/login",
+              "POST /auth/refresh-session",
+              "GET /auth/me"
+            ]
+          },
+          {
+            "group": "OAuth",
+            "pages": [
+              "GET /.well-known/openid-configuration",
+              "GET /oauth/authorize",
+              "POST /oauth/token",
+              "POST /oauth/revoke",
+              "GET /oauth/userinfo"
             ]
           }
         ]
