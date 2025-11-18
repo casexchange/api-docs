@@ -51,13 +51,13 @@ CaseXchange connects law firms with the referrals, routing logic, and case data 
   </Card>
 </Columns>
 
-## What’s Inside
+## What's Inside
 
-- `Authentication` – Complete JWT and OAuth 2.0 flows plus refresh logic.
-- `Case APIs` – Create, update, re-refer, or bulk manage referrals.
-- `Directory APIs` – Discover firms, jurisdictions, and case types.
-- `Routing` – Evaluate routing rules to automate firm suggestions.
-- `Error Handling` – Consistent response schemas and rate-limit headers.
+- **Authentication** – Complete JWT and OAuth 2.0 flows with token refresh and rotation.
+- **Case APIs** – Create cases (`POST /cases`), update cases by ID (`PUT /cases/{id}`), re-refer cases (`POST /cases/{id}/re-refer`), and list cases with filtering.
+- **Directory APIs** – Get firms (`GET /firms`), jurisdictions (`GET /firms/jurisdictions`), and case types (`GET /firms/case-types`).
+- **Routing** – Evaluate routing rules (`POST /routing/evaluate-api`) to automate firm suggestions.
+- **Error Handling** – Consistent response schemas and rate-limit headers.
 
 <Card
   title="Need help?"

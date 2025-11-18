@@ -70,11 +70,20 @@ Authorization: Bearer <jwt>
 ## Refresh Sessions
 
 - Endpoint: `POST /api/v1/auth/refresh-session`
-- Requires the `refresh_token_id` cookie or refresh token in the request.
-- Returns a brand new JWT and rotates refresh identifiers.
+- Requires the `refresh_token_id` cookie (for browser clients) or refresh token in the request body (for server-to-server).
+- Returns a brand new JWT access token and rotates refresh identifiers.
+- Access tokens expire after 15 minutes (configurable via `JWT_EXPIRES_IN`).
+- Refresh tokens expire after 7 days (configurable via `JWT_REFRESH_EXPIRES_IN`).
+
+### Browser-based Refresh (Cookie-based)
+
+For browser clients, the refresh endpoint automatically uses the `refresh_token_id` cookie:
 
 ```json
 POST /api/v1/auth/refresh-session
+Content-Type: application/json
+Cookie: refresh_token_id=<refresh_token_id>
+
 {}
 ```
 
@@ -87,9 +96,30 @@ Response:
 }
 ```
 
+The response sets new HttpOnly cookies:
+- `auth_token` - New JWT access token
+- `refresh_token_id` - New refresh token identifier
+
+### Server-to-Server Refresh
+
+For server integrations, include the refresh token in the request:
+
+```json
+POST /api/v1/auth/refresh-session
+Content-Type: application/json
+
+{
+  "refreshToken": "<refresh_token_string>"
+}
+```
+
 <Tip>
-Use server-side storage for refresh tokens. Browser integrations should rely on HttpOnly cookies.
+Use server-side storage for refresh tokens. Browser integrations should rely on HttpOnly cookies. Always implement automatic token refresh logic to handle expired tokens gracefully.
 </Tip>
+
+<Warning>
+If refresh fails (token expired, revoked, or user inactive), the endpoint clears authentication cookies and returns a 401 error. Your application should redirect to login in this case.
+</Warning>
 
 ## Error Codes
 

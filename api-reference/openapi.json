@@ -391,13 +391,14 @@
       },
       "put": {
         "summary": "Update Case",
+        "description": "Update an existing case by its ID. Field editability depends on case status and your firm's relationship (referring vs receiving firm).",
         "tags": ["Cases"],
         "x-mint": {
           "metadata": {
             "title": "Update Case",
             "description": "Update an existing case by ID"
           },
-          "content": "Update an existing case. Editable fields depend on the case status and your firm's relationship to the case. All fields are optional; only provided fields will be updated."
+          "content": "Update an existing case by its UUID. All fields in the request body are optional; only provided fields will be updated. Field editability is enforced based on:\n\n- **Case Status**: Fields like `title`, `caseType`, `jurisdiction`, and client PII can only be edited when the case is in `DRAFT` or `SENT` status (by the referring firm).\n- **Firm Relationship**: \n  - Referring firms can edit core case details before acknowledgment, and `notes` at any time.\n  - Receiving firms can edit `title` and `notes` after acknowledgment.\n  - System admins have full edit access.\n\nUse this endpoint to update case information, change the receiving firm (`referentFirmId`), or add notes throughout the case lifecycle."
         },
         "parameters": [
           {
@@ -1407,10 +1408,23 @@
             "type": "string",
             "nullable": true
           },
+          "clientDateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Date in YYYY-MM-DD format"
+          },
+          "incidentDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Date in YYYY-MM-DD format"
+          },
           "referentFirmId": {
             "type": "string",
             "format": "uuid",
-            "nullable": true
+            "nullable": true,
+            "description": "If provided, the case will be immediately sent to this firm. Otherwise, it's created as a draft."
           },
           "notes": {
             "type": "string",
@@ -1439,9 +1453,21 @@
             "type": "string",
             "nullable": true
           },
-          "notes": {
+          "caseType": {
             "type": "string",
-            "nullable": true
+            "minLength": 1
+          },
+          "jurisdiction": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clientFirstName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clientLastName": {
+            "type": "string",
+            "minLength": 1
           },
           "clientEmail": {
             "type": "string",
@@ -1451,8 +1477,40 @@
           "clientPhone": {
             "type": "string",
             "nullable": true
+          },
+          "clientDateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Date in YYYY-MM-DD format"
+          },
+          "incidentDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Date in YYYY-MM-DD format"
+          },
+          "referentFirmId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "salesforceRecordId": {
+            "type": "string",
+            "maxLength": 18,
+            "nullable": true
+          },
+          "salesforceObjectType": {
+            "type": "string",
+            "maxLength": 100,
+            "nullable": true
           }
-        }
+        },
+        "description": "All fields are optional. Only provided fields will be updated. Field editability depends on case status and your firm's relationship to the case (referring vs receiving firm)."
       },
       "CaseReReferRequest": {
         "type": "object",

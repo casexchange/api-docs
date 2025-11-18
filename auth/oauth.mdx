@@ -42,23 +42,113 @@ Response highlights:
 
 ## Authorization Flow
 
-1. **Authorization Request** – Redirect the browser:
-   ```
-   GET /api/v1/oauth/authorize?client_id=<client_id>&redirect_uri=<redirect_uri>&response_type=code&scope=<scopes>&state=<state>
-   ```
-2. **Token Exchange** – Server-to-server call:
-   ```json
-   POST /api/v1/oauth/token
-   {
-     "grant_type": "authorization_code",
-     "code": "<authorization_code>",
-     "redirect_uri": "<redirect_uri>",
-     "client_id": "<client_id>",
-     "client_secret": "<client_secret>"
-   }
-   ```
-3. **Refresh Tokens** – Same token endpoint with `grant_type=refresh_token`.
-4. **Revoke Tokens** – `POST /api/v1/oauth/revoke` to invalidate leaked credentials.
+### 1. Authorization Request
+
+Redirect the user's browser to the authorization endpoint:
+
+```
+GET /api/v1/oauth/authorize?client_id=<client_id>&redirect_uri=<redirect_uri>&response_type=code&scope=<scopes>&state=<state>&code_challenge=<challenge>&code_challenge_method=S256
+```
+
+**Parameters:**
+- `client_id` (required) - Your OAuth client ID
+- `redirect_uri` (required) - Must match a registered redirect URI
+- `response_type` (required) - Must be `code`
+- `scope` (optional) - Space-separated list of scopes (e.g., `openid email cases:read cases:write`)
+- `state` (recommended) - CSRF protection token
+- `code_challenge` (optional) - PKCE code challenge (recommended for public clients)
+- `code_challenge_method` (optional) - `S256` or `plain` (required if `code_challenge` is provided)
+
+The user will be redirected to a consent page. After approval, they'll be redirected back to your `redirect_uri` with an authorization code.
+
+### 2. Token Exchange
+
+Exchange the authorization code for access and refresh tokens (server-to-server call):
+
+```json
+POST /api/v1/oauth/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+grant_type=authorization_code&code=<authorization_code>&redirect_uri=<redirect_uri>&code_verifier=<code_verifier>
+```
+
+**Alternative JSON format:**
+```json
+POST /api/v1/oauth/token
+Content-Type: application/json
+Authorization: Basic <base64(client_id:client_secret)>
+
+{
+  "grant_type": "authorization_code",
+  "code": "<authorization_code>",
+  "redirect_uri": "<redirect_uri>",
+  "code_verifier": "<code_verifier>"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "refresh_token_string",
+  "scope": "openid email cases:read cases:write",
+  "id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+- `access_token` - JWT access token (expires in 1 hour)
+- `refresh_token` - Use to obtain new access tokens (expires in 30 days)
+- `expires_in` - Access token lifetime in seconds
+- `id_token` - OpenID Connect ID token (if `openid` scope requested)
+
+### 3. Refresh Tokens
+
+When the access token expires, use the refresh token to obtain a new one:
+
+```json
+POST /api/v1/oauth/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+grant_type=refresh_token&refresh_token=<refresh_token>
+```
+
+**Response:**
+```json
+{
+  "access_token": "new_access_token...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "new_refresh_token...",
+  "scope": "openid email cases:read cases:write",
+  "id_token": "new_id_token..."
+}
+```
+
+<Note>
+Refresh tokens are rotated on each use. Always store the new refresh token returned in the response. The old refresh token becomes invalid immediately.
+</Note>
+
+### 4. Revoke Tokens
+
+Revoke access or refresh tokens when they're compromised or no longer needed:
+
+```json
+POST /api/v1/oauth/revoke
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+token=<token_to_revoke>&token_type_hint=access_token
+```
+
+**Parameters:**
+- `token` (required) - The access token or refresh token to revoke
+- `token_type_hint` (optional) - `access_token` or `refresh_token`
+
+Returns `200 OK` on success. The token is immediately invalidated.
 
 ## Scopes
 
