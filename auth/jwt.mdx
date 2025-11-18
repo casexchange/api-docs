@@ -30,7 +30,7 @@ POST /api/v1/auth/login
 }
 ```
 
-Response snippet:
+Response:
 
 ```json
 {
@@ -39,13 +39,25 @@ Response snippet:
     "user": {
       "id": "uuid",
       "email": "user@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
       "role": "member",
       "firmId": "uuid",
-      "isActive": true
-    }
+      "isActive": true,
+      "firm": {
+        "id": "uuid",
+        "name": "Law Firm Name"
+      }
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "refresh_token_string"
   }
 }
 ```
+
+<Note>
+The `accessToken` should be used in the `Authorization: Bearer <token>` header for subsequent API requests. The `refreshToken` can be used to obtain a new access token when it expires. HttpOnly cookies are also set for browser-based clients.
+</Note>
 
 ## Using Tokens
 
@@ -81,8 +93,30 @@ Use server-side storage for refresh tokens. Browser integrations should rely on 
 
 ## Error Codes
 
-- `no_token` – Missing Authorization header.
-- `token_expired` – Access token exceeded its TTL.
-- `token_invalid` – Token signature or claims invalid.
-- `rate_limited_email` / `rate_limited_ip` – Too many login attempts.
+All errors follow the standard error response format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "token_expired",
+    "message": "Access token has expired",
+    "details": []
+  }
+}
+```
+
+Common authentication error codes:
+
+- `no_token` – Missing Authorization header
+- `token_expired` – Access token exceeded its TTL
+- `token_invalid` – Token signature or claims invalid
+- `rate_limited_email` / `rate_limited_ip` – Too many login attempts
+- `account_not_fully_activated` – User account is inactive
+- `account_inactive_login_attempt` – Login attempt on inactive account
+
+Standard HTTP status codes:
+- `400` – Bad Request (validation errors, invalid token)
+- `401` – Unauthorized (authentication failed)
+- `403` – Forbidden (account inactive)
 

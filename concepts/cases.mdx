@@ -49,6 +49,8 @@ Bulk updates are restricted to active referrals (non-terminal states).
 
 ## Error Handling
 
+All error responses follow a consistent format:
+
 ```json
 {
   "success": false,
@@ -56,15 +58,22 @@ Bulk updates are restricted to active referrals (non-terminal states).
     "code": "validation_error",
     "message": "Human-readable message",
     "details": []
-  }
+  },
+  "message": "Optional additional context"
 }
 ```
 
-Key codes:
+Key error codes:
 
-- `validation_error`
-- `resource_not_found`
-- `permission_denied`
-- `no_token`, `token_invalid`, `token_expired`
-- `rate_limited_email`, `rate_limited_ip`
+- `validation_error` - Invalid request input or validation error
+- `resource_not_found` - Resource not found
+- `permission_denied` - Insufficient permissions or action not allowed
+- `no_token`, `token_invalid`, `token_expired` - Authentication failures
+- `rate_limited_email`, `rate_limited_ip` - Rate limiting exceeded
+
+Standard HTTP status codes:
+- `400` - Bad Request (validation errors)
+- `401` - Unauthorized (authentication required)
+- `403` - Forbidden (insufficient permissions)
+- `404` - Not Found (resource doesn't exist)
 
