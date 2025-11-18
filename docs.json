@@ -1,11 +1,12 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "CaseXchange Public API",
+  "openapi": "api-reference/openapi.json",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1E40AF",
+    "light": "#60A5FA",
+    "dark": "#1E3A8A"
   },
   "favicon": "/favicon.svg",
   "navigation": {
@@ -14,74 +15,78 @@
         "tab": "Guides",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Overview",
             "pages": [
               "index",
-              "quickstart",
-              "development"
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Authentication",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "auth/jwt",
+              "auth/oauth"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "concepts/cases",
+              "concepts/firms",
+              "concepts/jurisdictions",
+              "concepts/case-types"
             ]
           }
         ]
       },
       {
         "tab": "API reference",
+        "openapi": "api-reference/openapi.json",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Case Endpoints",
             "pages": [
-              "api-reference/introduction"
+              "POST /cases",
+              "GET /cases",
+              "GET /cases/{id}",
+              "PUT /cases/{id}",
+              "POST /cases/{id}/re-refer",
+              "POST /cases/bulk-update"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Firm & Metadata",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "GET /firms",
+              "GET /firms/{id}",
+              "GET /firms/jurisdictions/list",
+              "GET /firms/jurisdictions",
+              "GET /firms/case-types",
+              "GET /firms/specialties/list",
+              "POST /routing/evaluate-api"
+            ]
+          },
+          {
+            "group": "Auth & Profile",
+            "pages": [
+              "POST /auth/login",
+              "POST /auth/refresh-session",
+              "GET /auth/me"
+            ]
+          },
+          {
+            "group": "OAuth",
+            "pages": [
+              "GET /.well-known/openid-configuration",
+              "GET /oauth/authorize",
+              "POST /oauth/token",
+              "POST /oauth/revoke",
+              "GET /oauth/userinfo"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
+    ]
   },
   "logo": {
     "light": "/logo/light.svg",
@@ -91,32 +96,18 @@
     "links": [
       {
         "label": "Support",
-        "href": "mailto:hi@mintlify.com"
+        "href": "mailto:help@casexchange.com"
       }
     ],
     "primary": {
       "type": "button",
       "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
+      "href": "https://dashboard.casexchange.com"
     }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "linkedin": "https://linkedin.com/company/case-xchange"
     }
   }
 }

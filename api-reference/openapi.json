@@ -1,16 +1,17 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "OpenAPI Plant Store",
-    "description": "A sample API that uses a plant store as an example to demonstrate features in the OpenAPI specification",
-    "license": {
-      "name": "MIT"
-    },
-    "version": "1.0.0"
+    "title": "CaseXchange Public API",
+    "description": "Public endpoints for creating referrals, managing firms, and handling authentication on the CaseXchange platform.",
+    "version": "1.0.0",
+    "contact": {
+      "email": "help@casexchange.com"
+    }
   },
   "servers": [
     {
-      "url": "http://sandbox.mintlify.com"
+      "url": "https://api.casexchange.com/api/v1",
+      "description": "Production"
     }
   ],
   "security": [
@@ -19,76 +20,687 @@
     }
   ],
   "paths": {
-    "/plants": {
+    "/auth/login": {
+      "post": {
+        "summary": "Login",
+        "description": "Exchange user credentials for a JWT access token and refresh cookies.",
+        "tags": ["Authentication"],
+        "x-mint": {
+          "metadata": {
+            "title": "Login",
+            "description": "Exchange credentials for a JWT session"
+          },
+          "content": "Authenticate with email and password to receive a JWT access token. The response includes user profile data and sets HttpOnly cookies for browser-based clients."
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh-session": {
+      "post": {
+        "summary": "Refresh Session",
+        "description": "Rotate an access token using refresh cookies or a refresh token.",
+        "tags": ["Authentication"],
+        "x-mint": {
+          "metadata": {
+            "title": "Refresh Session",
+            "description": "Rotate expired JWTs using refresh identifiers"
+          },
+          "content": "Refresh an expired or soon-to-expire access token using a valid refresh token. This endpoint issues a new access token and optionally rotates the refresh token."
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Session refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Refresh failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
       "get": {
-        "description": "Returns all plants from the system that the user has access to",
+        "summary": "Current User",
+        "description": "Retrieve the authenticated user profile and firm context.",
+        "tags": ["Authentication"],
+        "x-mint": {
+          "metadata": {
+            "title": "Current User",
+            "description": "Retrieve the authenticated user profile"
+          },
+          "content": "Retrieve the profile of the currently authenticated user. Use this endpoint immediately after login to confirm context, roles, and firm associations. Also helpful for session dashboards or debugging token scopes."
+        },
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases": {
+      "post": {
+        "summary": "Create Case",
+        "description": "Create a new case referral.",
+        "tags": ["Cases"],
+        "x-mint": {
+          "metadata": {
+            "title": "Create Case",
+            "description": "Create a new case referral"
+          },
+          "content": "Create a new case referral. If `referentFirmId` is provided, the case is immediately sent to the receiving firm. Otherwise, it's created as a draft for later completion."
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Case created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateCaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Cases",
+        "description": "Retrieve cases visible to the authenticated firm.",
+        "tags": ["Cases"],
+        "x-mint": {
+          "metadata": {
+            "title": "List Cases",
+            "description": "Paginate and filter cases"
+          },
+          "content": "Retrieve a paginated list of cases with optional filtering. Supports filtering by status, case type, jurisdiction, date range, and search terms. Results are scoped to cases visible to the authenticated user's firm."
+        },
         "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
           {
             "name": "limit",
             "in": "query",
-            "description": "The maximum number of results to return",
             "schema": {
               "type": "integer",
-              "format": "int32"
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Comma separated status values"
+            }
+          },
+          {
+            "name": "caseType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "jurisdiction",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["sent", "received", "all"]
+            }
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Plant response",
+            "description": "Cases list",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Plant"
+                  "$ref": "#/components/schemas/CasesListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{id}": {
+      "get": {
+        "summary": "Get Case",
+        "tags": ["Cases"],
+        "x-mint": {
+          "metadata": {
+            "title": "Get Case",
+            "description": "Retrieve a case by ID"
+          },
+          "content": "Retrieve detailed information about a specific case by its UUID. Includes full case details, firm associations, status history, and document references."
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Case details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Case",
+        "tags": ["Cases"],
+        "x-mint": {
+          "metadata": {
+            "title": "Update Case",
+            "description": "Update an existing case by ID"
+          },
+          "content": "Update an existing case. Editable fields depend on the case status and your firm's relationship to the case. All fields are optional; only provided fields will be updated."
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Case updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{id}/re-refer": {
+      "post": {
+        "summary": "Re-Refer Case",
+        "description": "Create a new referral for an existing case to a different firm.",
+        "tags": ["Cases"],
+        "x-mint": {
+          "metadata": {
+            "title": "Re-Refer Case",
+            "description": "Send a case to a new firm after rejection or routing changes"
+          },
+          "content": "Re-refer a case to a different receiving firm. This creates a new referral record while preserving the original case history. Useful when a case is rejected, when routing rules change, or when you want to send the case to an alternative firm."
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseReReferRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Case re-referred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/bulk-update": {
+      "post": {
+        "summary": "Bulk Update Cases",
+        "description": "Update multiple cases from a CSV file. Supports creating new cases and updating existing ones based on reference numbers or Salesforce IDs.",
+        "tags": ["Cases"],
+        "x-mint": {
+          "metadata": {
+            "title": "Bulk Update Cases",
+            "description": "Update multiple cases via CSV upload"
+          },
+          "content": "Update multiple cases in a single operation by uploading a CSV file. Useful for syncing case statuses from external systems, updating Salesforce records, or batch status changes."
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk update summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkUpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid CSV",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/firms": {
+      "get": {
+        "summary": "List Firms",
+        "tags": ["Firms"],
+        "x-mint": {
+          "metadata": {
+            "title": "List Firms",
+            "description": "Retrieve all firms visible to your organization"
+          },
+          "content": "Retrieve a paginated list of firms visible to your organization. Use this endpoint to discover firms for case referrals or to populate firm selection dropdowns."
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "isInternal",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Firm list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Firm"
+                      }
+                    },
+                    "pagination": {
+                      "$ref": "#/components/schemas/Pagination"
+                    }
                   }
                 }
               }
             }
           },
           "400": {
-            "description": "Unexpected error",
+            "description": "Bad request",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "description": "Creates a new plant in the store",
-        "requestBody": {
-          "description": "Plant to add to the store",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewPlant"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "plant response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Plant"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
-          "400": {
-            "description": "unexpected error",
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -96,121 +708,1488 @@
         }
       }
     },
-    "/plants/{id}": {
-      "delete": {
-        "description": "Deletes a single plant based on the ID supplied",
+    "/firms/{id}": {
+      "get": {
+        "summary": "Get Firm",
+        "tags": ["Firms"],
+        "x-mint": {
+          "metadata": {
+            "title": "Get Firm",
+            "description": "Retrieve firm details by ID"
+          }
+        },
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "ID of plant to delete",
             "required": true,
             "schema": {
-              "type": "integer",
-              "format": "int64"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
         "responses": {
-          "204": {
-            "description": "Plant deleted",
-            "content": {}
-          },
-          "400": {
-            "description": "unexpected error",
+          "200": {
+            "description": "Firm",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Firm"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
         }
       }
-    }
-  },
-  "webhooks": {
-    "/plant/webhook": {
+    },
+    "/firms/jurisdictions/list": {
+      "get": {
+        "summary": "Jurisdiction Codes",
+        "tags": ["Metadata"],
+        "x-mint": {
+          "metadata": {
+            "title": "Get Jurisdictions",
+            "description": "List supported jurisdictions"
+          },
+          "content": "Retrieve a simple list of supported jurisdiction codes. Use this endpoint for lightweight validation or simple dropdowns."
+        },
+        "responses": {
+          "200": {
+            "description": "List of jurisdiction codes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/firms/jurisdictions": {
+      "get": {
+        "summary": "Jurisdiction Details",
+        "tags": ["Metadata"],
+        "x-mint": {
+          "metadata": {
+            "title": "Get Jurisdiction Details",
+            "description": "Retrieve detailed jurisdiction metadata"
+          },
+          "content": "Retrieve detailed jurisdiction metadata including friendly names and types. Use this endpoint to power UI copy or filters with friendly names."
+        },
+        "responses": {
+          "200": {
+            "description": "Detailed jurisdiction metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Jurisdiction"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/firms/case-types": {
+      "get": {
+        "summary": "Case Types",
+        "tags": ["Metadata"],
+        "x-mint": {
+          "metadata": {
+            "title": "Get Case Types",
+            "description": "Retrieve case type metadata"
+          },
+          "content": "Retrieve all available case types with their metadata. Use this endpoint to populate case type dropdowns or validate case type values before creating cases."
+        },
+        "responses": {
+          "200": {
+            "description": "Case type metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CaseType"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/firms/specialties/list": {
+      "get": {
+        "summary": "Specialty Codes",
+        "tags": ["Metadata"],
+        "responses": {
+          "200": {
+            "description": "Specialty list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/routing/evaluate-api": {
       "post": {
-        "description": "Information about a new plant added to the store",
+        "summary": "Evaluate Routing",
+        "description": "Evaluates routing rules based on Severity (tier), Case Type, and Jurisdiction. Returns the correct firm to route to along with whether that firm is active in CaseXchange. Routing evaluation is firm-specific - the firm associated with your OAuth token determines which rules are evaluated.",
+        "tags": ["Routing"],
+        "x-mint": {
+          "metadata": {
+            "title": "Evaluate Routing Rules",
+            "description": "Ask CaseXchange which firm should receive a case"
+          },
+          "content": "Evaluate routing rules to determine which firm should receive a case based on case characteristics. Use this endpoint for \"preview\" experiences before creating cases, or to validate routing logic."
+        },
         "requestBody": {
-          "description": "Plant added to the store",
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewPlant"
+                "$ref": "#/components/schemas/RoutingEvaluateRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Return a 200 status to indicate that the data was received successfully"
+            "description": "Routing result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingEvaluateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - missing required fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/openid-configuration": {
+      "get": {
+        "summary": "OAuth Discovery",
+        "description": "OpenID Connect discovery endpoint providing OAuth 2.0 and OIDC configuration.",
+        "tags": ["OAuth"],
+        "x-mint": {
+          "metadata": {
+            "title": "Discovery",
+            "description": "Retrieve OAuth/OpenID configuration"
+          },
+          "content": "Retrieve OAuth 2.0 and OpenID Connect discovery metadata. This endpoint provides all necessary configuration for OAuth clients, including endpoints, supported grant types, and available scopes."
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Discovery document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/authorize": {
+      "get": {
+        "summary": "Authorization Endpoint",
+        "description": "OAuth 2.0 authorization endpoint. Redirects to frontend consent page.",
+        "tags": ["OAuth"],
+        "security": [],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "redirect_uri",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "response_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["code"]
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code_challenge",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "PKCE code challenge"
+            }
+          },
+          {
+            "name": "code_challenge_method",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["S256", "plain"]
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect with authorization code"
+          }
+        }
+      }
+    },
+    "/oauth/token": {
+      "post": {
+        "summary": "Token Endpoint",
+        "description": "OAuth 2.0 token endpoint for exchanging authorization codes or refresh tokens for access tokens.",
+        "tags": ["OAuth"],
+        "x-mint": {
+          "metadata": {
+            "title": "Token Endpoint",
+            "description": "Exchange authorization codes or refresh tokens"
+          },
+          "content": "Exchange authorization codes for access tokens, or refresh expired access tokens using refresh tokens. Supports Authorization Code and Refresh Token grant types."
+        },
+        "security": [
+          {
+            "oauthClient": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/OAuthAuthorizationCodeRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OAuthRefreshRequest"
+                  }
+                ]
+              }
+            },
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/OAuthAuthorizationCodeRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OAuthRefreshRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthTokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/revoke": {
+      "post": {
+        "summary": "Revoke Token",
+        "description": "Revoke an access token or refresh token.",
+        "tags": ["OAuth"],
+        "x-mint": {
+          "metadata": {
+            "title": "Revoke Token",
+            "description": "Invalidate access or refresh tokens"
+          },
+          "content": "Revoke an access token or refresh token to immediately invalidate it. Use this endpoint when tokens are compromised, when users log out, or when implementing token rotation policies."
+        },
+        "security": [
+          {
+            "oauthClient": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthRevokeRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthRevokeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token revoked"
+          }
+        }
+      }
+    },
+    "/oauth/userinfo": {
+      "get": {
+        "summary": "User Info",
+        "description": "OpenID Connect UserInfo endpoint returning user claims for the authenticated OAuth client.",
+        "tags": ["OAuth"],
+        "x-mint": {
+          "metadata": {
+            "title": "User Info",
+            "description": "Retrieve identity claims for an OAuth access token"
+          },
+          "content": "Retrieve user identity claims for an OAuth access token. Returns user profile information based on the scopes granted during authorization. Use this endpoint to hydrate user profiles in your application after completing the authorization code flow."
+        },
+        "responses": {
+          "200": {
+            "description": "User claims",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthUserInfoResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "oauthClient": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "Client ID and secret for OAuth token endpoints"
+      }
+    },
     "schemas": {
-      "Plant": {
-        "required": [
-          "name"
-        ],
+      "LoginRequest": {
         "type": "object",
+        "required": ["email", "password"],
         "properties": {
-          "name": {
-            "description": "The name of the plant",
-            "type": "string"
+          "email": {
+            "type": "string",
+            "format": "email"
           },
-          "tag": {
-            "description": "Tag to specify the type",
-            "type": "string"
+          "password": {
+            "type": "string",
+            "format": "password"
           }
         }
       },
-      "NewPlant": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Plant"
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
           },
-          {
-            "required": [
-              "id"
-            ],
+          "data": {
             "type": "object",
             "properties": {
-              "id": {
-                "description": "Identification number of the plant",
-                "type": "integer",
-                "format": "int64"
+              "user": {
+                "$ref": "#/components/schemas/User"
+              },
+              "accessToken": {
+                "type": "string"
+              },
+              "refreshToken": {
+                "type": "string"
               }
             }
           }
-        ]
+        }
       },
-      "Error": {
-        "required": [
-          "error",
-          "message"
-        ],
+      "RefreshResponse": {
         "type": "object",
+        "required": ["success", "message"],
         "properties": {
-          "error": {
-            "type": "integer",
-            "format": "int32"
+          "success": {
+            "type": "boolean",
+            "example": true
           },
           "message": {
             "type": "string"
           }
         }
-      }
-    },
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
+      },
+      "AuthMeResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "email": {
+                "type": "string",
+                "format": "email"
+              },
+              "firstName": {
+                "type": "string"
+              },
+              "lastName": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "firmId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "firm": {
+                "$ref": "#/components/schemas/FirmSummary"
+              },
+              "isActive": {
+                "type": "boolean"
+              },
+              "lastLogin": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      },
+      "CaseCreateRequest": {
+        "type": "object",
+        "required": ["title", "caseType", "jurisdiction", "clientFirstName", "clientLastName"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "caseType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "jurisdiction": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clientFirstName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clientLastName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clientEmail": {
+            "type": "string",
+            "format": "email",
+            "nullable": true
+          },
+          "clientPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "referentFirmId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "salesforceRecordId": {
+            "type": "string",
+            "maxLength": 18,
+            "nullable": true
+          },
+          "salesforceObjectType": {
+            "type": "string",
+            "maxLength": 100,
+            "nullable": true
+          }
+        }
+      },
+      "CaseUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientEmail": {
+            "type": "string",
+            "format": "email",
+            "nullable": true
+          },
+          "clientPhone": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CaseReReferRequest": {
+        "type": "object",
+        "required": ["referentFirmId"],
+        "properties": {
+          "referentFirmId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CreateCaseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Case"
+          }
+        }
+      },
+      "CasesListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseListItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "CaseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Case"
+          }
+        }
+      },
+      "Case": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "referenceNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "The system-generated human-readable Case ID (e.g., PREFIX-0001)."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "sent", "received", "under_evaluation", "investigating", "signed", "in_litigation", "won", "lost", "rejected", "withdrawn", "closed"]
+          },
+          "caseType": {
+            "type": "string"
+          },
+          "jurisdiction": {
+            "type": "string"
+          },
+          "clientFirstName": {
+            "type": "string"
+          },
+          "clientLastName": {
+            "type": "string"
+          },
+          "clientEmail": {
+            "type": "string",
+            "format": "email",
+            "nullable": true
+          },
+          "clientPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "referringFirmId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "referringFirm": {
+            "$ref": "#/components/schemas/FirmSummary"
+          },
+          "referentFirmId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "referentFirm": {
+            "$ref": "#/components/schemas/FirmSummary",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "externalId": {
+            "type": "string",
+            "nullable": true
+          },
+          "salesforceRecordId": {
+            "type": "string",
+            "maxLength": 18,
+            "nullable": true
+          },
+          "salesforceObjectType": {
+            "type": "string",
+            "maxLength": 100,
+            "nullable": true
+          },
+          "settlementAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "description": "The final settlement amount for a 'won' case."
+          },
+          "attorneyFees": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "description": "The final attorney fees for a 'won' case."
+          },
+          "closureReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "The reason a case was moved to the 'closed' status."
+          },
+          "createdById": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdBy": {
+            "$ref": "#/components/schemas/UserSummary"
+          },
+          "lastUpdatedById": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "lastUpdatedBy": {
+            "$ref": "#/components/schemas/UserSummary",
+            "nullable": true
+          },
+          "statusUpdates": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "nullable": true
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CaseListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "referenceNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "sent", "received", "under_evaluation", "investigating", "signed", "in_litigation", "won", "lost", "rejected", "withdrawn", "closed"]
+          },
+          "caseType": {
+            "type": "string"
+          },
+          "jurisdiction": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string"
+          },
+          "referringFirm": {
+            "$ref": "#/components/schemas/FirmSummary"
+          },
+          "referentFirm": {
+            "$ref": "#/components/schemas/FirmSummary",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BulkUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "fileName": {
+                "type": "string"
+              },
+              "totalRows": {
+                "type": "integer"
+              },
+              "successful": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              },
+              "created": {
+                "type": "integer"
+              },
+              "updated": {
+                "type": "integer"
+              },
+              "successfulCases": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BulkRowResult"
+                }
+              },
+              "failedRows": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BulkRowResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "referenceNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "operation": {
+            "type": "string",
+            "enum": ["create", "update"]
+          }
+        }
+      },
+      "Firm": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "contactEmail": {
+            "type": "string",
+            "format": "email"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "website": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "canSendReferrals": {
+            "type": "boolean"
+          },
+          "caseStatusSubscriber": {
+            "type": "boolean"
+          },
+          "specialties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "jurisdictions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "address": {
+            "$ref": "#/components/schemas/FirmAddress"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FirmSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "caseStatusSubscriber": {
+            "type": "boolean",
+            "description": "A calculated field indicating if the firm has an active, configured integration with the Case Status platform."
+          }
+        }
+      },
+      "UserSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          }
+        }
+      },
+      "FirmAddress": {
+        "type": "object",
+        "properties": {
+          "street": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        }
+      },
+      "Jurisdiction": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "CaseType": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "RoutingEvaluateRequest": {
+        "type": "object",
+        "required": ["caseType"],
+        "properties": {
+          "severity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "nullable": true,
+            "description": "Case severity/tier level (1-5). Optional - if not provided, routing rules that match any tier will be considered."
+          },
+          "caseType": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Case type name (required). Must match an existing case type in the system."
+          },
+          "jurisdiction": {
+            "type": "string",
+            "nullable": true,
+            "description": "Jurisdiction code. Optional - if not provided, routing rules for nationwide or all jurisdictions will be considered."
+          }
+        }
+      },
+      "RoutingEvaluateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "firm": {
+                "$ref": "#/components/schemas/EvaluateFirm",
+                "nullable": true
+              },
+              "isActive": {
+                "type": "boolean",
+                "description": "Whether the routed firm is active in CaseXchange. Always false for external contacts."
+              },
+              "rule": {
+                "$ref": "#/components/schemas/EvaluateRule",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "EvaluateFirm": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Firm ID (null for external contacts)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Firm name or contact name"
+          },
+          "contactEmail": {
+            "type": "string",
+            "format": "email",
+            "description": "Contact email address"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true,
+            "description": "Contact phone number"
+          },
+          "isExternalContact": {
+            "type": "boolean",
+            "default": false,
+            "description": "Indicates if this is an external contact rather than a CaseXchange firm"
+          }
+        }
+      },
+      "EvaluateRule": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "OAuthAuthorizationCodeRequest": {
+        "type": "object",
+        "required": ["grant_type", "code", "redirect_uri"],
+        "properties": {
+          "grant_type": {
+            "type": "string",
+            "enum": ["authorization_code"]
+          },
+          "code": {
+            "type": "string"
+          },
+          "redirect_uri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string"
+          },
+          "code_verifier": {
+            "type": "string",
+            "description": "PKCE code verifier (required if code_challenge was provided)"
+          }
+        }
+      },
+      "OAuthRefreshRequest": {
+        "type": "object",
+        "required": ["grant_type", "refresh_token"],
+        "properties": {
+          "grant_type": {
+            "type": "string",
+            "enum": ["refresh_token"]
+          },
+          "refresh_token": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string"
+          }
+        }
+      },
+      "OAuthTokenResponse": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "token_type": {
+            "type": "string",
+            "enum": ["Bearer"]
+          },
+          "expires_in": {
+            "type": "integer"
+          },
+          "refresh_token": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "id_token": {
+            "type": "string",
+            "nullable": true,
+            "description": "OpenID Connect ID token (if openid scope requested)"
+          }
+        }
+      },
+      "OAuthRevokeRequest": {
+        "type": "object",
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "token_type_hint": {
+            "type": "string",
+            "enum": ["access_token", "refresh_token"]
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string"
+          }
+        }
+      },
+      "OAuthUserInfoResponse": {
+        "type": "object",
+        "properties": {
+          "sub": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Subject identifier (user ID)"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "email_verified": {
+            "type": "boolean"
+          },
+          "given_name": {
+            "type": "string"
+          },
+          "family_name": {
+            "type": "string"
+          },
+          "firmId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "firmName": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "firmId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["success", "error"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "default": false
+          },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "nullable": true
+              }
+            }
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       }
     }
   }

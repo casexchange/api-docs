@@ -1,0 +1,36 @@
+---
+title: "Case Types & Specialties"
+description: "Standardized classification for referrals"
+---
+
+## Endpoints
+
+- `GET /api/v1/firms/case-types` – Returns objects with `id`, `name`, and `description`.
+- `GET /api/v1/firms/specialties/list` – Returns an array of strings (e.g., `"personal_injury"`).
+
+## Sample Response
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "name": "personal_injury",
+      "description": "Personal injury cases"
+    },
+    {
+      "id": "uuid",
+      "name": "medical_malpractice",
+      "description": "Medical malpractice cases"
+    }
+  ]
+}
+```
+
+## Best Practices
+
+- Validate case type selections before calling `POST /api/v1/cases`.
+- Use specialties list for lightweight UI filters; rely on case-type endpoint for richer metadata.
+- Cache responses to reduce load and ensure consistent dropdown ordering.
+

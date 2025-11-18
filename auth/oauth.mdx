@@ -1,0 +1,80 @@
+---
+title: "OAuth 2.0"
+description: "Use the Authorization Code flow with CaseXchange"
+---
+
+## Overview
+
+CaseXchange supports OAuth 2.0 Authorization Code flow with OpenID Connect extensions. Use this option when building third-party apps that need delegated access across firms.
+
+- Discovery endpoint: `GET /.well-known/openid-configuration`
+- Authorization endpoint: `/api/v1/oauth/authorize`
+- Token endpoint: `/api/v1/oauth/token`
+- User info endpoint: `/api/v1/oauth/userinfo`
+- Revocation endpoint: `/api/v1/oauth/revoke`
+
+## Discovery Document
+
+```
+GET /.well-known/openid-configuration
+```
+
+Response highlights:
+
+```json
+{
+  "issuer": "https://api.casexchange.com/api/v1",
+  "authorization_endpoint": "https://api.casexchange.com/api/v1/oauth/authorize",
+  "token_endpoint": "https://api.casexchange.com/api/v1/oauth/token",
+  "userinfo_endpoint": "https://api.casexchange.com/api/v1/oauth/userinfo",
+  "revocation_endpoint": "https://api.casexchange.com/api/v1/oauth/revoke",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "scopes_supported": [
+    "openid",
+    "email",
+    "profile",
+    "cases:read",
+    "cases:write"
+  ]
+}
+```
+
+## Authorization Flow
+
+1. **Authorization Request** – Redirect the browser:
+   ```
+   GET /api/v1/oauth/authorize?client_id=<client_id>&redirect_uri=<redirect_uri>&response_type=code&scope=<scopes>&state=<state>
+   ```
+2. **Token Exchange** – Server-to-server call:
+   ```json
+   POST /api/v1/oauth/token
+   {
+     "grant_type": "authorization_code",
+     "code": "<authorization_code>",
+     "redirect_uri": "<redirect_uri>",
+     "client_id": "<client_id>",
+     "client_secret": "<client_secret>"
+   }
+   ```
+3. **Refresh Tokens** – Same token endpoint with `grant_type=refresh_token`.
+4. **Revoke Tokens** – `POST /api/v1/oauth/revoke` to invalidate leaked credentials.
+
+## Scopes
+
+- `openid` – Required for ID token and user identity.
+- `email`, `profile` – Access to identity attributes.
+- `cases:read` – Read referrals, firms, routing, etc.
+- `cases:write` – Create, update, re-refer cases.
+
+<Callout icon="shield" color="blue">
+Only request the minimum scopes your integration requires. Excess scopes may be denied during client approval.
+</Callout>
+
+## Best Practices
+
+- Use PKCE where possible for public clients.
+- Store refresh tokens encrypted; rotate on schedule.
+- Validate `state` to prevent CSRF.
+- Handle `expires_in` to refresh tokens proactively.
+

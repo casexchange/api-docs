@@ -1,0 +1,65 @@
+---
+title: "Firms & Directory"
+description: "How CaseXchange represents law firms and directory data"
+---
+
+## Firm Object
+
+Key fields returned by `GET /api/v1/firms`:
+
+```json
+{
+  "id": "uuid",
+  "name": "Law Firm Name",
+  "description": "Firm description",
+  "contactEmail": "contact@firm.com",
+  "contactPhone": "+1234567890",
+  "website": "https://firm.com",
+  "canSendReferrals": true,
+  "caseStatusSubscriber": false,
+  "specialties": ["personal_injury"],
+  "jurisdictions": ["CA", "NY"],
+  "address": {
+    "street": "123 Main St",
+    "city": "Los Angeles",
+    "state": "CA",
+    "zipCode": "90001",
+    "country": "USA"
+  },
+  "createdAt": "2024-01-01T00:00:00Z",
+  "updatedAt": "2024-01-01T00:00:00Z"
+}
+```
+
+## Pagination & Filtering
+
+- `page` – defaults to 1
+- `limit` – defaults to 20, max 100
+- `search` – firm name search
+- `isInternal` – available to System Admins for internal-only filtering
+
+## Related Endpoints
+
+- `GET /api/v1/firms/{id}` – retrieve a single firm
+- `GET /api/v1/firms/directory` – public-friendly browsing for customer firms (if available)
+
+## Response Format
+
+All firm endpoints return responses wrapped in a standard format:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "pagination": { ... }
+}
+```
+
+For single firm responses, `pagination` is omitted.
+
+## Usage Tips
+
+- Cache firm lists to avoid hitting rate limits.
+- Use `jurisdictions` and `specialties` arrays to power user-facing filters.
+- Combine firm metadata with routing evaluations to display recommended matches.
+

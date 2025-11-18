@@ -1,80 +1,69 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Launch your CaseXchange integration in three steps"
 ---
 
-## Get started in three steps
+## Three steps to production
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
+### 1. Provision your workspace
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion icon="id-card" title="Request API access">
+    1. Email `help@casexchange.com` with your firm name, use case, and environment (Prod or QA/UAT).\n
+    2. Receive your client credentials plus IP safelist details from the onboarding team.\n
+    3. Create service accounts for each integration environment.
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+  <Accordion icon="key" title="Generate credentials">
+    - For JWT integrations, create user accounts and capture login credentials for automation.\n
+    - For OAuth integrations, register redirect URIs and receive `client_id` / `client_secret` pairs.\n
+    - Store secrets in your secure vault; never hardcode in code repositories.
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
+### 2. Validate authentication
 
 <AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
+  <Accordion icon="lock" title="JWT flow sanity check">
+    1. `POST /api/v1/auth/login` with an integration user.\n
+    2. Capture the `Authorization` bearer token from the response.\n
+    3. Call `GET /api/v1/auth/me` to verify scope and firm context.\n
+    4. If using refresh cookies, call `POST /api/v1/auth/refresh-session`.
+  </Accordion>
+  <Accordion icon="arrows-rotate" title="OAuth authorization code flow">
+    1. Hit `GET /api/v1/oauth/authorize` with your `client_id`, scopes, and redirect URI.\n
+    2. Exchange the code via `POST /api/v1/oauth/token` to receive access and refresh tokens.\n
+    3. Call `GET /api/v1/oauth/userinfo` or `GET /api/v1/auth/me` to confirm claims.\n
+    4. Store refresh tokens securely and validate `expires_in` to plan rotations.
   </Accordion>
 </AccordionGroup>
 
-### Step 3: Go live
+### 3. Exercise core endpoints
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
+<Accordion icon="circle-check" title="Smoke test critical APIs">
+1. Create a sample referral with `POST /api/v1/cases` using a sandbox firm pairing.\n
+2. Update fields with `PUT /api/v1/cases/{id}` and confirm audit trails.\n
+3. List cases via `GET /api/v1/cases` using pagination and filters.\n
+4. Retrieve firm metadata to power dropdowns with `GET /api/v1/firms` and `GET /api/v1/firms/jurisdictions`.\n
+5. Run routing dry-runs with `POST /api/v1/routing/evaluate-api` to confirm rules logic.\n
 </Accordion>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="JWT Guide" icon="key" href="/auth/jwt">
+    Deep dive into session handling, refresh, and token rotation.
+  </Card>
+  <Card title="OAuth Guide" icon="user-lock" href="/auth/oauth">
+    Configure Authorization Code flows and scope selection.
+  </Card>
+  <Card title="Case Lifecycle" icon="folder-open" href="/concepts/cases">
+    Understand referral states, ownership, and re-referrals.
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/concepts/cases#error-handling">
+    See standard response envelopes and status codes.
+  </Card>
 </CardGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Need sandbox data or partner credentials? Email <Link href="mailto:help@casexchange.com">help@casexchange.com</Link>.
 </Note>
