@@ -5,48 +5,348 @@ description: "Paginate and filter cases"
 
 <Endpoint method="GET" path="/api/v1/cases" />
 
+Retrieve a paginated list of cases with optional filtering. Supports filtering by status, case type, jurisdiction, date range, and search terms. Results are scoped to cases visible to the authenticated user's firm.
+
+## Authentication
+
+<ParamField header="Authorization" type="string" required>
+Bearer token obtained from login or OAuth flow. Format: `Bearer <token>`
+</ParamField>
+
 ## Query Parameters
 
-- `page` – defaults to 1
-- `limit` – defaults to 20
-- `search` – by title or client name
-- `status` – comma separated list (`under_evaluation,investigating`)
-- `caseType`
-- `jurisdiction`
-- `view` – `sent`, `received`, or `all`
-- `fromDate` / `toDate` (ISO8601)
+<ParamField query="page" type="integer" default="1">
+Page number for pagination. Minimum: 1.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+Number of results per page. Range: 1-100. Default: 20.
+</ParamField>
+
+<ParamField query="search" type="string">
+Search term to match against case title or client name (first name, last name, or full name). Case-insensitive partial matching.
+</ParamField>
+
+<ParamField query="status" type="string">
+Comma-separated list of status values to filter by. Valid values: `draft`, `sent`, `under_evaluation`, `investigating`, `signed`, `closed`, `rejected`. Example: `under_evaluation,investigating`.
+</ParamField>
+
+<ParamField query="caseType" type="string">
+Filter by case type. Use `/api/v1/firms/case-types` to get valid values. Example: `personal_injury`.
+</ParamField>
+
+<ParamField query="jurisdiction" type="string">
+Filter by jurisdiction code. Use `/api/v1/firms/jurisdictions/list` for valid codes. Example: `CA`.
+</ParamField>
+
+<ParamField query="view" type="string" default="all">
+Filter by case direction. Values: `sent` (cases your firm originated), `received` (inbound referrals), `all` (both sent and received).
+</ParamField>
+
+<ParamField query="fromDate" type="string">
+Start date for filtering cases by creation date. Format: ISO 8601 (e.g., `2024-03-01T00:00:00Z`).
+</ParamField>
+
+<ParamField query="toDate" type="string">
+End date for filtering cases by creation date. Format: ISO 8601 (e.g., `2024-03-31T23:59:59Z`).
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X GET 'https://api.casexchange.com/api/v1/cases?page=1&limit=20&status=under_evaluation,investigating&view=sent' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+```
+</RequestExample>
+
+<RequestExample>
+```bash cURL - With Search and Date Range
+curl -X GET 'https://api.casexchange.com/api/v1/cases?search=Rodriguez&fromDate=2024-03-01T00:00:00Z&toDate=2024-03-31T23:59:59Z&limit=50' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js
+const params = new URLSearchParams({
+  page: '1',
+  limit: '20',
+  status: 'under_evaluation,investigating',
+  view: 'sent',
+  caseType: 'personal_injury',
+  jurisdiction: 'CA'
+});
+
+const response = await fetch(`https://api.casexchange.com/api/v1/cases?${params}`, {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+
+const data = await response.json();
+console.log(`Found ${data.pagination.total} cases`);
+console.log(`Page ${data.pagination.page} of ${data.pagination.totalPages}`);
+```
+</RequestExample>
 
 ## Response
 
-```json
+<ResponseField name="success" type="boolean" required>
+Indicates whether the request succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="array" required>
+Array of case objects matching the filter criteria.
+
+<Expandable title="Case object properties">
+<ResponseField name="id" type="string" required>
+Unique identifier for the case. Format: UUID v4.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+Case title or summary.
+</ResponseField>
+
+<ResponseField name="referenceNumber" type="string" required>
+Human-readable case reference number. Format: `FIRM-####`.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+Current case status.
+</ResponseField>
+
+<ResponseField name="caseType" type="string" required>
+Case type identifier.
+</ResponseField>
+
+<ResponseField name="jurisdiction" type="string" required>
+Jurisdiction code.
+</ResponseField>
+
+<ResponseField name="clientName" type="string" required>
+Full client name (first name + last name).
+</ResponseField>
+
+<ResponseField name="referringFirm" type="object" required>
+Firm that created the referral.
+
+<Expandable title="Firm properties">
+<ResponseField name="id" type="string" required>
+Firm UUID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+Firm's legal name.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseField name="referentFirm" type="object">
+Receiving firm (only present if case has been sent).
+
+<Expandable title="Firm properties">
+<ResponseField name="id" type="string" required>
+Firm UUID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+Firm's legal name.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+ISO 8601 timestamp of when the case was created.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseField name="pagination" type="object" required>
+Pagination metadata.
+
+<Expandable title="Pagination properties">
+<ResponseField name="total" type="integer" required>
+Total number of cases matching the filter criteria.
+</ResponseField>
+
+<ResponseField name="page" type="integer" required>
+Current page number.
+</ResponseField>
+
+<ResponseField name="limit" type="integer" required>
+Number of results per page.
+</ResponseField>
+
+<ResponseField name="totalPages" type="integer" required>
+Total number of pages available.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
   "data": [
     {
-      "id": "uuid",
-      "title": "Case Title",
-      "referenceNumber": "FIRM-0001",
+      "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+      "title": "Motor Vehicle Accident - Rear End Collision",
+      "referenceNumber": "SMITH-0042",
       "status": "under_evaluation",
       "caseType": "personal_injury",
       "jurisdiction": "CA",
-      "clientName": "John Doe",
-      "referringFirm": { "id": "uuid", "name": "Firm Name" },
-      "referentFirm": { "id": "uuid", "name": "Receiving Firm" },
-      "createdAt": "2024-01-01T00:00:00Z"
+      "clientName": "Maria Rodriguez",
+      "referringFirm": {
+        "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+        "name": "Smith & Associates Law Firm"
+      },
+      "referentFirm": {
+        "id": "f2b3c4d5-e6f7-8901-bcde-f12345678901",
+        "name": "Johnson Legal Group"
+      },
+      "createdAt": "2024-03-15T10:30:00Z"
+    },
+    {
+      "id": "c2d3e4f5-a6b7-8901-cdef-123456789013",
+      "title": "Slip and Fall - Grocery Store",
+      "referenceNumber": "SMITH-0043",
+      "status": "investigating",
+      "caseType": "personal_injury",
+      "jurisdiction": "CA",
+      "clientName": "Robert Chen",
+      "referringFirm": {
+        "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+        "name": "Smith & Associates Law Firm"
+      },
+      "referentFirm": {
+        "id": "f3c4d5e6-f7g8-9012-cdef-12345678902",
+        "name": "Williams & Partners"
+      },
+      "createdAt": "2024-03-14T15:45:00Z"
     }
   ],
   "pagination": {
-    "total": 50,
+    "total": 47,
     "page": 1,
     "limit": 20,
     "totalPages": 3
   }
 }
 ```
+</ResponseExample>
 
-## Tips
+<ResponseExample>
+```json Empty Results (200 OK)
+{
+  "success": true,
+  "data": [],
+  "pagination": {
+    "total": 0,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 0
+  }
+}
+```
+</ResponseExample>
 
-- Use `view=sent` to see cases your firm has originated, `view=received` for inbound referrals.
-- Apply `fromDate` / `toDate` to limit large result sets during nightly syncs.
-- Cache pagination cursors to avoid missing updates between syncs.
+<ResponseExample>
+```json Error - Invalid Status (400 Bad Request)
+{
+  "success": false,
+  "error": {
+    "code": "validation_error",
+    "message": "Invalid status value. Valid values: draft, sent, under_evaluation, investigating, signed, closed, rejected",
+    "details": {
+      "field": "status",
+      "value": "invalid_status"
+    }
+  }
+}
+```
+</ResponseExample>
+
+## Example: Paginated Case Listing with Filters
+
+```javascript Node.js
+async function listCases(filters = {}, accessToken) {
+  const params = new URLSearchParams({
+    page: filters.page?.toString() || '1',
+    limit: filters.limit?.toString() || '20',
+    view: filters.view || 'all'
+  });
+
+  if (filters.search) {
+    params.append('search', filters.search);
+  }
+
+  if (filters.status) {
+    params.append('status', Array.isArray(filters.status) ? filters.status.join(',') : filters.status);
+  }
+
+  if (filters.caseType) {
+    params.append('caseType', filters.caseType);
+  }
+
+  if (filters.jurisdiction) {
+    params.append('jurisdiction', filters.jurisdiction);
+  }
+
+  if (filters.fromDate) {
+    params.append('fromDate', filters.fromDate);
+  }
+
+  if (filters.toDate) {
+    params.append('toDate', filters.toDate);
+  }
+
+  const response = await fetch(`https://api.casexchange.com/api/v1/cases?${params}`, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'Failed to list cases');
+  }
+
+  return await response.json();
+}
+
+async function getAllCases(filters = {}, accessToken) {
+  const allCases = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const result = await listCases({ ...filters, page }, accessToken);
+    allCases.push(...result.data);
+
+    hasMore = page < result.pagination.totalPages;
+    page++;
+  }
+
+  return allCases;
+}
+
+const cases = await listCases({
+  status: ['under_evaluation', 'investigating'],
+  view: 'sent',
+  caseType: 'personal_injury',
+  jurisdiction: 'CA'
+}, accessToken);
+
+console.log(`Found ${cases.pagination.total} cases`);
+cases.data.forEach(caseItem => {
+  console.log(`${caseItem.referenceNumber}: ${caseItem.title} (${caseItem.status})`);
+});
+```
+
+<Tip>
+Use `view=sent` to see cases your firm has originated, `view=received` for inbound referrals. Apply `fromDate` / `toDate` to limit large result sets during nightly syncs or when exporting historical data.
+</Tip>
+
+<Note>
+Results are scoped to cases visible to the authenticated user's firm. The `view` parameter controls whether you see sent cases, received cases, or both.
+</Note>
 

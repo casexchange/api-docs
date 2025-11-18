@@ -5,26 +5,164 @@ description: "Rotate expired JWTs using refresh identifiers"
 
 <Endpoint method="POST" path="/api/v1/auth/refresh-session" />
 
+Refresh an expired or soon-to-expire access token using a valid refresh token. This endpoint issues a new access token and optionally rotates the refresh token.
+
 ## Request
 
-No body is required when using refresh cookies. For server-to-server integrations, include a refresh token explicitly.
+For browser-based clients using HttpOnly cookies, no request body is required. The refresh token is automatically included from cookies.
 
-```json
-{}
+<ParamField body="refreshToken" type="string">
+Refresh token string. Required for server-to-server integrations that don't use cookies.
+</ParamField>
+
+<RequestExample>
+```bash cURL - Browser (with cookies)
+curl -X POST 'https://api.casexchange.com/api/v1/auth/refresh-session' \
+  -H 'Content-Type: application/json' \
+  --cookie 'refresh_token_id=abc123def456...'
 ```
+</RequestExample>
+
+<RequestExample>
+```bash cURL - Server-to-server
+curl -X POST 'https://api.casexchange.com/api/v1/auth/refresh-session' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "refreshToken": "rt_abc123def456ghi789jkl012mno345pqr678stu901vwx234yz"
+  }'
+```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js - Server-to-server
+const response = await fetch('https://api.casexchange.com/api/v1/auth/refresh-session', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    refreshToken: 'rt_abc123def456ghi789jkl012mno345pqr678stu901vwx234yz'
+  })
+});
+
+const newAccessToken = response.headers.get('Authorization')?.replace('Bearer ', '');
+```
+</RequestExample>
 
 ## Response
 
-```json
+<ResponseField name="success" type="boolean" required>
+Indicates whether the refresh succeeded.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+Success message confirming the session was refreshed.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+Optional data object containing token information.
+
+<Expandable title="Token data">
+<ResponseField name="expiresIn" type="integer">
+Number of seconds until the new access token expires. Typically 900 (15 minutes).
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
-  "message": "Session refreshed successfully"
+  "message": "Session refreshed successfully",
+  "data": {
+    "expiresIn": 900
+  }
 }
 ```
+</ResponseExample>
 
-Notes:
+<ResponseExample>
+```json Error - Invalid Refresh Token (401 Unauthorized)
+{
+  "success": false,
+  "error": {
+    "code": "invalid_refresh_token",
+    "message": "Refresh token is invalid or has expired",
+    "details": {}
+  }
+}
+```
+</ResponseExample>
 
-- Refresh tokens are typically stored as HttpOnly cookies.
-- Server-to-server workflows can provide a refresh token in the request body if approved by support.
-- Rotate refresh tokens on a schedule to reduce exposure.
+<ResponseExample>
+```json Error - Refresh Token Revoked (401 Unauthorized)
+{
+  "success": false,
+  "error": {
+    "code": "refresh_token_revoked",
+    "message": "Refresh token has been revoked. Please log in again.",
+    "details": {}
+  }
+}
+```
+</ResponseExample>
+
+## Example: Automatic Token Refresh
+
+```javascript Node.js
+class AuthManager {
+  constructor() {
+    this.accessToken = null;
+    this.refreshToken = null;
+    this.tokenExpiry = null;
+  }
+
+  async refreshAccessToken() {
+    try {
+      const response = await fetch('https://api.casexchange.com/api/v1/auth/refresh-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          refreshToken: this.refreshToken
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Token refresh failed');
+      }
+
+      const authHeader = response.headers.get('Authorization');
+      this.accessToken = authHeader?.replace('Bearer ', '');
+      
+      const data = await response.json();
+      this.tokenExpiry = Date.now() + (data.data?.expiresIn * 1000 || 900000);
+
+      return this.accessToken;
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      throw error;
+    }
+  }
+
+  async getValidToken() {
+    if (!this.accessToken || Date.now() >= this.tokenExpiry - 60000) {
+      await this.refreshAccessToken();
+    }
+    return this.accessToken;
+  }
+}
+
+const auth = new AuthManager();
+const token = await auth.getValidToken();
+```
+
+<Warning>
+Refresh tokens are long-lived credentials. Rotate them on a schedule (e.g., every 30 days) to reduce exposure if compromised. Immediately revoke refresh tokens if you suspect they've been leaked.
+</Warning>
+
+<Note>
+For browser-based clients, refresh tokens are stored as HttpOnly cookies and automatically included in requests. Server-to-server integrations must explicitly provide the refresh token in the request body.
+</Note>
 

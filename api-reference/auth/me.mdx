@@ -5,28 +5,165 @@ description: "Retrieve the authenticated user profile"
 
 <Endpoint method="GET" path="/api/v1/auth/me" />
 
+Retrieve the profile of the currently authenticated user. Use this endpoint immediately after login to confirm context, roles, and firm associations. Also helpful for session dashboards or debugging token scopes.
+
+## Authentication
+
+<ParamField header="Authorization" type="string" required>
+Bearer token obtained from login or OAuth flow. Format: `Bearer <token>`
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X GET 'https://api.casexchange.com/api/v1/auth/me' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js
+const response = await fetch('https://api.casexchange.com/api/v1/auth/me', {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+
+const data = await response.json();
+console.log('Current user:', data.data);
+```
+</RequestExample>
+
 ## Response
 
-```json
+<ResponseField name="success" type="boolean" required>
+Indicates whether the request succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+Complete user profile with firm association.
+
+<Expandable title="User properties">
+<ResponseField name="id" type="string" required>
+Unique identifier for the user. Format: UUID v4.
+</ResponseField>
+
+<ResponseField name="email" type="string" required>
+User's email address.
+</ResponseField>
+
+<ResponseField name="firstName" type="string" required>
+User's first name.
+</ResponseField>
+
+<ResponseField name="lastName" type="string" required>
+User's last name.
+</ResponseField>
+
+<ResponseField name="role" type="string" required>
+User's role within the firm. Values: `admin`, `member`, `viewer`.
+</ResponseField>
+
+<ResponseField name="firmId" type="string" required>
+UUID of the firm the user belongs to.
+</ResponseField>
+
+<ResponseField name="firm" type="object" required>
+Firm information associated with the user.
+
+<Expandable title="Firm properties">
+<ResponseField name="id" type="string" required>
+Firm UUID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+Firm's legal name.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseField name="isActive" type="boolean" required>
+Whether the user account is currently active.
+</ResponseField>
+
+<ResponseField name="lastLogin" type="string">
+ISO 8601 timestamp of the user's last successful login. Format: `YYYY-MM-DDTHH:mm:ssZ`.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+ISO 8601 timestamp of when the user account was created.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
   "data": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "firstName": "John",
-    "lastName": "Doe",
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "email": "sarah.chen@smithlaw.com",
+    "firstName": "Sarah",
+    "lastName": "Chen",
     "role": "member",
-    "firmId": "uuid",
+    "firmId": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
     "firm": {
-      "id": "uuid",
-      "name": "Firm Name"
+      "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+      "name": "Smith & Associates Law Firm"
     },
     "isActive": true,
-    "lastLogin": "2024-01-01T00:00:00Z",
-    "createdAt": "2024-01-01T00:00:00Z"
+    "lastLogin": "2024-03-15T14:32:18Z",
+    "createdAt": "2023-06-10T09:15:00Z"
   }
 }
 ```
+</ResponseExample>
 
-Use this endpoint immediately after login to confirm context, roles, and firm associations. It is also helpful for session dashboards or debugging token scopes.
+<ResponseExample>
+```json Error - Unauthorized (401 Unauthorized)
+{
+  "success": false,
+  "error": {
+    "code": "unauthorized",
+    "message": "Invalid or expired token",
+    "details": {}
+  }
+}
+```
+</ResponseExample>
+
+## Example: Verify Authentication Context
+
+```javascript Node.js
+async function verifyAuthContext(accessToken) {
+  const response = await fetch('https://api.casexchange.com/api/v1/auth/me', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error('Token invalid or expired');
+  }
+
+  const { data } = await response.json();
+  
+  return {
+    userId: data.id,
+    email: data.email,
+    fullName: `${data.firstName} ${data.lastName}`,
+    role: data.role,
+    firmId: data.firmId,
+    firmName: data.firm.name,
+    isActive: data.isActive
+  };
+}
+
+const context = await verifyAuthContext(accessToken);
+console.log(`Authenticated as ${context.fullName} (${context.role})`);
+console.log(`Firm: ${context.firmName}`);
+```
+
+<Tip>
+Call this endpoint immediately after login to verify the token works and to cache user context in your application state.
+</Tip>
 

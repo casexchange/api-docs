@@ -5,9 +5,65 @@ description: "Retrieve OAuth/OpenID configuration"
 
 <Endpoint method="GET" path="/.well-known/openid-configuration" />
 
+Retrieve OAuth 2.0 and OpenID Connect discovery metadata. This endpoint provides all necessary configuration for OAuth clients, including endpoints, supported grant types, and available scopes.
+
+## Request
+
+No authentication required. This is a public discovery endpoint.
+
+<RequestExample>
+```bash cURL
+curl -X GET 'https://api.casexchange.com/.well-known/openid-configuration'
+```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js
+const response = await fetch('https://api.casexchange.com/.well-known/openid-configuration');
+const config = await response.json();
+
+console.log('Authorization endpoint:', config.authorization_endpoint);
+console.log('Token endpoint:', config.token_endpoint);
+console.log('Supported scopes:', config.scopes_supported);
+```
+</RequestExample>
+
 ## Response
 
-```json
+<ResponseField name="issuer" type="string" required>
+OAuth issuer identifier. Must match exactly when validating tokens.
+</ResponseField>
+
+<ResponseField name="authorization_endpoint" type="string" required>
+URL for the authorization endpoint where users grant consent.
+</ResponseField>
+
+<ResponseField name="token_endpoint" type="string" required>
+URL for the token endpoint where authorization codes are exchanged for tokens.
+</ResponseField>
+
+<ResponseField name="userinfo_endpoint" type="string" required>
+URL for the userinfo endpoint to retrieve user profile information.
+</ResponseField>
+
+<ResponseField name="revocation_endpoint" type="string" required>
+URL for the token revocation endpoint.
+</ResponseField>
+
+<ResponseField name="response_types_supported" type="array" required>
+Array of supported OAuth response types.
+</ResponseField>
+
+<ResponseField name="grant_types_supported" type="array" required>
+Array of supported OAuth grant types.
+</ResponseField>
+
+<ResponseField name="scopes_supported" type="array" required>
+Array of supported OAuth scopes.
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "issuer": "https://api.casexchange.com/api/v1",
   "authorization_endpoint": "https://api.casexchange.com/api/v1/oauth/authorize",
@@ -25,6 +81,35 @@ description: "Retrieve OAuth/OpenID configuration"
   ]
 }
 ```
+</ResponseExample>
 
-Use the discovery metadata to configure SDKs automatically. The issuer matches the `/api/v1` base path; enforce exact matches when validating tokens.
+## Example: Auto-Configure OAuth Client
+
+```javascript Node.js
+async function configureOAuthClient() {
+  const response = await fetch('https://api.casexchange.com/.well-known/openid-configuration');
+  const config = await response.json();
+
+  return {
+    issuer: config.issuer,
+    authorizationUrl: config.authorization_endpoint,
+    tokenUrl: config.token_endpoint,
+    userInfoUrl: config.userinfo_endpoint,
+    revocationUrl: config.revocation_endpoint,
+    supportedScopes: config.scopes_supported,
+    grantTypes: config.grant_types_supported
+  };
+}
+
+const oauthConfig = await configureOAuthClient();
+console.log('OAuth endpoints configured:', oauthConfig);
+```
+
+<Warning>
+The issuer matches the `/api/v1` base path. Enforce exact matches when validating tokens to prevent token substitution attacks.
+</Warning>
+
+<Tip>
+Use the discovery metadata to configure OAuth SDKs automatically. Most OAuth libraries support OpenID Connect discovery out of the box.
+</Tip>
 

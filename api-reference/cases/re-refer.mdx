@@ -5,41 +5,228 @@ description: "Send a case to a new firm after rejection or routing changes"
 
 <Endpoint method="POST" path="/api/v1/cases/{id}/re-refer" />
 
+Re-refer a case to a different receiving firm. This creates a new referral record while preserving the original case history. Useful when a case is rejected, when routing rules change, or when you want to send the case to an alternative firm.
+
+## Authentication
+
+<ParamField header="Authorization" type="string" required>
+Bearer token obtained from login or OAuth flow. Format: `Bearer <token>`
+</ParamField>
+
 ## Path Parameters
 
-- `id` – UUID of the base case (not the referral).
+<ParamField path="id" type="string" required>
+UUID of the base case (not a previous referral). Format: UUID v4.
+</ParamField>
 
 ## Request Body
 
-```json
-{
-  "referentFirmId": "uuid-of-new-receiving-firm",
-  "notes": "Optional notes for re-referral"
-}
+<ParamField body="referentFirmId" type="string" required>
+UUID of the new firm receiving the referral. Use `/api/v1/firms` to discover valid firm IDs.
+</ParamField>
+
+<ParamField body="notes" type="string">
+Optional notes explaining the re-referral reason. Maximum 2000 characters.
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X POST 'https://api.casexchange.com/api/v1/cases/c1d2e3f4-a5b6-7890-cdef-123456789012/re-refer' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "referentFirmId": "f3c4d5e6-f7g8-9012-cdef-12345678902",
+    "notes": "Previous firm declined. Re-referring to alternative firm with expertise in this jurisdiction."
+  }'
 ```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js
+const caseId = 'c1d2e3f4-a5b6-7890-cdef-123456789012';
+const newFirmId = 'f3c4d5e6-f7g8-9012-cdef-12345678902';
+
+const response = await fetch(`https://api.casexchange.com/api/v1/cases/${caseId}/re-refer`, {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    referentFirmId: newFirmId,
+    notes: 'Previous firm declined. Re-referring to alternative firm.'
+  })
+});
+
+const data = await response.json();
+console.log('Case re-referred:', data.data.referenceNumber);
+console.log('Sequence number:', data.data.sequenceNumber);
+```
+</RequestExample>
 
 ## Response
 
-```json
+<ResponseField name="success" type="boolean" required>
+Indicates whether the re-referral succeeded.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+Success message confirming the re-referral.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+New referral record created by the re-referral.
+
+<Expandable title="Referral properties">
+<ResponseField name="id" type="string" required>
+Unique identifier for the new referral. Format: UUID v4.
+</ResponseField>
+
+<ResponseField name="baseCaseId" type="string" required>
+UUID of the original base case.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+Status of the new referral. Initially `sent`.
+</ResponseField>
+
+<ResponseField name="referringFirmId" type="string" required>
+UUID of the firm creating the referral.
+</ResponseField>
+
+<ResponseField name="referentFirmId" type="string" required>
+UUID of the firm receiving the referral.
+</ResponseField>
+
+<ResponseField name="sequenceNumber" type="integer" required>
+Sequence number indicating how many times this case has been referred. Starts at 1 for the first referral, increments for each re-referral.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+ISO 8601 timestamp of when the re-referral was created.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
   "message": "Case successfully re-referred",
   "data": {
-    "id": "uuid",
-    "baseCaseId": "uuid",
+    "id": "r1e2f3a4-b5c6-7890-defa-123456789012",
+    "baseCaseId": "c1d2e3f4-a5b6-7890-cdef-123456789012",
     "status": "sent",
-    "referringFirmId": "uuid",
-    "referentFirmId": "uuid",
+    "referringFirmId": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+    "referentFirmId": "f3c4d5e6-f7g8-9012-cdef-12345678902",
     "sequenceNumber": 2,
-    "createdAt": "2024-01-01T00:00:00Z"
+    "createdAt": "2024-03-20T14:30:00Z"
   }
 }
 ```
+</ResponseExample>
+
+<ResponseExample>
+```json Error - Case Not Found (404 Not Found)
+{
+  "success": false,
+  "error": {
+    "code": "resource_not_found",
+    "message": "Case not found or not accessible",
+    "details": {
+      "caseId": "c1d2e3f4-a5b6-7890-cdef-123456789012"
+    }
+  }
+}
+```
+</ResponseExample>
+
+<ResponseExample>
+```json Error - Invalid Firm (404 Not Found)
+{
+  "success": false,
+  "error": {
+    "code": "resource_not_found",
+    "message": "Referent firm not found or not accessible",
+    "details": {
+      "field": "referentFirmId",
+      "value": "f3c4d5e6-f7g8-9012-cdef-12345678902"
+    }
+  }
+}
+```
+</ResponseExample>
+
+<ResponseExample>
+```json Error - Forbidden (403 Forbidden)
+{
+  "success": false,
+  "error": {
+    "code": "forbidden",
+    "message": "Only the case owner can re-refer cases",
+    "details": {}
+  }
+}
+```
+</ResponseExample>
 
 ## Business Rules
 
-- Only the case owner (referring firm) can re-refer.
-- An active relationship must exist between the firms.
-- Creates a new referral record while preserving base case history.
-- Prior referral history remains in the timeline for auditing.
+- **Ownership**: Only the case owner (referring firm) can re-refer cases.
+- **Firm Relationship**: An active relationship must exist between your firm and the target firm.
+- **History Preservation**: Creates a new referral record while preserving the original case and all prior referral history.
+- **Audit Trail**: All referral attempts remain in the case timeline for auditing purposes.
+
+<Warning>
+Re-referring a case creates a new referral record. The original referral history is preserved, and the `sequenceNumber` increments to track multiple referral attempts.
+</Warning>
+
+## Example: Re-Refer Case with Error Handling
+
+```javascript Node.js
+async function reReferCase(caseId, newFirmId, notes, accessToken) {
+  try {
+    const response = await fetch(`https://api.casexchange.com/api/v1/cases/${caseId}/re-refer`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        referentFirmId: newFirmId,
+        notes: notes
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      
+      if (response.status === 404) {
+        throw new Error(`Case or firm not found`);
+      } else if (response.status === 403) {
+        throw new Error('Only the case owner can re-refer cases');
+      } else {
+        throw new Error(error.error?.message || 'Failed to re-refer case');
+      }
+    }
+
+    const { data } = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error re-referring case:', error.message);
+    throw error;
+  }
+}
+
+const newReferral = await reReferCase(
+  'c1d2e3f4-a5b6-7890-cdef-123456789012',
+  'f3c4d5e6-f7g8-9012-cdef-12345678902',
+  'Previous firm declined. Re-referring to alternative firm.',
+  accessToken
+);
+
+console.log(`Case re-referred to new firm`);
+console.log(`Sequence number: ${newReferral.sequenceNumber}`);
+console.log(`New referral ID: ${newReferral.id}`);
+```
 

@@ -5,37 +5,203 @@ description: "Update multiple cases via CSV upload"
 
 <Endpoint method="POST" path="/api/v1/cases/bulk-update" />
 
+Update multiple cases in a single operation by uploading a CSV file. Useful for syncing case statuses from external systems, updating Salesforce records, or batch status changes.
+
+## Authentication
+
+<ParamField header="Authorization" type="string" required>
+Bearer token obtained from login or OAuth flow. Format: `Bearer <token>`. Requires Admin or Firm Admin role.
+</ParamField>
+
 ## Requirements
 
-- Role: Admin or Firm Admin.
-- Payload: `file` field with CSV.
+- **Role**: Admin or Firm Admin
+- **Content-Type**: `multipart/form-data`
+- **Payload**: `file` field containing a CSV file
 
 ## CSV Format
 
-```csv
+The CSV file must include a header row with the following columns:
+
+<ParamField body="Reference Number" type="string" required>
+Case reference number (e.g., `SMITH-0042`). Used to identify which case to update.
+</ParamField>
+
+<ParamField body="Status" type="string">
+Case status. Valid values: `draft`, `sent`, `under_evaluation`, `investigating`, `signed`, `closed`, `rejected`.
+</ParamField>
+
+<ParamField body="Salesforce Id" type="string">
+Salesforce record ID. Must be provided together with `Salesforce Object`.
+</ParamField>
+
+<ParamField body="Salesforce Object" type="string">
+Salesforce object type (e.g., `Case`, `Opportunity`). Must be provided together with `Salesforce Id`.
+</ParamField>
+
+<ParamField body="Case Status ID" type="string">
+External case status identifier for integration with other systems.
+</ParamField>
+
+<ParamField body="Settlement Amount" type="number">
+Settlement amount in dollars. Format: decimal number (e.g., `100000.00`).
+</ParamField>
+
+<ParamField body="Attorney Fees" type="number">
+Attorney fees in dollars. Format: decimal number (e.g., `33333.33`).
+</ParamField>
+
+<ParamField body="Closure Reason" type="string">
+Reason for case closure. Required when status is `closed`.
+</ParamField>
+
+<RequestExample>
+```csv Example CSV File
 Reference Number,Status,Salesforce Id,Salesforce Object,Case Status ID,Settlement Amount,Attorney Fees,Closure Reason
-FIRM-0001,under_evaluation,a0X1234567890ABC,Case,P-55443,,
-FIRM-0002,signed,,,P-55444,100000.00,33333.33,
+SMITH-0042,under_evaluation,a0X1234567890ABC,Case,P-55443,,
+SMITH-0043,signed,,,P-55444,100000.00,33333.33,
+SMITH-0044,closed,,,P-55445,50000.00,16666.67,Settled out of court
 ```
+</RequestExample>
+
+<RequestExample>
+```bash cURL
+curl -X POST 'https://api.casexchange.com/api/v1/cases/bulk-update' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' \
+  -F 'file=@bulk-update.csv'
+```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js
+const formData = new FormData();
+formData.append('file', csvFileBlob, 'bulk-update.csv');
+
+const response = await fetch('https://api.casexchange.com/api/v1/cases/bulk-update', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  },
+  body: formData
+});
+
+const data = await response.json();
+console.log(`Updated ${data.data.updated} cases`);
+console.log(`Failed: ${data.data.failed}`);
+```
+</RequestExample>
 
 ## Response
 
-```json
+<ResponseField name="success" type="boolean" required>
+Indicates whether the bulk update operation succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+Bulk update operation results.
+
+<Expandable title="Bulk update properties">
+<ResponseField name="fileName" type="string" required>
+Name of the uploaded CSV file.
+</ResponseField>
+
+<ResponseField name="totalRows" type="integer" required>
+Total number of rows processed (excluding header).
+</ResponseField>
+
+<ResponseField name="successful" type="integer" required>
+Number of cases successfully updated.
+</ResponseField>
+
+<ResponseField name="failed" type="integer" required>
+Number of rows that failed to update.
+</ResponseField>
+
+<ResponseField name="created" type="integer" required>
+Number of new cases created (if supported).
+</ResponseField>
+
+<ResponseField name="updated" type="integer" required>
+Number of existing cases updated.
+</ResponseField>
+
+<ResponseField name="successfulCases" type="array" required>
+Array of successfully processed cases.
+
+<Expandable title="Case properties">
+<ResponseField name="id" type="string" required>
+Case UUID.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+Case title.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+Updated case status.
+</ResponseField>
+
+<ResponseField name="referenceNumber" type="string" required>
+Case reference number.
+</ResponseField>
+
+<ResponseField name="operation" type="string" required>
+Operation performed: `update` or `create`.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseField name="failedRows" type="array" required>
+Array of rows that failed to process.
+
+<Expandable title="Failed row properties">
+<ResponseField name="row" type="integer" required>
+Row number in the CSV (1-based, excluding header).
+</ResponseField>
+
+<ResponseField name="referenceNumber" type="string">
+Reference number from the failed row.
+</ResponseField>
+
+<ResponseField name="error" type="string" required>
+Error message describing why the row failed.
+</ResponseField>
+</Expandable>
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
   "data": {
     "fileName": "bulk-update.csv",
-    "totalRows": 2,
-    "successful": 2,
+    "totalRows": 3,
+    "successful": 3,
     "failed": 0,
     "created": 0,
-    "updated": 2,
+    "updated": 3,
     "successfulCases": [
       {
-        "id": "uuid",
-        "title": "Case Title",
+        "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+        "title": "Motor Vehicle Accident - Rear End Collision",
         "status": "under_evaluation",
-        "referenceNumber": "FIRM-0001",
+        "referenceNumber": "SMITH-0042",
+        "operation": "update"
+      },
+      {
+        "id": "c2d3e4f5-a6b7-8901-cdef-123456789013",
+        "title": "Slip and Fall - Grocery Store",
+        "status": "signed",
+        "referenceNumber": "SMITH-0043",
+        "operation": "update"
+      },
+      {
+        "id": "c3d4e5f6-a7b8-9012-cdef-123456789014",
+        "title": "Workplace Injury - Construction Site",
+        "status": "closed",
+        "referenceNumber": "SMITH-0044",
         "operation": "update"
       }
     ],
@@ -43,20 +209,119 @@ FIRM-0002,signed,,,P-55444,100000.00,33333.33,
   }
 }
 ```
+</ResponseExample>
 
-## Supported Fields
+<ResponseExample>
+```json Partial Success (200 OK)
+{
+  "success": true,
+  "data": {
+    "fileName": "bulk-update.csv",
+    "totalRows": 3,
+    "successful": 2,
+    "failed": 1,
+    "created": 0,
+    "updated": 2,
+    "successfulCases": [
+      {
+        "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+        "title": "Motor Vehicle Accident - Rear End Collision",
+        "status": "under_evaluation",
+        "referenceNumber": "SMITH-0042",
+        "operation": "update"
+      },
+      {
+        "id": "c2d3e4f5-a6b7-8901-cdef-123456789013",
+        "title": "Slip and Fall - Grocery Store",
+        "status": "signed",
+        "referenceNumber": "SMITH-0043",
+        "operation": "update"
+      }
+    ],
+    "failedRows": [
+      {
+        "row": 3,
+        "referenceNumber": "SMITH-9999",
+        "error": "Case not found: SMITH-9999"
+      }
+    ]
+  }
+}
+```
+</ResponseExample>
 
-- `Reference Number` (required) – identifies the case.
-- `Status`
-- `Salesforce Id` + `Salesforce Object` (must appear together)
-- `Case Status ID`
-- `Settlement Amount`
-- `Attorney Fees`
-- `Closure Reason`
+<ResponseExample>
+```json Error - Invalid CSV Format (400 Bad Request)
+{
+  "success": false,
+  "error": {
+    "code": "validation_error",
+    "message": "CSV file must include 'Reference Number' column",
+    "details": {
+      "requiredColumns": ["Reference Number"]
+    }
+  }
+}
+```
+</ResponseExample>
 
-## Notes
+<ResponseExample>
+```json Error - Unauthorized (403 Forbidden)
+{
+  "success": false,
+  "error": {
+    "code": "forbidden",
+    "message": "Bulk update requires Admin or Firm Admin role",
+    "details": {}
+  }
+}
+```
+</ResponseExample>
 
-- Only active referrals (non-terminal statuses) can be updated.
-- Firms can update only cases they own; admins bypass this restriction.
-- Validate CSV headers before uploading to avoid `validation_error`.
+## Example: Bulk Update with Error Handling
+
+```javascript Node.js
+async function bulkUpdateCases(csvFile, accessToken) {
+  const formData = new FormData();
+  formData.append('file', csvFile);
+
+  const response = await fetch('https://api.casexchange.com/api/v1/cases/bulk-update', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    },
+    body: formData
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'Bulk update failed');
+  }
+
+  const { data } = await response.json();
+  
+  if (data.failed > 0) {
+    console.warn(`${data.failed} rows failed:`);
+    data.failedRows.forEach(row => {
+      console.warn(`Row ${row.row} (${row.referenceNumber}): ${row.error}`);
+    });
+  }
+
+  return data;
+}
+
+const csvBlob = new Blob([csvContent], { type: 'text/csv' });
+const result = await bulkUpdateCases(csvBlob, accessToken);
+
+console.log(`Successfully updated ${result.updated} cases`);
+console.log(`Failed: ${result.failed} rows`);
+```
+
+<Warning>
+Only active referrals (non-terminal statuses) can be updated. Cases with status `closed` or `rejected` cannot be modified. Firms can update only cases they own; system admins bypass this restriction.
+</Warning>
+
+<Note>
+Validate CSV headers before uploading to avoid `validation_error`. The CSV must include at least the `Reference Number` column. All other columns are optional.
+</Note>
 

@@ -5,74 +5,335 @@ description: "Create a new case referral"
 
 <Endpoint method="POST" path="/api/v1/cases" />
 
+Create a new case referral. If `referentFirmId` is provided, the case is immediately sent to the receiving firm. Otherwise, it's created as a draft for later completion.
+
+## Authentication
+
+<ParamField header="Authorization" type="string" required>
+Bearer token obtained from login or OAuth flow. Format: `Bearer <token>`
+</ParamField>
+
 ## Request Body
 
-```json
-{
-  "title": "Personal Injury Case",
-  "description": "Case description",
-  "caseType": "personal_injury",
-  "jurisdiction": "CA",
-  "clientFirstName": "John",
-  "clientLastName": "Doe",
-  "clientEmail": "john.doe@example.com",
-  "clientPhone": "+1234567890",
-  "referentFirmId": "uuid-of-receiving-firm",
-  "notes": "Additional notes",
-  "salesforceRecordId": "a0X1234567890ABC",
-  "salesforceObjectType": "Case"
-}
+<ParamField body="title" type="string" required>
+Case title or summary. Maximum 200 characters.
+</ParamField>
+
+<ParamField body="caseType" type="string" required>
+Type of case. Use `/api/v1/firms/case-types` to get valid values. Examples: `personal_injury`, `medical_malpractice`, `product_liability`.
+</ParamField>
+
+<ParamField body="jurisdiction" type="string" required>
+Jurisdiction code (e.g., `CA`, `NY`, `TX`). Use `/api/v1/firms/jurisdictions/list` for valid codes.
+</ParamField>
+
+<ParamField body="clientFirstName" type="string" required>
+Client's first name.
+</ParamField>
+
+<ParamField body="clientLastName" type="string" required>
+Client's last name.
+</ParamField>
+
+<ParamField body="description" type="string">
+Detailed case description or summary. Maximum 5000 characters.
+</ParamField>
+
+<ParamField body="clientEmail" type="string">
+Client's email address. Must be valid email format if provided.
+</ParamField>
+
+<ParamField body="clientPhone" type="string">
+Client's phone number. Format: E.164 (e.g., `+14155551234`).
+</ParamField>
+
+<ParamField body="referentFirmId" type="string">
+UUID of the firm receiving the referral. If omitted, case is created as `draft`. Use `/api/v1/firms` to discover valid firm IDs.
+</ParamField>
+
+<ParamField body="notes" type="string">
+Internal notes or additional context. Maximum 2000 characters.
+</ParamField>
+
+<ParamField body="salesforceRecordId" type="string">
+Salesforce record ID for CRM integration. Must be provided together with `salesforceObjectType`.
+</ParamField>
+
+<ParamField body="salesforceObjectType" type="string">
+Salesforce object type (e.g., `Case`, `Opportunity`). Must be provided together with `salesforceRecordId`.
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X POST 'https://api.casexchange.com/api/v1/cases' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Motor Vehicle Accident - Rear End Collision",
+    "description": "Client was rear-ended at a stoplight on Highway 101. Sustained whiplash and lower back injuries. Seeking compensation for medical expenses and lost wages.",
+    "caseType": "personal_injury",
+    "jurisdiction": "CA",
+    "clientFirstName": "Maria",
+    "clientLastName": "Rodriguez",
+    "clientEmail": "maria.rodriguez@email.com",
+    "clientPhone": "+14155551234",
+    "referentFirmId": "f2b3c4d5-e6f7-8901-bcde-f12345678901",
+    "notes": "Client prefers email communication. Initial consultation completed on 2024-03-10."
+  }'
 ```
+</RequestExample>
 
-## Required Fields
+<RequestExample>
+```javascript Node.js
+const response = await fetch('https://api.casexchange.com/api/v1/cases', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    title: 'Motor Vehicle Accident - Rear End Collision',
+    description: 'Client was rear-ended at a stoplight on Highway 101. Sustained whiplash and lower back injuries.',
+    caseType: 'personal_injury',
+    jurisdiction: 'CA',
+    clientFirstName: 'Maria',
+    clientLastName: 'Rodriguez',
+    clientEmail: 'maria.rodriguez@email.com',
+    clientPhone: '+14155551234',
+    referentFirmId: 'f2b3c4d5-e6f7-8901-bcde-f12345678901',
+    notes: 'Client prefers email communication. Initial consultation completed on 2024-03-10.'
+  })
+});
 
-- `title`
-- `caseType`
-- `jurisdiction`
-- `clientFirstName`
-- `clientLastName`
-
-## Optional Fields
-
-- `description`
-- `clientEmail`
-- `clientPhone`
-- `referentFirmId` – if omitted, the case is created as `draft`
-- `notes`
-- `salesforceRecordId` (must include `salesforceObjectType`)
-- `salesforceObjectType` (must include `salesforceRecordId`)
+const data = await response.json();
+console.log('Case created:', data.data.referenceNumber);
+```
+</RequestExample>
 
 ## Response
 
-```json
+<ResponseField name="success" type="boolean" required>
+Indicates whether the case was created successfully.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+Created case object with all details.
+
+<Expandable title="Case properties">
+<ResponseField name="id" type="string" required>
+Unique identifier for the case. Format: UUID v4.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+Case title as provided in the request.
+</ResponseField>
+
+<ResponseField name="referenceNumber" type="string" required>
+Human-readable case reference number. Format: `FIRM-####`.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+Current case status. Values: `draft`, `sent`, `under_evaluation`, `investigating`, `signed`, `closed`, `rejected`.
+</ResponseField>
+
+<ResponseField name="caseType" type="string" required>
+Case type identifier.
+</ResponseField>
+
+<ResponseField name="jurisdiction" type="string" required>
+Jurisdiction code.
+</ResponseField>
+
+<ResponseField name="clientFirstName" type="string" required>
+Client's first name.
+</ResponseField>
+
+<ResponseField name="clientLastName" type="string" required>
+Client's last name.
+</ResponseField>
+
+<ResponseField name="referringFirm" type="object" required>
+Firm that created the referral.
+
+<Expandable title="Firm properties">
+<ResponseField name="id" type="string" required>
+Firm UUID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+Firm's legal name.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseField name="referentFirm" type="object">
+Receiving firm (only present if `referentFirmId` was provided).
+
+<Expandable title="Firm properties">
+<ResponseField name="id" type="string" required>
+Firm UUID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+Firm's legal name.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+ISO 8601 timestamp of when the case was created.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string" required>
+ISO 8601 timestamp of when the case was last updated.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Success - Case Sent (200 OK)
 {
   "success": true,
   "data": {
-    "id": "uuid",
-    "title": "Personal Injury Case",
-    "referenceNumber": "FIRM-0001",
+    "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+    "title": "Motor Vehicle Accident - Rear End Collision",
+    "referenceNumber": "SMITH-0042",
     "status": "sent",
     "caseType": "personal_injury",
     "jurisdiction": "CA",
-    "clientFirstName": "John",
-    "clientLastName": "Doe",
+    "clientFirstName": "Maria",
+    "clientLastName": "Rodriguez",
+    "clientEmail": "maria.rodriguez@email.com",
+    "clientPhone": "+14155551234",
     "referringFirm": {
-      "id": "uuid",
-      "name": "Your Firm Name"
+      "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+      "name": "Smith & Associates Law Firm"
     },
     "referentFirm": {
-      "id": "uuid",
-      "name": "Receiving Firm Name"
+      "id": "f2b3c4d5-e6f7-8901-bcde-f12345678901",
+      "name": "Johnson Legal Group"
     },
-    "createdAt": "2024-01-01T00:00:00Z",
-    "updatedAt": "2024-01-01T00:00:00Z"
+    "createdAt": "2024-03-15T10:30:00Z",
+    "updatedAt": "2024-03-15T10:30:00Z"
   }
 }
 ```
+</ResponseExample>
 
-## Notes
+<ResponseExample>
+```json Success - Draft Case (200 OK)
+{
+  "success": true,
+  "data": {
+    "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+    "title": "Motor Vehicle Accident - Rear End Collision",
+    "referenceNumber": "SMITH-0042",
+    "status": "draft",
+    "caseType": "personal_injury",
+    "jurisdiction": "CA",
+    "clientFirstName": "Maria",
+    "clientLastName": "Rodriguez",
+    "referringFirm": {
+      "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+      "name": "Smith & Associates Law Firm"
+    },
+    "createdAt": "2024-03-15T10:30:00Z",
+    "updatedAt": "2024-03-15T10:30:00Z"
+  }
+}
+```
+</ResponseExample>
 
-- Status defaults to `draft` unless `referentFirmId` is supplied.
-- Use firm directory endpoints to discover valid `referentFirmId` values.
-- Salesforce fields allow linking to external CRMs; both fields must be present together.
+<ResponseExample>
+```json Error - Invalid Case Type (400 Bad Request)
+{
+  "success": false,
+  "error": {
+    "code": "validation_error",
+    "message": "Invalid case type. Valid values: personal_injury, medical_malpractice, product_liability",
+    "details": {
+      "field": "caseType",
+      "value": "invalid_type"
+    }
+  }
+}
+```
+</ResponseExample>
+
+<ResponseExample>
+```json Error - Invalid Firm (404 Not Found)
+{
+  "success": false,
+  "error": {
+    "code": "resource_not_found",
+    "message": "Referent firm not found or not accessible",
+    "details": {
+      "field": "referentFirmId",
+      "value": "invalid-uuid"
+    }
+  }
+}
+```
+</ResponseExample>
+
+## Example: Create Draft Case and Send Later
+
+```javascript Node.js
+async function createDraftCase(caseData) {
+  const draftCase = {
+    ...caseData,
+    referentFirmId: undefined
+  };
+
+  const response = await fetch('https://api.casexchange.com/api/v1/cases', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(draftCase)
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'Failed to create case');
+  }
+
+  return await response.json();
+}
+
+async function sendCase(caseId, referentFirmId) {
+  const response = await fetch(`https://api.casexchange.com/api/v1/cases/${caseId}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ referentFirmId })
+  });
+
+  return await response.json();
+}
+
+const draft = await createDraftCase({
+  title: 'Motor Vehicle Accident - Rear End Collision',
+  caseType: 'personal_injury',
+  jurisdiction: 'CA',
+  clientFirstName: 'Maria',
+  clientLastName: 'Rodriguez'
+});
+
+console.log(`Draft created: ${draft.data.referenceNumber}`);
+
+const sent = await sendCase(draft.data.id, 'f2b3c4d5-e6f7-8901-bcde-f12345678901');
+console.log(`Case sent: ${sent.data.status}`);
+```
+
+<Note>
+Status defaults to `draft` unless `referentFirmId` is supplied. Use `/api/v1/firms` to discover valid `referentFirmId` values before creating cases.
+</Note>
+
+<Warning>
+Salesforce fields (`salesforceRecordId` and `salesforceObjectType`) must be provided together. If one is included without the other, the request will fail with a validation error.
+</Warning>
 

@@ -5,43 +5,222 @@ description: "Update an existing case by ID"
 
 <Endpoint method="PUT" path="/api/v1/cases/{id}" />
 
+Update an existing case. Editable fields depend on the case status and your firm's relationship to the case. All fields are optional; only provided fields will be updated.
+
+## Authentication
+
+<ParamField header="Authorization" type="string" required>
+Bearer token obtained from login or OAuth flow. Format: `Bearer <token>`
+</ParamField>
+
 ## Path Parameters
 
-- `id` – UUID of the case.
+<ParamField path="id" type="string" required>
+UUID of the case to update. Format: UUID v4.
+</ParamField>
 
 ## Request Body
 
-```json
-{
-  "title": "Updated Case Title",
-  "description": "Updated description",
-  "notes": "Updated notes",
-  "clientEmail": "newemail@example.com",
-  "clientPhone": "+1987654321"
-}
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="title" type="string">
+Case title or summary. Maximum 200 characters.
+</ParamField>
+
+<ParamField body="description" type="string">
+Detailed case description or summary. Maximum 5000 characters.
+</ParamField>
+
+<ParamField body="notes" type="string">
+Internal notes or additional context. Maximum 2000 characters.
+</ParamField>
+
+<ParamField body="clientEmail" type="string">
+Client's email address. Must be valid email format if provided.
+</ParamField>
+
+<ParamField body="clientPhone" type="string">
+Client's phone number. Format: E.164 (e.g., `+14155551234`).
+</ParamField>
+
+<ParamField body="referentFirmId" type="string">
+UUID of the firm receiving the referral. Use this to send a draft case or re-assign a case.
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X PUT 'https://api.casexchange.com/api/v1/cases/c1d2e3f4-a5b6-7890-cdef-123456789012' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Motor Vehicle Accident - Rear End Collision (Updated)",
+    "description": "Client was rear-ended at a stoplight on Highway 101. Sustained whiplash and lower back injuries. Updated: Client has completed physical therapy.",
+    "notes": "Client prefers email communication. Physical therapy completed on 2024-03-20.",
+    "clientEmail": "maria.rodriguez.new@email.com",
+    "clientPhone": "+14155551235"
+  }'
 ```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js
+const caseId = 'c1d2e3f4-a5b6-7890-cdef-123456789012';
+
+const response = await fetch(`https://api.casexchange.com/api/v1/cases/${caseId}`, {
+  method: 'PUT',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    title: 'Motor Vehicle Accident - Rear End Collision (Updated)',
+    notes: 'Client has completed physical therapy. Updated on 2024-03-20.',
+    clientEmail: 'maria.rodriguez.new@email.com'
+  })
+});
+
+const data = await response.json();
+console.log('Case updated:', data.data.referenceNumber);
+```
+</RequestExample>
 
 ## Response
 
-```json
+<ResponseField name="success" type="boolean" required>
+Indicates whether the update succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+Updated case object with current values.
+
+<Expandable title="Case properties">
+<ResponseField name="id" type="string" required>
+Unique identifier for the case. Format: UUID v4.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+Case title (updated if provided).
+</ResponseField>
+
+<ResponseField name="referenceNumber" type="string" required>
+Human-readable case reference number. Format: `FIRM-####`.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+Current case status. May change if `referentFirmId` is provided.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string" required>
+ISO 8601 timestamp of when the case was last updated.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
   "data": {
-    "id": "uuid",
-    "title": "Updated Case Title",
+    "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+    "title": "Motor Vehicle Accident - Rear End Collision (Updated)",
+    "referenceNumber": "SMITH-0042",
     "status": "under_evaluation",
-    "updatedAt": "2024-01-01T12:00:00Z"
+    "description": "Client was rear-ended at a stoplight on Highway 101. Sustained whiplash and lower back injuries. Updated: Client has completed physical therapy.",
+    "notes": "Client prefers email communication. Physical therapy completed on 2024-03-20.",
+    "clientEmail": "maria.rodriguez.new@email.com",
+    "clientPhone": "+14155551235",
+    "updatedAt": "2024-03-20T16:45:00Z"
   }
 }
 ```
+</ResponseExample>
+
+<ResponseExample>
+```json Error - Case Not Found (404 Not Found)
+{
+  "success": false,
+  "error": {
+    "code": "resource_not_found",
+    "message": "Case not found or not accessible",
+    "details": {
+      "caseId": "c1d2e3f4-a5b6-7890-cdef-123456789012"
+    }
+  }
+}
+```
+</ResponseExample>
+
+<ResponseExample>
+```json Error - Forbidden (403 Forbidden)
+{
+  "success": false,
+  "error": {
+    "code": "forbidden",
+    "message": "You do not have permission to update this field",
+    "details": {
+      "field": "title",
+      "reason": "Case has been acknowledged by receiving firm"
+    }
+  }
+}
+```
+</ResponseExample>
 
 ## Permissions
 
-- Referring firm: full edit before acknowledgment; limited fields afterward.
-- Receiving firm: edit notes once acknowledged.
-- System admin: unrestricted.
+Edit permissions depend on your firm's relationship to the case and the case status:
 
-<Callout icon="shield" color="blue">
-Authorization derives from the JWT token. Ensure the user has access to the case’s firm context.
-</Callout>
+- **Referring firm**: Full edit before acknowledgment; limited fields (notes only) after acknowledgment.
+- **Receiving firm**: Can edit notes once case is acknowledged.
+- **System admin**: Unrestricted access to all fields.
+
+<Warning>
+Authorization derives from the JWT token. Ensure the user has access to the case's firm context. Attempting to update fields you don't have permission to modify will return a 403 Forbidden error.
+</Warning>
+
+## Example: Update Case with Error Handling
+
+```javascript Node.js
+async function updateCase(caseId, updates, accessToken) {
+  try {
+    const response = await fetch(`https://api.casexchange.com/api/v1/cases/${caseId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates)
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      
+      if (response.status === 404) {
+        throw new Error(`Case ${caseId} not found`);
+      } else if (response.status === 403) {
+        throw new Error(`Permission denied: ${error.error?.message}`);
+      } else {
+        throw new Error(error.error?.message || 'Failed to update case');
+      }
+    }
+
+    const { data } = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error updating case:', error.message);
+    throw error;
+  }
+}
+
+const updated = await updateCase(
+  'c1d2e3f4-a5b6-7890-cdef-123456789012',
+  {
+    notes: 'Client has completed physical therapy. Updated on 2024-03-20.',
+    clientEmail: 'maria.rodriguez.new@email.com'
+  },
+  accessToken
+);
+
+console.log(`Case ${updated.referenceNumber} updated at ${updated.updatedAt}`);
+```
 

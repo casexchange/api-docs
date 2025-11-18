@@ -3,42 +3,197 @@ title: "Login"
 description: "Exchange credentials for a JWT session"
 ---
 
-```http
-POST /api/v1/auth/login
-Content-Type: application/json
-```
+<Endpoint method="POST" path="/api/v1/auth/login" />
 
-## Request
+Authenticate with email and password to receive a JWT access token. The response includes user profile data and sets HttpOnly cookies for browser-based clients.
 
-```json
-{
-  "email": "user@example.com",
-  "password": "your-password"
-}
+## Request Body
+
+<ParamField body="email" type="string" required>
+User's email address. Must match an active account in the system.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+Account password. Minimum 8 characters, case-sensitive.
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X POST 'https://api.casexchange.com/api/v1/auth/login' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "sarah.chen@smithlaw.com",
+    "password": "SecurePass123!"
+  }'
 ```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js
+const response = await fetch('https://api.casexchange.com/api/v1/auth/login', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    email: 'sarah.chen@smithlaw.com',
+    password: 'SecurePass123!'
+  })
+});
+
+const data = await response.json();
+const accessToken = response.headers.get('Authorization')?.replace('Bearer ', '');
+```
+</RequestExample>
 
 ## Response
 
-```json
+<ResponseField name="success" type="boolean" required>
+Indicates whether the request succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+Contains the authenticated user profile.
+
+<Expandable title="User object">
+<ResponseField name="user" type="object" required>
+Authenticated user information.
+
+<Expandable title="User properties">
+<ResponseField name="id" type="string" required>
+Unique identifier for the user. Format: UUID v4.
+</ResponseField>
+
+<ResponseField name="email" type="string" required>
+User's email address.
+</ResponseField>
+
+<ResponseField name="firstName" type="string" required>
+User's first name.
+</ResponseField>
+
+<ResponseField name="lastName" type="string" required>
+User's last name.
+</ResponseField>
+
+<ResponseField name="role" type="string" required>
+User's role within the firm. Values: `admin`, `member`, `viewer`.
+</ResponseField>
+
+<ResponseField name="firmId" type="string" required>
+UUID of the firm the user belongs to.
+</ResponseField>
+
+<ResponseField name="isActive" type="boolean" required>
+Whether the user account is currently active.
+</ResponseField>
+</Expandable>
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
   "data": {
     "user": {
-      "id": "uuid",
-      "email": "user@example.com",
-      "firstName": "John",
-      "lastName": "Doe",
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "email": "sarah.chen@smithlaw.com",
+      "firstName": "Sarah",
+      "lastName": "Chen",
       "role": "member",
-      "firmId": "uuid",
+      "firmId": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
       "isActive": true
     }
   }
 }
 ```
+</ResponseExample>
 
-Notes:
+<ResponseExample>
+```json Error - Invalid Credentials (401 Unauthorized)
+{
+  "success": false,
+  "error": {
+    "code": "invalid_credentials",
+    "message": "Email or password is incorrect",
+    "details": {}
+  }
+}
+```
+</ResponseExample>
 
-- Response sets HttpOnly cookies (`auth_token`, `refresh_token_id`) for browsers.
-- Non-browser clients should capture the bearer token from headers/body.
-- Rate limiting applies per email and IP.
+<ResponseExample>
+```json Error - Rate Limited (429 Too Many Requests)
+{
+  "success": false,
+  "error": {
+    "code": "rate_limited_login",
+    "message": "Too many login attempts. Please try again in 15 minutes.",
+    "details": {
+      "retryAfter": 900
+    }
+  }
+}
+```
+</ResponseExample>
+
+## Authentication Token
+
+The response includes an `Authorization` header with a Bearer token:
+
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+<Note>
+For browser-based clients, the response also sets HttpOnly cookies (`auth_token`, `refresh_token_id`) that are automatically included in subsequent requests. Non-browser clients should capture and store the Bearer token from the `Authorization` header.
+</Note>
+
+<Warning>
+Rate limiting applies per email address and IP address. After 5 failed attempts within 15 minutes, the account is temporarily locked. Contact support if you're locked out.
+</Warning>
+
+## Example: Complete Authentication Flow
+
+```javascript Node.js
+async function authenticateUser(email, password) {
+  try {
+    const response = await fetch('https://api.casexchange.com/api/v1/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || 'Authentication failed');
+    }
+
+    const data = await response.json();
+    const authHeader = response.headers.get('Authorization');
+    const accessToken = authHeader?.replace('Bearer ', '');
+
+    return {
+      user: data.data.user,
+      accessToken,
+      cookies: response.headers.get('Set-Cookie')
+    };
+  } catch (error) {
+    console.error('Login error:', error.message);
+    throw error;
+  }
+}
+
+const { user, accessToken } = await authenticateUser(
+  'sarah.chen@smithlaw.com',
+  'SecurePass123!'
+);
+
+console.log(`Authenticated as ${user.firstName} ${user.lastName}`);
+console.log(`Firm ID: ${user.firmId}`);
+```
 

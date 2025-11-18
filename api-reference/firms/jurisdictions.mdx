@@ -5,20 +5,79 @@ description: "List supported jurisdictions"
 
 <Endpoint method="GET" path="/api/v1/firms/jurisdictions/list" />
 
-Response:
+Retrieve a simple list of supported jurisdiction codes. Use this endpoint for lightweight validation or simple dropdowns.
 
-```json
+## Authentication
+
+<ParamField header="Authorization" type="string" required>
+Bearer token obtained from login or OAuth flow. Format: `Bearer <token>`
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X GET 'https://api.casexchange.com/api/v1/firms/jurisdictions/list' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+```
+</RequestExample>
+
+<RequestExample>
+```javascript Node.js
+const response = await fetch('https://api.casexchange.com/api/v1/firms/jurisdictions/list', {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+
+const data = await response.json();
+console.log('Supported jurisdictions:', data.data);
+```
+</RequestExample>
+
+## Response
+
+<ResponseField name="success" type="boolean" required>
+Indicates whether the request succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="array" required>
+Array of jurisdiction codes as strings.
+</ResponseField>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
-  "data": ["CA", "NY", "TX", "FL", "IL"]
+  "data": [
+    "CA",
+    "NY",
+    "TX",
+    "FL",
+    "IL",
+    "PA",
+    "OH",
+    "GA",
+    "NC",
+    "MI"
+  ]
 }
 ```
+</ResponseExample>
 
-For detailed metadata use:
+## Detailed Endpoint
+
+For detailed jurisdiction metadata including friendly names and types, use:
 
 <Endpoint method="GET" path="/api/v1/firms/jurisdictions" />
 
-```json
+<RequestExample>
+```bash cURL
+curl -X GET 'https://api.casexchange.com/api/v1/firms/jurisdictions' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success (200 OK)
 {
   "success": true,
   "data": [
@@ -26,10 +85,79 @@ For detailed metadata use:
       "code": "CA",
       "name": "California",
       "type": "state"
+    },
+    {
+      "code": "NY",
+      "name": "New York",
+      "type": "state"
+    },
+    {
+      "code": "TX",
+      "name": "Texas",
+      "type": "state"
+    },
+    {
+      "code": "FL",
+      "name": "Florida",
+      "type": "state"
+    },
+    {
+      "code": "IL",
+      "name": "Illinois",
+      "type": "state"
     }
   ]
 }
 ```
+</ResponseExample>
 
-Use the list endpoint for lightweight validation and the detailed endpoint to power UI copy or filters with friendly names.
+<ResponseField name="data" type="array" required>
+Array of jurisdiction objects.
+
+<Expandable title="Jurisdiction properties">
+<ResponseField name="code" type="string" required>
+Jurisdiction code (e.g., `CA`, `NY`). Use this value when creating cases.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+Full jurisdiction name (e.g., `California`, `New York`).
+</ResponseField>
+
+<ResponseField name="type" type="string" required>
+Jurisdiction type. Common values: `state`, `federal`, `territory`.
+</ResponseField>
+</Expandable>
+</ResponseField>
+
+## Example: Validate Jurisdiction
+
+```javascript Node.js
+async function getJurisdictions(accessToken) {
+  const response = await fetch('https://api.casexchange.com/api/v1/firms/jurisdictions/list', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+
+  const { data } = await response.json();
+  return new Set(data);
+}
+
+async function validateJurisdiction(jurisdiction, accessToken) {
+  const jurisdictions = await getJurisdictions(accessToken);
+  
+  if (!jurisdictions.has(jurisdiction)) {
+    throw new Error(`Invalid jurisdiction: ${jurisdiction}. Valid codes: ${Array.from(jurisdictions).join(', ')}`);
+  }
+  
+  return true;
+}
+
+await validateJurisdiction('CA', accessToken);
+console.log('Jurisdiction is valid');
+```
+
+<Tip>
+Use the list endpoint (`/api/v1/firms/jurisdictions/list`) for lightweight validation and simple dropdowns. Use the detailed endpoint (`/api/v1/firms/jurisdictions`) to power UI copy or filters with friendly names.
+</Tip>
 
