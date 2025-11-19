@@ -1,81 +1,197 @@
 ---
-title: "OAuth 2.0"
-description: "Use the Authorization Code flow with CaseXchange"
+title: "OAuth 2.0 & OpenID Connect"
+description: "CaseXchange OAuth server implementation for authentication and authorization"
 ---
 
 ## Overview
 
-CaseXchange supports OAuth 2.0 Authorization Code flow with OpenID Connect extensions. Use this option when building third-party apps that need delegated access across firms.
+CaseXchange implements OAuth 2.0 with OpenID Connect (OIDC) extensions, acting as an **authorization server** to enable:
 
-- Discovery endpoint: `GET /.well-known/openid-configuration`
-- Authorization endpoint: `/api/v1/oauth/authorize`
-- Token endpoint: `/api/v1/oauth/token`
-- User info endpoint: `/api/v1/oauth/userinfo`
-- Revocation endpoint: `/api/v1/oauth/revoke`
+1. **Third-Party Authentication** - "Sign in with CaseXchange" for external applications
+2. **API Access Delegation** - Authorized API access for integrations (e.g., Salesforce, case management systems)
 
-## Discovery Document
+CaseXchange supports the Authorization Code flow with PKCE (Proof Key for Code Exchange) for enhanced security.
+
+## Discovery & Endpoints
+
+### OIDC Discovery Document
+
+CaseXchange exposes a standard OpenID Connect discovery endpoint for automatic configuration:
 
 ```
 GET /.well-known/openid-configuration
 ```
 
-Response highlights:
+**Response:**
 
 ```json
 {
-  "issuer": "https://api.casexchange.com/api/v1",
-  "authorization_endpoint": "https://api.casexchange.com/api/v1/oauth/authorize",
-  "token_endpoint": "https://api.casexchange.com/api/v1/oauth/token",
-  "userinfo_endpoint": "https://api.casexchange.com/api/v1/oauth/userinfo",
-  "revocation_endpoint": "https://api.casexchange.com/api/v1/oauth/revoke",
+  "issuer": "https://api.casexchange.com",
+  "authorization_endpoint": "https://api.casexchange.com/api/oauth/authorize",
+  "token_endpoint": "https://api.casexchange.com/api/oauth/token",
+  "userinfo_endpoint": "https://api.casexchange.com/api/oauth/userinfo",
+  "revocation_endpoint": "https://api.casexchange.com/api/oauth/revoke",
+  "jwks_uri": "https://api.casexchange.com/.well-known/jwks.json",
   "response_types_supported": ["code"],
   "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256", "plain"],
   "scopes_supported": [
     "openid",
     "email",
     "profile",
     "cases:read",
-    "cases:write"
+    "cases:write",
+    "user:read",
+    "firm:read"
+  ],
+  "token_endpoint_auth_methods_supported": [
+    "client_secret_post",
+    "client_secret_basic"
   ]
 }
 ```
 
-## Authorization Flow
+### Core Endpoints
 
-### 1. Authorization Request
+- **Discovery:** `GET /.well-known/openid-configuration`
+- **Authorization:** `GET /api/oauth/authorize`
+- **Token Exchange:** `POST /api/oauth/token`
+- **User Info:** `GET /api/oauth/userinfo`
+- **Token Revocation:** `POST /api/oauth/revoke`
+- **JWKS:** `GET /.well-known/jwks.json`
+
+## Registering an OAuth Client
+
+Before integrating with CaseXchange OAuth, you must register your application as an OAuth client.
+
+### Using the Admin API
+
+```bash
+curl -X POST https://api.casexchange.com/api/v1/admin/oauth-clients \
+  -H "x-admin-api-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Your Application Name",
+    "description": "Description of your integration",
+    "redirectUris": [
+      "https://yourapp.com/oauth/callback",
+      "https://yourapp.com/api/auth/callback/casexchange"
+    ],
+    "allowed_scopes": [
+      "openid",
+      "email",
+      "profile",
+      "cases:read",
+      "cases:write"
+    ]
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "clientId": "client_abc123...",
+    "clientSecret": "secret_xyz789..."
+  },
+  "message": "Client created successfully. Save the client secret - it will not be shown again."
+}
+```
+
+<Warning>
+Save both `clientId` and `clientSecret` immediately. The secret is only displayed once and cannot be retrieved later.
+</Warning>
+
+## Authorization Code Flow
+
+### Step 1: Authorization Request
 
 Redirect the user's browser to the authorization endpoint:
 
 ```
-GET /api/v1/oauth/authorize?client_id=<client_id>&redirect_uri=<redirect_uri>&response_type=code&scope=<scopes>&state=<state>&code_challenge=<challenge>&code_challenge_method=S256
+GET /api/oauth/authorize
+  ?response_type=code
+  &client_id=<client_id>
+  &redirect_uri=<redirect_uri>
+  &scope=<scopes>
+  &state=<state>
+  &code_challenge=<challenge>
+  &code_challenge_method=S256
 ```
 
 **Parameters:**
-- `client_id` (required) - Your OAuth client ID
-- `redirect_uri` (required) - Must match a registered redirect URI
+
 - `response_type` (required) - Must be `code`
-- `scope` (optional) - Space-separated list of scopes (e.g., `openid email cases:read cases:write`)
-- `state` (recommended) - CSRF protection token
-- `code_challenge` (optional) - PKCE code challenge (recommended for public clients)
-- `code_challenge_method` (optional) - `S256` or `plain` (required if `code_challenge` is provided)
+- `client_id` (required) - Your OAuth client ID
+- `redirect_uri` (required) - Must exactly match a registered redirect URI
+- `scope` (optional) - Space-separated list of scopes (e.g., `openid email profile cases:read`)
+- `state` (recommended) - Random string for CSRF protection
+- `code_challenge` (recommended) - PKCE code challenge using S256
+- `code_challenge_method` (optional) - `S256` or `plain` (required if `code_challenge` provided)
 
-The user will be redirected to a consent page. After approval, they'll be redirected back to your `redirect_uri` with an authorization code.
+**Example:**
 
-### 2. Token Exchange
+```javascript
+const state = generateRandomString();
+const codeVerifier = generateRandomString();
+const codeChallenge = base64UrlEncode(sha256(codeVerifier));
+
+const authUrl = `https://api.casexchange.com/api/oauth/authorize?` +
+  `response_type=code` +
+  `&client_id=${clientId}` +
+  `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+  `&scope=${encodeURIComponent('openid email profile cases:read')}` +
+  `&state=${state}` +
+  `&code_challenge=${codeChallenge}` +
+  `&code_challenge_method=S256`;
+
+// Redirect user to authUrl
+window.location.href = authUrl;
+```
+
+The user will be presented with a consent screen. After approval, they'll be redirected to your `redirect_uri` with an authorization code:
+
+```
+https://yourapp.com/oauth/callback?code=AUTH_CODE&state=STATE_VALUE
+```
+
+### Step 2: Token Exchange
 
 Exchange the authorization code for access and refresh tokens (server-to-server call):
 
-```json
-POST /api/v1/oauth/token
+**Using `client_secret_post` (form-urlencoded):**
+
+```http
+POST /api/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code
+&code=<authorization_code>
+&redirect_uri=<redirect_uri>
+&code_verifier=<code_verifier>
+&client_id=<client_id>
+&client_secret=<client_secret>
+```
+
+**Using `client_secret_basic` (HTTP Basic Auth):**
+
+```http
+POST /api/oauth/token
 Content-Type: application/x-www-form-urlencoded
 Authorization: Basic <base64(client_id:client_secret)>
 
-grant_type=authorization_code&code=<authorization_code>&redirect_uri=<redirect_uri>&code_verifier=<code_verifier>
+grant_type=authorization_code
+&code=<authorization_code>
+&redirect_uri=<redirect_uri>
+&code_verifier=<code_verifier>
 ```
 
 **Alternative JSON format:**
-```json
-POST /api/v1/oauth/token
+
+```http
+POST /api/oauth/token
 Content-Type: application/json
 Authorization: Basic <base64(client_id:client_secret)>
 
@@ -88,63 +204,98 @@ Authorization: Basic <base64(client_id:client_secret)>
 ```
 
 **Response:**
+
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "Bearer",
   "expires_in": 3600,
-  "refresh_token": "refresh_token_string",
-  "scope": "openid email cases:read cases:write",
-  "id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "refresh_token": "refresh_abc123...",
+  "scope": "openid email profile cases:read cases:write",
+  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
-- `access_token` - JWT access token (expires in 1 hour)
+**Token Fields:**
+
+- `access_token` - JWT access token for API calls (expires in 1 hour)
+- `token_type` - Always `Bearer`
+- `expires_in` - Access token lifetime in seconds (3600 = 1 hour)
 - `refresh_token` - Use to obtain new access tokens (expires in 30 days)
-- `expires_in` - Access token lifetime in seconds
+- `scope` - Granted scopes (may differ from requested)
 - `id_token` - OpenID Connect ID token (if `openid` scope requested)
 
-### 3. Refresh Tokens
+### Step 3: Using Access Tokens
+
+Include the access token in the Authorization header for API requests:
+
+```http
+GET /api/v1/cases
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**Access Token Structure (JWT):**
+
+```json
+{
+  "sub": "user-uuid",
+  "email": "user@lawfirm.com",
+  "name": "John Doe",
+  "role": "FIRM_ADMIN",
+  "firm_id": "firm-uuid",
+  "client_id": "client_abc123",
+  "scope": "openid email profile cases:read cases:write",
+  "iss": "https://api.casexchange.com",
+  "iat": 1234567890,
+  "exp": 1234571490
+}
+```
+
+### Step 4: Refresh Tokens
 
 When the access token expires, use the refresh token to obtain a new one:
 
-```json
-POST /api/v1/oauth/token
+```http
+POST /api/oauth/token
 Content-Type: application/x-www-form-urlencoded
-Authorization: Basic <base64(client_id:client_secret)>
 
-grant_type=refresh_token&refresh_token=<refresh_token>
+grant_type=refresh_token
+&refresh_token=<refresh_token>
+&client_id=<client_id>
+&client_secret=<client_secret>
 ```
 
 **Response:**
+
 ```json
 {
   "access_token": "new_access_token...",
   "token_type": "Bearer",
   "expires_in": 3600,
   "refresh_token": "new_refresh_token...",
-  "scope": "openid email cases:read cases:write",
-  "id_token": "new_id_token..."
+  "scope": "openid email profile cases:read cases:write"
 }
 ```
 
 <Note>
-Refresh tokens are rotated on each use. Always store the new refresh token returned in the response. The old refresh token becomes invalid immediately.
+**Refresh Token Rotation:** Refresh tokens are rotated on each use for security. Always store the new refresh token from the response. The old refresh token becomes invalid immediately.
 </Note>
 
-### 4. Revoke Tokens
+### Step 5: Revoke Tokens
 
 Revoke access or refresh tokens when they're compromised or no longer needed:
 
-```json
-POST /api/v1/oauth/revoke
+```http
+POST /api/oauth/revoke
 Content-Type: application/x-www-form-urlencoded
 Authorization: Basic <base64(client_id:client_secret)>
 
-token=<token_to_revoke>&token_type_hint=access_token
+token=<token_to_revoke>
+&token_type_hint=access_token
 ```
 
 **Parameters:**
+
 - `token` (required) - The access token or refresh token to revoke
 - `token_type_hint` (optional) - `access_token` or `refresh_token`
 
@@ -152,19 +303,636 @@ Returns `200 OK` on success. The token is immediately invalidated.
 
 ## Scopes
 
-- `openid` – Required for ID token and user identity.
-- `email`, `profile` – Access to identity attributes.
-- `cases:read` – Read referrals, firms, routing, etc.
-- `cases:write` – Create, update, re-refer cases.
+CaseXchange supports the following OAuth scopes:
+
+**Identity Scopes:**
+- `openid` - Required for OpenID Connect (ID token and user identity)
+- `email` - Access to user's email address
+- `profile` - Access to user's profile information (name, role)
+
+**API Scopes:**
+- `cases:read` - Read access to cases, referrals, firms, routing
+- `cases:write` - Create, update, and re-refer cases
+- `user:read` - Read user profile information
+- `firm:read` - Read firm information
 
 <Callout icon="shield" color="blue">
-Only request the minimum scopes your integration requires. Excess scopes may be denied during client approval.
+**Principle of Least Privilege:** Only request the minimum scopes your integration requires. Excessive scope requests may be denied during OAuth client approval or user consent.
 </Callout>
 
-## Best Practices
+## Use Case 1: Sign In with CaseXchange
 
-- Use PKCE where possible for public clients.
-- Store refresh tokens encrypted; rotate on schedule.
-- Validate `state` to prevent CSRF.
-- Handle `expires_in` to refresh tokens proactively.
+Enable users to authenticate to your application using their CaseXchange account.
 
+### Implementation with Auth.js / NextAuth
+
+**1. Configure Environment Variables:**
+
+```bash
+CASEXCHANGE_OAUTH_URL=https://api.casexchange.com
+CASEXCHANGE_CLIENT_ID=client_abc123...
+CASEXCHANGE_CLIENT_SECRET=secret_xyz789...
+```
+
+**2. Configure OAuth Provider:**
+
+```typescript
+// auth.config.ts
+import type { NextAuthConfig } from 'next-auth';
+
+export default {
+  providers: [
+    {
+      id: 'casexchange',
+      name: 'CaseXchange',
+      type: 'oidc',
+      issuer: process.env.CASEXCHANGE_OAUTH_URL,
+      clientId: process.env.CASEXCHANGE_CLIENT_ID,
+      clientSecret: process.env.CASEXCHANGE_CLIENT_SECRET,
+      authorization: {
+        params: {
+          scope: 'openid profile email'
+        }
+      },
+      checks: ['pkce', 'state'],
+      client: {
+        token_endpoint_auth_method: 'client_secret_post'
+      },
+      profile(profile) {
+        return {
+          id: profile.sub,
+          email: profile.email,
+          name: profile.name,
+          role: profile.role,
+          firmId: profile.firm_id,
+        }
+      }
+    }
+  ]
+} satisfies NextAuthConfig;
+```
+
+**3. Add Sign In Button:**
+
+```tsx
+import { signIn } from 'next-auth/react';
+
+export function SignInButton() {
+  return (
+    <button onClick={() => signIn('casexchange')}>
+      Sign in with CaseXchange
+    </button>
+  );
+}
+```
+
+### User Provisioning Flow
+
+When a user signs in with CaseXchange for the first time:
+
+1. **Authorization** - User is redirected to CaseXchange, authenticates, and grants consent
+2. **Token Exchange** - Your app exchanges authorization code for tokens
+3. **Profile Retrieval** - ID token contains user profile:
+   ```json
+   {
+     "sub": "user-uuid",
+     "email": "user@lawfirm.com",
+     "name": "John Doe",
+     "firm_id": "firm-uuid",
+     "firm_name": "Smith & Associates",
+     "role": "ATTORNEY"
+   }
+   ```
+4. **User Creation** - Your app creates a local user record linked to CaseXchange identity
+5. **Session Established** - User is logged in to your application
+
+## Use Case 2: Salesforce / Litify Integration
+
+Enable Salesforce to make authenticated API calls to CaseXchange on behalf of users.
+
+### Architecture
+
+**OAuth Flow:**
+```
+Admin → Authorize Integration → OAuth Flow → Store Tokens
+Salesforce → Check Expiry → Refresh if Needed → API Call
+```
+
+### Salesforce Implementation
+
+#### Step 1: Create Custom Setting for Token Storage
+
+Create a Hierarchy Custom Setting named `CaseXchange_OAuth_Config__c`:
+
+**Fields:**
+- `Client_Id__c` (Text, 255) - OAuth client ID
+- `Client_Secret__c` (Text, 255) - OAuth client secret
+- `Access_Token__c` (Text Area, 1000) - Current access token
+- `Refresh_Token__c` (Text Area, 1000) - Refresh token
+- `Token_Expires_At__c` (DateTime) - When access token expires
+- `Authorized_User_Email__c` (Text, 255) - Email of authorizing user
+- `OAuth_State__c` (Text, 255) - CSRF protection state
+
+<Note>
+Use Custom Settings (not Custom Metadata) because they can be updated via Apex, which is required for automatic token refresh.
+</Note>
+
+#### Step 2: Token Management in Apex
+
+**Get Access Token with Auto-Refresh:**
+
+```apex
+@TestVisible
+private static String getAccessToken() {
+    CaseXchange_OAuth_Config__c config = CaseXchange_OAuth_Config__c.getInstance();
+
+    if (config == null || String.isBlank(config.Access_Token__c)) {
+        throw new AuraHandledException(
+            'CaseXchange OAuth not configured. Please authorize the integration.'
+        );
+    }
+
+    // Check if token expires soon (5 min buffer)
+    if (config.Token_Expires_At__c != null &&
+        config.Token_Expires_At__c < DateTime.now().addMinutes(5)) {
+        refreshAccessToken(config);
+        config = CaseXchange_OAuth_Config__c.getInstance();
+    }
+
+    return config.Access_Token__c;
+}
+```
+
+**Refresh Token Logic:**
+
+```apex
+@TestVisible
+private static void refreshAccessToken(CaseXchange_OAuth_Config__c config) {
+    HttpRequest req = new HttpRequest();
+    req.setEndpoint('callout:CaseXchange_API/oauth/token');
+    req.setMethod('POST');
+    req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+    req.setTimeout(60000);
+
+    String body =
+        'grant_type=refresh_token' +
+        '&refresh_token=' + EncodingUtil.urlEncode(config.Refresh_Token__c, 'UTF-8') +
+        '&client_id=' + EncodingUtil.urlEncode(config.Client_Id__c, 'UTF-8') +
+        '&client_secret=' + EncodingUtil.urlEncode(config.Client_Secret__c, 'UTF-8');
+
+    req.setBody(body);
+
+    HttpResponse res = new Http().send(req);
+
+    if (res.getStatusCode() == 200) {
+        Map<String, Object> tokenResponse =
+            (Map<String, Object>)JSON.deserializeUntyped(res.getBody());
+
+        // Store new tokens
+        config.Access_Token__c = (String)tokenResponse.get('access_token');
+        config.Refresh_Token__c = (String)tokenResponse.get('refresh_token');
+        config.Token_Expires_At__c = DateTime.now().addSeconds(
+            (Integer)tokenResponse.get('expires_in')
+        );
+
+        upsert config;
+    } else {
+        System.debug(LoggingLevel.ERROR, 'Token refresh failed: ' + res.getBody());
+        throw new AuraHandledException(
+            'Failed to refresh access token. Please re-authorize the integration.'
+        );
+    }
+}
+```
+
+**Make Authenticated API Calls:**
+
+```apex
+private static HttpRequest createRequest(String method, String path) {
+    HttpRequest req = new HttpRequest();
+    req.setEndpoint('callout:CaseXchange_API' + path);
+    req.setMethod(method);
+    req.setHeader('Content-Type', 'application/json');
+    req.setHeader('Authorization', 'Bearer ' + getAccessToken());
+    return req;
+}
+```
+
+#### Step 3: OAuth Authorization Handler
+
+**Create `CaseXchangeOAuthHandler.cls`:**
+
+```apex
+public with sharing class CaseXchangeOAuthHandler {
+    private static final String AUTH_ENDPOINT =
+        'callout:CaseXchange_API/oauth/authorize';
+    private static final String TOKEN_ENDPOINT =
+        'callout:CaseXchange_API/oauth/token';
+    private static final String SCOPES =
+        'openid profile email cases:read cases:write';
+
+    @AuraEnabled
+    public static String getAuthorizationUrl() {
+        CaseXchange_OAuth_Config__c config =
+            CaseXchange_OAuth_Config__c.getInstance();
+
+        if (config == null || String.isBlank(config.Client_Id__c)) {
+            throw new AuraHandledException(
+                'OAuth client not configured in Custom Settings'
+            );
+        }
+
+        // Generate CSRF protection state
+        String state = generateState();
+        storeState(state);
+
+        String redirectUri = URL.getOrgDomainUrl().toExternalForm() +
+                            '/apex/CXOAuthCallback';
+
+        return AUTH_ENDPOINT +
+            '?response_type=code' +
+            '&client_id=' + EncodingUtil.urlEncode(config.Client_Id__c, 'UTF-8') +
+            '&redirect_uri=' + EncodingUtil.urlEncode(redirectUri, 'UTF-8') +
+            '&scope=' + EncodingUtil.urlEncode(SCOPES, 'UTF-8') +
+            '&state=' + EncodingUtil.urlEncode(state, 'UTF-8');
+    }
+
+    @AuraEnabled
+    public static String handleCallback(String code, String state, String error) {
+        if (String.isNotBlank(error)) {
+            throw new AuraHandledException('Authorization failed: ' + error);
+        }
+
+        if (String.isBlank(code) || String.isBlank(state)) {
+            throw new AuraHandledException('Missing authorization code or state');
+        }
+
+        if (!validateState(state)) {
+            throw new AuraHandledException('Invalid state. Possible CSRF attack.');
+        }
+
+        exchangeCodeForTokens(code);
+        return 'Authorization successful!';
+    }
+
+    private static void exchangeCodeForTokens(String code) {
+        CaseXchange_OAuth_Config__c config =
+            CaseXchange_OAuth_Config__c.getInstance();
+
+        HttpRequest req = new HttpRequest();
+        req.setEndpoint(TOKEN_ENDPOINT);
+        req.setMethod('POST');
+        req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+        req.setTimeout(60000);
+
+        String redirectUri = URL.getOrgDomainUrl().toExternalForm() +
+                            '/apex/CXOAuthCallback';
+
+        String body =
+            'grant_type=authorization_code' +
+            '&code=' + EncodingUtil.urlEncode(code, 'UTF-8') +
+            '&redirect_uri=' + EncodingUtil.urlEncode(redirectUri, 'UTF-8') +
+            '&client_id=' + EncodingUtil.urlEncode(config.Client_Id__c, 'UTF-8') +
+            '&client_secret=' + EncodingUtil.urlEncode(config.Client_Secret__c, 'UTF-8');
+
+        req.setBody(body);
+
+        HttpResponse res = new Http().send(req);
+
+        if (res.getStatusCode() == 200) {
+            Map<String, Object> tokenResponse =
+                (Map<String, Object>)JSON.deserializeUntyped(res.getBody());
+
+            config.Access_Token__c = (String)tokenResponse.get('access_token');
+            config.Refresh_Token__c = (String)tokenResponse.get('refresh_token');
+            config.Token_Expires_At__c = DateTime.now().addSeconds(
+                (Integer)tokenResponse.get('expires_in')
+            );
+            config.Authorized_User_Email__c = UserInfo.getUserEmail();
+
+            upsert config;
+        } else {
+            System.debug(LoggingLevel.ERROR, 'Token exchange failed: ' + res.getBody());
+            throw new AuraHandledException('Failed to exchange code for tokens');
+        }
+    }
+
+    private static String generateState() {
+        Blob randomBlob = Crypto.generateAesKey(128);
+        return EncodingUtil.base64Encode(randomBlob);
+    }
+
+    private static void storeState(String state) {
+        CaseXchange_OAuth_Config__c config =
+            CaseXchange_OAuth_Config__c.getInstance();
+        if (config == null) {
+            config = new CaseXchange_OAuth_Config__c();
+        }
+        config.OAuth_State__c = state;
+        upsert config;
+    }
+
+    private static Boolean validateState(String state) {
+        CaseXchange_OAuth_Config__c config =
+            CaseXchange_OAuth_Config__c.getInstance();
+        return config != null &&
+               String.isNotBlank(config.OAuth_State__c) &&
+               config.OAuth_State__c == state;
+    }
+}
+```
+
+#### Step 4: OAuth Callback Page
+
+**Create Visualforce Page `CXOAuthCallback.page`:**
+
+```xml
+<apex:page controller="CaseXchangeOAuthCallbackController"
+           action="{!handleCallback}">
+    <apex:slds />
+    <div class="slds-scope">
+        <div class="slds-align_absolute-center" style="height: 100vh;">
+            <apex:outputPanel rendered="{!success}">
+                <h1 class="slds-text-heading_large">
+                    Authorization Successful
+                </h1>
+                <p>CaseXchange integration is now connected. You can close this window.</p>
+            </apex:outputPanel>
+
+            <apex:outputPanel rendered="{!NOT(success)}">
+                <h1 class="slds-text-heading_large">
+                    Authorization Failed
+                </h1>
+                <p class="slds-text-color_error">{!errorMessage}</p>
+            </apex:outputPanel>
+        </div>
+    </div>
+</apex:page>
+```
+
+**Create Controller `CaseXchangeOAuthCallbackController.cls`:**
+
+```apex
+public class CaseXchangeOAuthCallbackController {
+    public Boolean success { get; set; }
+    public String errorMessage { get; set; }
+
+    public PageReference handleCallback() {
+        String code = ApexPages.currentPage().getParameters().get('code');
+        String state = ApexPages.currentPage().getParameters().get('state');
+        String error = ApexPages.currentPage().getParameters().get('error');
+
+        try {
+            CaseXchangeOAuthHandler.handleCallback(code, state, error);
+            success = true;
+        } catch (Exception e) {
+            success = false;
+            errorMessage = e.getMessage();
+            System.debug(LoggingLevel.ERROR, 'OAuth callback error: ' + e.getMessage());
+        }
+
+        return null; // Stay on current page
+    }
+}
+```
+
+#### Step 5: Register OAuth Client for Salesforce
+
+Use the CaseXchange Admin API to register your Salesforce org:
+
+```bash
+curl -X POST https://api.casexchange.com/api/v1/admin/oauth-clients \
+  -H "x-admin-api-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Salesforce Production",
+    "description": "OAuth client for Salesforce Production Org",
+    "redirectUris": [
+      "https://YOUR-ORG.my.salesforce.com/apex/CXOAuthCallback",
+      "https://YOUR-ORG.lightning.force.com/apex/CXOAuthCallback",
+      "https://YOUR-ORG.my.salesforce.com/apex/CX_OAuth_Callback",
+      "https://YOUR-ORG.lightning.force.com/apex/CX_OAuth_Callback"
+    ],
+    "allowed_scopes": [
+      "openid",
+      "profile",
+      "email",
+      "cases:read",
+      "cases:write"
+    ]
+  }'
+```
+
+Save the `clientId` and `clientSecret` in your `CaseXchange_OAuth_Config__c` Custom Setting.
+
+## Security Best Practices
+
+### PKCE (Proof Key for Code Exchange)
+
+- **Always use PKCE** for public clients (mobile apps, SPAs, native apps)
+- **Recommended for all clients** including confidential clients
+- **Method:** Use S256 (SHA-256) instead of plain
+- **Protection:** Prevents authorization code interception attacks
+
+**Implementation:**
+
+```javascript
+// Generate code verifier (random string)
+const codeVerifier = base64UrlEncode(crypto.randomBytes(32));
+
+// Generate code challenge
+const codeChallenge = base64UrlEncode(
+  crypto.createHash('sha256').update(codeVerifier).digest()
+);
+
+// Include in authorization request
+const authUrl = `${authEndpoint}?` +
+  `code_challenge=${codeChallenge}` +
+  `&code_challenge_method=S256` +
+  // ... other params
+
+// Include verifier in token exchange
+const tokenRequest = {
+  grant_type: 'authorization_code',
+  code: authorizationCode,
+  code_verifier: codeVerifier,
+  // ... other params
+};
+```
+
+### State Parameter
+
+- **Always include `state`** parameter in authorization requests
+- **Generate random value** for each authorization request
+- **Validate on callback** that state matches the stored value
+- **Purpose:** Prevents CSRF attacks
+
+### Token Storage
+
+- **Encrypt refresh tokens** at rest
+- **Never expose tokens** in client-side code or URLs
+- **Store securely** in backend systems only
+- **Rotate regularly** using the refresh token flow
+- **Revoke immediately** if compromised
+
+### Redirect URI Validation
+
+- **Exact match required** - No partial matching or wildcards
+- **Register all environments** separately (dev, staging, production)
+- **Use HTTPS** in production (HTTP only allowed for localhost)
+- **Validate strictly** on both authorization and token endpoints
+
+### Token Expiration Handling
+
+- **Proactively refresh** access tokens before expiration
+- **Use 5-minute buffer** to account for clock skew
+- **Handle 401 errors** by refreshing and retrying
+- **Implement exponential backoff** for retry logic
+
+**Example:**
+
+```javascript
+async function makeAuthenticatedRequest(url, options = {}) {
+  // Check if token expires soon (5 min buffer)
+  if (tokenExpiresAt < Date.now() + 5 * 60 * 1000) {
+    await refreshAccessToken();
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+
+  // Handle token expiration
+  if (response.status === 401) {
+    await refreshAccessToken();
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+  }
+
+  return response;
+}
+```
+
+## Troubleshooting
+
+### Error: "redirect_uri is not registered for this client"
+
+**Cause:** The redirect URI in your request doesn't exactly match a registered URI.
+
+**Solution:**
+- Check for exact match including protocol, domain, port, and path
+- Verify no trailing slashes or query parameters
+- Ensure URI is registered for the correct environment
+
+### Error: "invalid_grant - authorization code has expired"
+
+**Cause:** Authorization codes expire after 10 minutes.
+
+**Solution:**
+- Exchange authorization codes immediately after receiving them
+- Don't cache or reuse authorization codes
+- Implement proper error handling and user messaging
+
+### Error: "invalid_client"
+
+**Cause:** Client authentication failed (wrong credentials or method).
+
+**Solution:**
+- Verify `client_id` and `client_secret` are correct
+- Check `token_endpoint_auth_method` matches your implementation
+- For Salesforce: Use `client_secret_post` (form-urlencoded)
+- Ensure credentials are properly URL-encoded
+
+### Error: "Token refresh failed" in Salesforce
+
+**Cause:** Refresh token expired or invalidated.
+
+**Solution:**
+- Check if refresh token is older than 30 days
+- Verify no manual token revocation occurred
+- Re-authorize the integration to get new tokens
+- Implement user notifications for re-authorization needs
+
+### Error: "issuer claim mismatch"
+
+**Cause:** OIDC issuer in discovery document doesn't match configuration.
+
+**Solution:**
+- Verify `CASEXCHANGE_OAUTH_URL` exactly matches issuer in discovery
+- Check for trailing slashes (should not have one)
+- Ensure discovery endpoint is accessible: `curl ${ISSUER}/.well-known/openid-configuration`
+
+## Testing
+
+### Local Development Setup
+
+**1. Start CaseXchange Backend:**
+
+```bash
+cd /path/to/case-xchange/packages/backend
+npm run dev
+# Running on http://localhost:3001
+```
+
+**2. Use ngrok for Public URL (if needed for external apps):**
+
+```bash
+ngrok http 3001
+# Forwarding https://abc123.ngrok.io -> http://localhost:3001
+```
+
+**3. Register Test OAuth Client:**
+
+```bash
+curl -X POST http://localhost:3001/api/v1/admin/oauth-clients \
+  -H "x-admin-api-key: YOUR_DEV_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Local Development",
+    "redirectUris": ["http://localhost:3000/oauth/callback"],
+    "allowed_scopes": ["openid", "email", "profile", "cases:read"]
+  }'
+```
+
+### Testing Checklist
+
+- [ ] Authorization request redirects to login page
+- [ ] Consent screen displays requested scopes
+- [ ] Authorization code is returned to redirect URI
+- [ ] Token exchange succeeds and returns all expected tokens
+- [ ] Access token includes correct claims (sub, email, firm_id, etc.)
+- [ ] ID token validates and contains expected claims
+- [ ] API calls with access token succeed
+- [ ] Token refresh works and rotates refresh token
+- [ ] Expired tokens are handled gracefully
+- [ ] Token revocation invalidates tokens immediately
+- [ ] PKCE validation prevents code interception
+- [ ] State validation prevents CSRF attacks
+
+## Rate Limits
+
+OAuth endpoints have the following rate limits:
+
+- **Authorization endpoint:** 100 requests/minute per IP
+- **Token endpoint:** 60 requests/minute per client
+- **Userinfo endpoint:** 120 requests/minute per token
+- **Revocation endpoint:** 60 requests/minute per client
+
+Exceeding these limits returns `429 Too Many Requests` with a `Retry-After` header.
+
+## Support
+
+For OAuth integration support:
+
+- Review this documentation and linked examples
+- Check the [OIDC discovery endpoint](https://api.casexchange.com/.well-known/openid-configuration) for current configuration
+- Contact CaseXchange support with your OAuth client ID for assistance
