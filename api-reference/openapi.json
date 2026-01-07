@@ -1959,7 +1959,13 @@
             "format": "uuid"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Internal identifier for the case type"
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Human-readable name for display in UI (e.g., \"Personal Injury\", \"TCPA\")"
           },
           "description": {
             "type": "string",
