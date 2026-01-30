@@ -1508,6 +1508,11 @@
             "type": "string",
             "maxLength": 100,
             "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "nullable": true,
+            "description": "Source attribution for the receiving firm to indicate where the case originated from (e.g., ad campaigns, referral partners)."
           }
         },
         "description": "All fields are optional. Only provided fields will be updated. Field editability depends on case status and your firm's relationship to the case (referring vs receiving firm)."
@@ -1660,6 +1665,11 @@
             "nullable": true,
             "description": "The reason a case was moved to the 'closed' status."
           },
+          "source": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional field for the receiving firm to indicate where the case originated from (e.g., ad campaigns, referral partners, marketing channels)."
+          },
           "createdById": {
             "type": "string",
             "format": "uuid"
@@ -1733,6 +1743,11 @@
           "referentFirm": {
             "$ref": "#/components/schemas/FirmSummary",
             "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "nullable": true,
+            "description": "Source attribution set by the receiving firm."
           },
           "createdAt": {
             "type": "string",
