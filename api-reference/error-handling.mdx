@@ -1,0 +1,120 @@
+---
+title: "Error Handling"
+description: "Practical guidance for handling validation, auth, permission, and integration errors"
+---
+
+## Error handling strategy
+
+The OpenAPI schema documents endpoint-specific status codes. The fastest path to resilient clients is:
+
+1. Branch on HTTP status code.
+2. Parse the shared `ApiErrorResponse` envelope.
+3. Use `error.code` for logic and `error.message` for logs/UI.
+4. Retry only when the failure mode is transient.
+
+## Authentication and authorization errors
+
+### `401 Unauthorized`
+
+Common causes:
+
+- Missing `Authorization` header
+- Expired JWT access token
+- Invalid refresh session / expired refresh credentials
+- Invalid webhook signature (for integration webhook endpoints)
+
+Client handling:
+
+- Trigger refresh flow (`POST /auth/refresh-session`) when appropriate.
+- If refresh fails, require re-authentication.
+- Avoid infinite retry loops on repeated `401`s.
+
+### `403 Forbidden`
+
+Common causes:
+
+- Caller lacks role (`admin`, `firm_admin`, `member`)
+- Caller does not own the target case or firm
+- Action is not permitted for the resource state
+- Demo seed endpoints in production environments
+
+Client handling:
+
+- Surface a clear permission error to the user.
+- Do not retry automatically.
+- For admin-only actions, verify the authenticated user context with `GET /auth/me`.
+
+## Validation and state errors
+
+### `400 Bad Request`
+
+Common causes:
+
+- Missing required fields
+- Invalid enum values
+- Invalid UUIDs or malformed dates
+- Invalid case state transition (for example trying to re-refer a non-terminal referral)
+- Malformed multipart uploads or CSV files
+
+Client handling:
+
+- Inspect `error.details` and map field messages into form-level validation.
+- Keep raw request payloads in debug logs (without secrets) to speed up support.
+- Prefer client-side validation for enums and required fields, but still handle server validation.
+
+### `409 Conflict`
+
+Common causes:
+
+- Duplicate resources (email, firm name, etc.)
+- Existing active referral to the same target firm
+- Operations that require a non-conflicting system state
+
+Client handling:
+
+- Present a conflict-specific recovery path (use existing resource, change target, or refresh current state).
+- Refetch the resource before asking the user to retry.
+
+## Not found and upstream failures
+
+### `404 Not Found`
+
+Common causes:
+
+- Stale IDs cached in the client
+- Resource deleted or not visible to current caller
+- Environment mismatch (ID from QA used in production)
+
+Client handling:
+
+- Confirm the active environment and API base URL.
+- Refetch parent lists to refresh stale references.
+
+### `502 Bad Gateway` (integration sync endpoints)
+
+Common causes:
+
+- Upstream integration service unavailable
+- Provider timeout or transport failure
+- Temporary provider auth/config issue
+
+Client handling:
+
+- Retry with backoff for background jobs.
+- Avoid immediate tight-loop retries in interactive UI.
+- Capture request correlation IDs (if available in headers/logs) for support triage.
+
+## Logging recommendations
+
+- Log request method, path, status code, and a scrubbed request payload.
+- Log `error.code`, `error.message`, and `error.details`.
+- Never log raw passwords, tokens, or unmasked API keys.
+
+## Testing checklist
+
+- Expired token (`401`) path
+- Role restriction (`403`) path
+- Validation error (`400`) with field details
+- Not found (`404`) with stale UUID
+- Conflict (`409`) on duplicate/re-refer edge cases
+- Upstream failure (`502`) on sync endpoints

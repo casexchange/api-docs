@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "CaseXchange Public API",
-  "openapi": "api-reference/openapi.json",
+  "openapi": "api-reference/openapi.yml",
   "colors": {
     "primary": "#1E40AF",
     "light": "#60A5FA",
@@ -41,48 +41,20 @@
       },
       {
         "tab": "API reference",
-        "openapi": "api-reference/openapi.json",
         "groups": [
           {
-            "group": "Case Endpoints",
+            "group": "Overview",
             "pages": [
-              "POST /cases",
-              "GET /cases",
-              "GET /cases/{id}",
-              "PUT /cases/{id}",
-              "POST /cases/{id}/re-refer",
-              "POST /cases/bulk-update"
+              "api-reference/index",
+              "api-reference/examples",
+              "api-reference/response-format",
+              "api-reference/error-handling",
+              "api-reference/workflows"
             ]
           },
           {
-            "group": "Firm & Metadata",
-            "pages": [
-              "GET /firms",
-              "GET /firms/{id}",
-              "GET /firms/jurisdictions/list",
-              "GET /firms/jurisdictions",
-              "GET /firms/case-types",
-              "GET /firms/specialties/list",
-              "POST /routing/evaluate-api"
-            ]
-          },
-          {
-            "group": "Auth & Profile",
-            "pages": [
-              "POST /auth/login",
-              "POST /auth/refresh-session",
-              "GET /auth/me"
-            ]
-          },
-          {
-            "group": "OAuth",
-            "pages": [
-              "GET /.well-known/openid-configuration",
-              "GET /oauth/authorize",
-              "POST /oauth/token",
-              "POST /oauth/revoke",
-              "GET /oauth/userinfo"
-            ]
+            "group": "Endpoints",
+            "openapi": "api-reference/openapi.yml"
           }
         ]
       }
