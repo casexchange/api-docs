@@ -193,7 +193,7 @@
         ],
         "summary": "Refresh User Session",
         "operationId": "refreshSession",
-        "requestBody": false,
+        "description": "Refreshes the current user session.\nThis endpoint does not accept a JSON request body; the backend relies on HttpOnly refresh/session cookies.\n",
         "responses": {
           "200": {
             "description": "Session refreshed successfully",
@@ -416,7 +416,7 @@
             "bearerAuth": []
           }
         ],
-        "requestBody": false,
+        "description": "Logs out the current user session. This endpoint does not require a request body.",
         "responses": {
           "200": {
             "description": "Logout successful",
@@ -1052,33 +1052,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiResponseBase"
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "name": {
-                                "type": "string",
-                                "description": "System name (e.g., personal_injury)"
-                              },
-                              "displayName": {
-                                "type": "string",
-                                "nullable": true,
-                                "description": "Display name (e.g., Personal Injury)"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
+                  "$ref": "#/components/schemas/ApiResponse_NamedOptionArray"
                 }
               }
             }
@@ -4232,6 +4206,42 @@
             "example": null
           }
         }
+      },
+      "NamedOption": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "System name (e.g., personal_injury)",
+            "example": "personal_injury"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Display name for UI (e.g., Personal Injury). May be omitted when unavailable.",
+            "example": "Personal Injury"
+          }
+        }
+      },
+      "ApiResponse_NamedOptionArray": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiSuccessResponseBase"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NamedOption"
+                }
+              }
+            }
+          }
+        ]
       },
       "AddressData": {
         "type": "object",
