@@ -36,14 +36,9 @@
               "concepts/jurisdictions",
               "concepts/case-types"
             ]
-          }
-        ]
-      },
-      {
-        "tab": "API reference",
-        "groups": [
+          },
           {
-            "group": "Overview",
+            "group": "API Guides",
             "pages": [
               "api-reference/index",
               "api-reference/examples",
@@ -51,12 +46,12 @@
               "api-reference/error-handling",
               "api-reference/workflows"
             ]
-          },
-          {
-            "group": "Endpoints",
-            "openapi": "api-reference/openapi.yml"
           }
         ]
+      },
+      {
+        "tab": "API reference",
+        "openapi": "api-reference/openapi.yml"
       }
     ]
   },
