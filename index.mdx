@@ -19,7 +19,7 @@ CaseXchange connects law firms with the referrals, routing logic, and case data 
   <Card
     title="API Reference"
     icon="terminal"
-    href="/api-reference/cases/create"
+    href="/api-reference"
   >
     Explore every public endpoint with examples.
   </Card>
@@ -45,7 +45,7 @@ CaseXchange connects law firms with the referrals, routing logic, and case data 
   <Card
     title="Routing Intelligence"
     icon="diagram-project"
-    href="/api-reference/routing/evaluate"
+    href="/api-reference"
   >
     Evaluate routing rules to recommend the best firm automatically.
   </Card>
@@ -53,11 +53,11 @@ CaseXchange connects law firms with the referrals, routing logic, and case data 
 
 ## What's Inside
 
-- **Authentication** – Complete JWT and OAuth 2.0 flows with token refresh and rotation.
-- **Case APIs** – Create cases (`POST /cases`), update cases by ID (`PUT /cases/{id}`), re-refer cases (`POST /cases/{id}/re-refer`), and list cases with filtering.
-- **Directory APIs** – Get firms (`GET /firms`), jurisdictions (`GET /firms/jurisdictions`), and case types (`GET /firms/case-types`).
-- **Routing** – Evaluate routing rules (`POST /routing/evaluate-api`) to automate firm suggestions.
-- **Error Handling** – Consistent response schemas and rate-limit headers.
+- **Authentication** - JWT session login, refresh, profile, password reset, and invitation-completion endpoints.
+- **Case APIs** - Create, list, update, send, re-refer, manage status updates, and attach documents.
+- **Directory APIs** - Firm directory, specialties, jurisdictions list, and firm detail endpoints.
+- **Integrations & Routing** - Salesforce and Case Status integrations plus `POST /routing/evaluate-api`.
+- **Error Handling** - Consistent response envelopes with shared error schemas across endpoints.
 
 <Card
   title="Need help?"

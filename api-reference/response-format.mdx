@@ -1,0 +1,112 @@
+---
+title: "Response Format"
+description: "Response envelopes, pagination metadata, and schema conventions used across the API"
+---
+
+## Common response patterns
+
+The OpenAPI schema uses a consistent envelope style to reduce client-side branching.
+
+### Success envelope (single resource)
+
+Most endpoint responses are shaped like:
+
+```json
+{
+  "success": true,
+  "message": null,
+  "data": {}
+}
+```
+
+Examples in the schema include:
+
+- `ApiResponse_User`
+- `ApiResponse_Firm`
+- `ApiResponse_CaseDetail`
+- `ApiResponse_Document`
+- `ApiResponse_RoutingEvaluationResult`
+
+### Success envelope (list response)
+
+List endpoints add `pagination`:
+
+```json
+{
+  "success": true,
+  "data": [],
+  "pagination": {
+    "total": 124,
+    "page": 2,
+    "limit": 20,
+    "totalPages": 7
+  }
+}
+```
+
+Look for schemas named `ApiListResponse_*` in endpoint response sections.
+
+### Message-only responses
+
+Actions like logout or sync triggers may return a simple success message:
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully"
+}
+```
+
+These typically use `ApiSuccessMessage`.
+
+## Error envelope
+
+Errors typically use `ApiErrorResponse`:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "validation_error",
+    "message": "Request validation failed",
+    "details": [
+      {
+        "field": "email",
+        "message": "must be a valid email address"
+      }
+    ]
+  },
+  "message": null
+}
+```
+
+### Key fields
+
+- `error.code`: Stable machine-readable error category for client logic.
+- `error.message`: Human-readable explanation.
+- `error.details`: Optional array of field-level validation or contextual details.
+- `message`: Optional top-level message used by some handlers.
+
+## Status code expectations
+
+### Common success codes
+
+- `200 OK` for reads, updates, and operational actions.
+- `201 Created` for resource creation (`POST /cases`, re-referrals, etc.).
+- `302 Found` for redirect-based integration flows (for example Salesforce OAuth start/callback).
+
+### Common error codes
+
+- `400 Bad Request` for invalid input, invalid state transitions, or malformed files.
+- `401 Unauthorized` for missing/expired credentials or invalid signatures.
+- `403 Forbidden` for role/ownership restrictions or environment restrictions.
+- `404 Not Found` when a referenced resource ID does not exist.
+- `409 Conflict` when a duplicate or conflicting state already exists.
+- `502 Bad Gateway` on some integration sync operations when an upstream service fails.
+
+## Implementation tips
+
+- Parse `error.code` before matching on `error.message`.
+- Treat `error.details` as optional.
+- Handle both `200` and `201` success variants depending on endpoint semantics.
+- Preserve unknown fields in responses if you proxy or log payloads, since schemas may evolve.
