@@ -4,10 +4,8 @@ info:
   version: 0.1.0
   description: API for managing case referrals, status updates, firms, users, and integrations for the CaseXchange platform.
 servers:
-  - url: https://api.casexchange.com/api/v1
-    description: Production API Base Path
-  - url: /api/v1
-    description: Relative API Base Path (for proxied docs/local environments)
+  - url: /api/v1 # Use relative path for easier hosting proxying
+    description: API Base Path
 tags:
   - name: Health
     description: API Health Check
@@ -35,7 +33,24 @@ tags:
     description: Routing rules management and evaluation
   - name: Demo Seed
     description: Demo data seeding and cleanup (non-production only)
+  - name: Vendor API
+    description: External vendor API for lead management. Authenticated via X-API-Key header. Only available to vendors with API keys.
+  - name: Leads
+    description: Lead management for firms with Lead Xchange access
+  - name: Case Rating
+    description: Case rating and classification via external AI service
+  - name: Messaging
+    description: In-app firm-to-firm messaging on cases — partner messages and status-update requests. Accessible via JWT or firm API key.
+  - name: Admin
+    description: Internal admin operations; examples/playground should be hidden in generated docs.
 
+  # Access Tier Tags
+  - name: Public
+    description: Endpoint accessible without authentication.
+  - name: Paid
+    description: Endpoint accessible to authenticated paid/API-key integrations.
+  - name: Private
+    description: Endpoint not intended for API-key access.
 # Security Scheme Definition
 security:
   - bearerAuth: [ ]
@@ -43,7 +58,9 @@ security:
 paths:
   /health:
     get:
-      tags: [ Health ]
+      tags: [ Health, Public ]
+      x-access-tier: public
+      security: []
       summary: Check API Health Status
       operationId: getHealthStatus
       responses:
@@ -70,24 +87,17 @@ paths:
   # --- Auth Paths ---
   /auth/login:
     post:
-      tags: [ Auth ]
+      tags: [ Auth, Public ]
+      x-access-tier: public
+      security: []
       summary: Login User
       operationId: loginUser
-      description: |
-        Authenticates a user with email and password and returns an access token and user profile.
-        Browser clients may also receive refresh/session cookies depending on backend configuration.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/LoginRequest'
-            examples:
-              standard_login:
-                summary: Standard JWT login
-                value:
-                  email: integration-user@example.com
-                  password: REPLACE_ME
       responses:
         '200':
           description: Login successful
@@ -95,23 +105,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponse_LoginResponse'
-              examples:
-                success:
-                  summary: Login success response
-                  value:
-                    success: true
-                    data:
-                      user:
-                        id: 9f1c1f5d-8f0a-4ae0-91f7-7f0f1d71fd10
-                        email: integration-user@example.com
-                        firstName: Pat
-                        lastName: Lee
-                        role: member
-                        firmId: 8b6fd7f7-0ef6-4a5f-99f8-76b5b78ec5f1
-                        isActive: true
-                      accessToken: eyJ...
-                      refreshToken: rtk_...
-                    message: null
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -121,12 +114,12 @@ paths:
 
   /auth/refresh-session:
     post:
-      tags: [ Auth ]
+      tags: [ Auth, Public ]
+      x-access-tier: public
+      security: []
       summary: Refresh User Session
       operationId: refreshSession
-      description: |
-        Refreshes the current user session.
-        This endpoint does not accept a JSON request body; the backend relies on HttpOnly refresh/session cookies.
+      description: Backend relies on HttpOnly refresh_token_id cookie; no request body expected.
       responses:
         '200':
           description: Session refreshed successfully
@@ -143,7 +136,9 @@ paths:
 
   /auth/forgot-password:
     post:
-      tags: [ Auth ]
+      tags: [ Auth, Public ]
+      x-access-tier: public
+      security: []
       summary: Request Password Reset
       operationId: forgotPassword
       requestBody:
@@ -164,7 +159,9 @@ paths:
 
   /auth/reset-password:
     post:
-      tags: [ Auth ]
+      tags: [ Auth, Public ]
+      x-access-tier: public
+      security: []
       summary: Reset Password using Token
       operationId: resetPassword
       requestBody:
@@ -187,7 +184,9 @@ paths:
 
   /auth/complete-invitation: # <<< NEW ENDPOINT
     post:
-      tags: [ Auth ]
+      tags: [ Auth, Public ]
+      x-access-tier: public
+      security: []
       summary: Complete Account Invitation and Set Password
       operationId: completeInvitation
       description: Allows a new user to set their password and activate their account using a valid invitation token.
@@ -212,12 +211,12 @@ paths:
 
   /auth/me:
     get:
-      tags: [ Auth ]
-      summary: Get Current User Profile
-      operationId: getCurrentUser
-      description: Returns the authenticated user's profile and firm context for role/permission checks.
+      tags: [ Auth, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Get Current User Profile
+      operationId: getCurrentUser
       responses:
         '200':
           $ref: '#/components/responses/UserProfileResponse'
@@ -226,11 +225,12 @@ paths:
 
   /auth/change-password:
     post:
-      tags: [ Auth ]
-      summary: Change Authenticated User's Password
-      operationId: changePassword
+      tags: [ Auth, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Change Authenticated User's Password
+      operationId: changePassword
       requestBody:
         required: true
         content:
@@ -259,12 +259,12 @@ paths:
 
   /auth/logout:
     post:
-      tags: [ Auth ]
+      tags: [ Auth, Public ]
+      x-access-tier: public
+      security: []
       summary: Logout User
       operationId: logoutUser
-      security:
-        - bearerAuth: [ ]
-      description: Logs out the current user session. This endpoint does not require a request body.
+      description: Logout does not require a request body.
       responses:
         '200':
           description: Logout successful
@@ -278,13 +278,15 @@ paths:
   # --- User Paths ---
   /users:
     get:
-      tags: [ Users ]
+      tags: [ Users, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: List Users
       operationId: listUsers
       description: |
         Requires Firm Admin (lists users for their own firm) or System Admin (can list users for all firms or filter by a specific firmId, or filter by isInternal status).
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
@@ -321,15 +323,16 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
-      tags: [ Users ]
+      tags: [ Users, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
       summary: Create User and Send Invitation
       operationId: createUser
       description: |
         Allows Firm Admins to create users (isActive=false) within their own firm. An invitation email is sent for password setup.
         Allows System Admins to create users for any specified customer firm or their own internal firm.
         Backend enforces firmId ownership for Firm Admins and role assignment rules. Password is NOT set here.
-      security:
-        - bearerAuth: [ ]
       requestBody:
         required: true
         content:
@@ -350,20 +353,22 @@ paths:
 
   /users/profile:
     get:
-      tags: [ Users ]
-      summary: Get Current User Profile
-      operationId: getCurrentUserProfile
+      tags: [ Users, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Get Current User Profile
+      operationId: getCurrentUserProfile
       responses:
         '200': { $ref: '#/components/responses/UserProfileResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     put:
-      tags: [ Users ]
-      summary: Update Current User Profile
-      operationId: updateCurrentUserProfile
+      tags: [ Users, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Update Current User Profile
+      operationId: updateCurrentUserProfile
       requestBody:
         required: true
         content:
@@ -377,25 +382,24 @@ paths:
   /users/{id}:
     parameters: [ { $ref: '#/components/parameters/UserId' } ]
     get:
-      tags: [ Users ]
-      summary: Get User by ID
-      operationId: getUserById
+      tags: [ Users, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Get User by ID
+      operationId: getUserById
       responses:
         '200': { $ref: '#/components/responses/UserProfileResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
-      tags: [ Users ]
+      tags: [ Users, Private ]
       summary: Update User by ID
       operationId: updateUserById
       description: |
         Requires Firm Admin (own firm users) or System Admin (any user).
         If an admin activates a user who hasn't set their password, a password reset/setup email will be triggered.
-      security:
-        - bearerAuth: [ ]
       requestBody:
         required: true
         content:
@@ -408,12 +412,13 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     delete: # Renamed to deactivateUserById in controller, but path is fine
-      tags: [ Users ]
+      tags: [ Users, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
       summary: Deactivate User by ID
       operationId: deactivateUserById
       description: Requires Firm Admin (own firm users) or System Admin (any user). Deactivates the user and clears active sessions.
-      security:
-        - bearerAuth: [ ]
       responses:
         '200':
           description: User deactivated successfully.
@@ -427,14 +432,15 @@ paths:
 
   /users/{id}/resend-invitation:
     post:
-      tags: [ Users ]
+      tags: [ Users, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
       summary: Resend Invitation Email
       operationId: resendInvitation
       description: |
         Generates a new invitation token for an existing inactive user and sends them a new invitation email. 
         This is only valid for users who have not yet set their password.
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/UserId'
       responses:
@@ -455,12 +461,18 @@ paths:
   # --- Firm Paths ---
   /firms/admin/firms:
     get:
-      tags: [ Admin - Firms ]
+      tags: [ Admin - Firms, Admin, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
+      x-internal: true
+      x-mint:
+        metadata:
+          playground: none
+          groups: [ admin ]
       summary: List All Firms (System Admin Only)
       operationId: adminListAllFirms
       description: "Retrieves a complete, paginated list of all firms in the system, including internal firms. This endpoint is restricted to System Administrators."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
@@ -475,12 +487,18 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
-      tags: [ Admin - Firms ]
+      tags: [ Admin - Firms, Admin, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
+      x-internal: true
+      x-mint:
+        metadata:
+          playground: none
+          groups: [ admin ]
       summary: Create a New Customer Firm (System Admin Only)
       operationId: adminCreateFirm
       description: "Allows a System Administrator to create a new customer firm. The 'isInternal' flag will be set to false automatically by the backend for firms created via this endpoint."
-      security:
-        - bearerAuth: [ ]
       requestBody:
         required: true
         content:
@@ -501,12 +519,14 @@ paths:
 
   /firms:
     get:
-      tags: [ Firms ]
+      tags: [ Firms, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: List Firms (Customer or Internal based on filter)
       operationId: listFirms
       description: "Retrieves a list of firms. System Admins can use the 'isInternal' query parameter to filter. If 'isInternal' is omitted, it defaults to returning only customer firms (isInternal=false)."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
@@ -530,12 +550,14 @@ paths:
 
   /firms/directory:
     get:
-      tags: [ Firms ]
+      tags: [ Firms, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Browse Firm Directory (Customer Firms Only)
       description: "Retrieves a paginated list of customer firms (isInternal=false by default on backend) for public browsing by authenticated users."
       operationId: getFirmDirectory
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/Page'
         - name: limit
@@ -564,12 +586,14 @@ paths:
 
   /firms/specialties/list:
     get:
-      tags: [ Firms ]
+      tags: [ Firms, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Get List of Specialties (Case Types) - System Names Only
       description: "Retrieves a list of available case type system names (e.g., personal_injury, tcpa). This endpoint returns only the system names for backwards compatibility with Salesforce and other external integrations. For display-friendly names, use /firms/specialties/detailed."
       operationId: getSpecialtiesList
-      security:
-        - bearerAuth: [ ]
       responses:
         '200':
           description: List of case type system names
@@ -580,27 +604,42 @@ paths:
 
   /firms/specialties/detailed:
     get:
-      tags: [ Firms ]
+      tags: [ Firms, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Get List of Specialties with Display Names
       description: "Retrieves case types with both system names and display names. Use this endpoint for UI dropdowns and display purposes where properly formatted names are needed (e.g., 'Personal Injury' instead of 'personal_injury', 'TCPA' instead of 'tcpa')."
       operationId: getSpecialtiesDetailed
-      security:
-        - bearerAuth: [ ]
       responses:
         '200':
           description: List of case types with display names
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ApiResponse_NamedOptionArray' }
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiSuccessResponseBase' }
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name: { type: string, description: "System name (e.g., personal_injury)" }
+                            displayName: { type: string, nullable: true, description: "Display name (e.g., Personal Injury)" }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /firms/jurisdictions/list:
     get:
-      tags: [ Firms ]
-      summary: Get List of Jurisdictions
-      operationId: getJurisdictionsList
+      tags: [ Firms, Paid ]
+      x-access-tier: paid
       security:
         - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
+      summary: Get List of Jurisdictions
+      operationId: getJurisdictionsList
       responses:
         '200':
           description: List of jurisdiction codes
@@ -612,12 +651,14 @@ paths:
   /firms/{id}:
     parameters: [ { $ref: '#/components/parameters/FirmId' } ]
     get:
-      tags: [ Firms ]
+      tags: [ Firms, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Get Firm by ID
       operationId: getFirmById
       description: "Retrieves details for a specific firm. Access might be restricted for internal firms based on user role."
-      security:
-        - bearerAuth: [ ]
       responses:
         '200':
           description: Firm details
@@ -628,12 +669,14 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
-      tags: [ Firms ]
+      tags: [ Firms, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Update Firm by ID
       operationId: updateFirmById
       description: "Requires Firm Admin (own firm) or System Admin. System Admins can also update 'referencePrefix'."
-      security:
-        - bearerAuth: [ ]
       requestBody:
         required: true
         content:
@@ -650,18 +693,104 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /firms/{id}/report-card:
+    parameters: [ { $ref: '#/components/parameters/FirmId' } ]
+    get:
+      tags: [ Firms ]
+      summary: Get Firm Report Card
+      operationId: getFirmReportCard
+      description: |
+        Returns performance metrics for a firm. Stats are scoped to the relationship
+        between the requesting firm and the target firm for regular users
+        (`isRelationshipSpecific: true`). System Admins and internal members receive
+        global (all-firm) stats (`isRelationshipSpecific: false`).
+
+        Accepts either a JWT session token **or** a firm API key via the
+        `X-API-Key` header (prefix `cx_live_`). Firm API keys can be generated
+        in the firm's Integration Settings.
+      security:
+        - bearerAuth: []
+        - firmApiKeyAuth: []
+      responses:
+        '200':
+          description: Firm report card stats
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccessResponseBase'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [ firmId, firmName, isRelationshipSpecific, stats ]
+                        properties:
+                          firmId:
+                            type: string
+                            format: uuid
+                          firmName:
+                            type: string
+                          isRelationshipSpecific:
+                            type: boolean
+                            description: |
+                              `true` = stats are scoped to the referral relationship
+                              between the requesting firm and this firm.
+                              `false` = global stats across all firms (admin/internal view).
+                          stats:
+                            type: object
+                            required:
+                              - avgAcknowledgementTimeMinutes
+                              - avgDecisionTimeDays
+                              - casesSentLast30Days
+                              - casesReceivedLast30Days
+                              - casesSignedLast30Days
+                            properties:
+                              avgAcknowledgementTimeMinutes:
+                                type: number
+                                format: float
+                                nullable: true
+                                description: Average minutes from latest SENT to first UNDER_EVALUATION acknowledgement event. Legacy RECEIVED events are treated as UNDER_EVALUATION. Null if no data.
+                              avgDecisionTimeDays:
+                                type: integer
+                                nullable: true
+                                description: Average days from referral creation to first decision event (signed or rejected). Null if no data.
+                              casesSentLast30Days:
+                                type: integer
+                                description: Cases sent to this firm in the last 30 days (from requesting firm, or all firms for admins).
+                              casesReceivedLast30Days:
+                                type: integer
+                                description: Inbound referrals from this firm in the last 30 days (based on SENT events).
+                              casesSignedLast30Days:
+                                type: integer
+                                description: Cases with a SIGNED status update in the last 30 days.
+                        example:
+                          firmId: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                          firmName: "Smith & Associates"
+                          isRelationshipSpecific: true
+                          stats:
+                            avgAcknowledgementTimeMinutes: 90.5
+                            avgDecisionTimeDays: 8
+                            casesSentLast30Days: 5
+                            casesReceivedLast30Days: 3
+                            casesSignedLast30Days: 2
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # --- Case Paths ---
   /cases/by-salesforce-id:
     get:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Find Case by Salesforce Record ID
       operationId: getCaseBySalesforceId
       description: |
         Checks if a CaseXchange case exists for a given Salesforce record ID and object type, scoped to the calling user's firm.
         Returns case info regardless of status (including rejected/withdrawn cases) to enable re-referral workflows.
         Used by Salesforce LWC to determine whether to show: create form, re-refer form, or blocked UI.
-      security:
-        - bearerAuth: [ ] # Requires auth (e.g., SF Service Account User)
       parameters:
         - name: sfRecordId
           in: query
@@ -732,14 +861,13 @@ paths:
 
   /cases:
     get:
-      tags: [ Cases ]
-      summary: List Cases
-      operationId: listCases
-      description: |
-        Returns a paginated case list scoped to the authenticated user and firm permissions.
-        Supports search, sorting, view filters, status filters, and date range filtering.
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
       security:
         - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
+      summary: List Cases
+      operationId: listCases
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
         - { name: limit, in: query, schema: { type: integer, default: 20 } }
@@ -761,93 +889,41 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiListResponse_CaseSummary' }
-              examples:
-                paginated_cases:
-                  summary: First page of filtered cases
-                  value:
-                    success: true
-                    data:
-                      - id: 3c9b9ef8-2c31-4c65-a2ed-627c4699af0d
-                        title: Client Injury Case
-                        clientName: John Doe
-                        referenceNumber: CX-ABC123
-                        status: sent
-                        caseType: personal_injury
-                        jurisdiction: CA
-                        createdAt: '2026-02-20T18:32:10.000Z'
-                        updatedAt: '2026-02-21T13:02:44.000Z'
-                    pagination:
-                      total: 124
-                      page: 1
-                      limit: 20
-                      totalPages: 7
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
-      tags: [ Cases ]
-      summary: Create Case Referral
-      operationId: createCase
-      description: |
-        Creates a new case referral record.
-        Depending on business rules and the provided `referentFirmId`, the case may be created as a draft or enter a referral workflow.
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
       security:
         - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
+      summary: Create Case Referral
+      operationId: createCase
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CreateCaseRequest' }
-            examples:
-              create_referral:
-                summary: Create a referral with an initial referent firm
-                value:
-                  title: Client Injury Case
-                  description: MVA referral requiring intake review
-                  caseType: personal_injury
-                  jurisdiction: CA
-                  clientFirstName: John
-                  clientLastName: Doe
-                  clientEmail: john.doe@example.com
-                  clientPhone: "+1-555-0100"
-                  referentFirmId: 11111111-1111-1111-1111-111111111111
-                  notes: Referred from landing page intake
       responses:
         '201':
           description: Case created
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiResponse_CaseDetail' }
-              examples:
-                created:
-                  summary: Case created successfully
-                  value:
-                    success: true
-                    data:
-                      id: 3c9b9ef8-2c31-4c65-a2ed-627c4699af0d
-                      title: Client Injury Case
-                      caseType: personal_injury
-                      jurisdiction: CA
-                      clientFirstName: John
-                      clientLastName: Doe
-                      status: draft
-                      referringFirmId: 8b6fd7f7-0ef6-4a5f-99f8-76b5b78ec5f1
-                      referentFirmId: 11111111-1111-1111-1111-111111111111
-                      referenceNumber: null
-                      createdAt: '2026-02-21T13:02:44.000Z'
-                      updatedAt: '2026-02-21T13:02:44.000Z'
-                    message: null
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: "Referent Firm not found", content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } } }
 
   /cases/bulk-import:
     post:
-      tags: [ Cases, CSV Import ]
+      tags: [ Cases, CSV Import, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Bulk Import Cases via CSV
       description: "Processes a CSV file to create cases. If a default referent firm is provided, valid cases are created with status 'sent', otherwise they are created as 'draft'."
       operationId: bulkImportCases
-      security:
-        - bearerAuth: [ ]
       requestBody:
         required: true
         content:
@@ -866,11 +942,13 @@ paths:
   /cases/{id}:
     parameters: [ { $ref: '#/components/parameters/CaseId' } ]
     get:
-      tags: [ Cases ]
-      summary: Get Case Details by ID
-      operationId: getCaseById
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
       security:
         - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
+      summary: Get Case Details by ID
+      operationId: getCaseById
       responses:
         '200':
           description: Case details
@@ -881,14 +959,16 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Update Case Details
       description: |
         Updates specific fields of a case. Not to be used for status changes.
         The backend enforces strict, field-level permissions. For example, a receiving firm cannot edit client PII, and a referring firm can only edit notes after a case has been acknowledged.
       operationId: updateCaseById
-      security:
-        - bearerAuth: [ ]
       requestBody:
         required: true
         content:
@@ -907,7 +987,11 @@ paths:
 
   /cases/{id}/re-refer:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Re-Refer Case to New Firm
       operationId: reReferCase
       description: |
@@ -926,8 +1010,6 @@ paths:
         3. Email notification sent to new receiving firm
         4. Salesforce Intake sync triggered if new firm has it enabled
         5. DearLegal sync triggered if new firm has it enabled
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       requestBody:
@@ -980,11 +1062,14 @@ paths:
 
   /cases/{id}/link-cs:
     post:
-      tags: [ Cases, Integrations ]
+      tags: [ Cases, Integrations, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Link Case to Case Status
       description: "Allows a referent firm to link this case to an external case in their Case Status system by providing their system's ID. This enables automatic status synchronization."
       operationId: linkCaseToCaseStatus
-      security: [ { bearerAuth: [ ] } ]
       parameters: [ { $ref: '#/components/parameters/CaseId' } ]
       requestBody:
         required: true
@@ -1000,12 +1085,14 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
-      tags: [ Cases, Integrations ]
+      tags: [ Cases, Integrations, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Unlink Case from Case Status
       operationId: unlinkCaseFromCaseStatus
       description: "Removes the link between a CaseXchange case and its corresponding entry in the Case Status platform. This stops all future automatic and manual synchronization for the case until it is linked again."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       responses:
@@ -1020,12 +1107,14 @@ paths:
 
   /cases/{id}/sync-cs:
     post:
-      tags: [ Cases, Integrations ]
+      tags: [ Cases, Integrations, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Manually Sync Case from Case Status
       operationId: syncCaseFromCaseStatus
       description: "Triggers an on-demand, immediate synchronization attempt for a single case that is already linked to the Case Status platform. This is useful for demos or when an immediate status update is desired."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       responses:
@@ -1054,12 +1143,14 @@ paths:
 
   /cases/{id}/send:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Send a Draft Case Referral
       operationId: sendDraftReferral
       description: Assigns a referent firm to a DRAFT case and transitions its status to SENT.
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       requestBody:
@@ -1081,12 +1172,14 @@ paths:
 
   /cases/{id}/acknowledge-receipt:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Acknowledge Receipt of a Referral
       operationId: acknowledgeReceipt
       description: "Referent Firm only: Acknowledges receipt of a 'sent' case, making client PII visible and transitioning the status to 'under_evaluation'."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       responses:
@@ -1102,12 +1195,14 @@ paths:
 
   /cases/{id}/begin-investigating:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Begin Investigation for a Case
       description: "Referent Firm only: Moves a case from 'under_evaluation' to 'investigating'."
       operationId: beginInvestigating
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       requestBody:
@@ -1128,12 +1223,14 @@ paths:
 
   /cases/{id}/start-litigation:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Start Litigation for a Case
       operationId: startLitigation
       description: "Referent Firm only: Moves a case from 'signed' to 'in_litigation'."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       requestBody:
@@ -1154,12 +1251,14 @@ paths:
 
   /cases/{id}/mark-won:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Mark a Case as Won
       operationId: markCaseAsWon
       description: "Referent Firm only: Marks a case as won and records financial details."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       requestBody:
@@ -1180,12 +1279,14 @@ paths:
 
   /cases/{id}/mark-lost:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Mark a Case as Lost
       operationId: markCaseAsLost
       description: "Referent Firm only: Marks a case outcome as lost."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       requestBody:
@@ -1206,12 +1307,14 @@ paths:
 
   /cases/{id}/close:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Close a Case
       operationId: closeCase
       description: "Referent Firm only: Moves a case to its terminal 'closed' state. Requires a reason."
-      security:
-        - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/CaseId'
       requestBody:
@@ -1232,12 +1335,14 @@ paths:
 
   /cases/{id}/reject:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Reject Case Referral
       operationId: rejectCase
       description: "Referent Firm only: Rejects a case that is under evaluation or investigation."
-      security:
-        - bearerAuth: [ ]
       parameters: [ { $ref: '#/components/parameters/CaseId' } ]
       requestBody:
         required: false
@@ -1257,12 +1362,14 @@ paths:
 
   /cases/{id}/withdraw:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Withdraw Case Referral
       operationId: withdrawCase
       description: "Referring Firm only: Withdraws a case before it is signed."
-      security:
-        - bearerAuth: [ ]
       parameters: [ { $ref: '#/components/parameters/CaseId' } ]
       requestBody:
         required: false
@@ -1282,12 +1389,14 @@ paths:
 
   /cases/{id}/mark-signed:
     post:
-      tags: [ Cases ]
+      tags: [ Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Mark Case as Signed
       description: "Referent Firm only: Moves a case from 'under_evaluation' or 'investigating' to 'signed'."
       operationId: markCaseSigned
-      security:
-        - bearerAuth: [ ]
       parameters: [ { $ref: '#/components/parameters/CaseId' } ]
       requestBody:
         required: false
@@ -1308,11 +1417,13 @@ paths:
   /cases/{id}/status-updates:
     parameters: [ { $ref: '#/components/parameters/CaseId' } ]
     get:
-      tags: [ Status Updates, Cases ]
-      summary: Get Case Status History
-      operationId: getCaseStatusUpdates
+      tags: [ Status Updates, Cases, Paid ]
+      x-access-tier: paid
       security:
         - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
+      summary: Get Case Status History
+      operationId: getCaseStatusUpdates
       responses:
         '200':
           description: List of status updates
@@ -1323,11 +1434,13 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
-      tags: [ Status Updates, Cases ]
-      summary: Create Manual Status Update
-      operationId: createManualStatusUpdate
+      tags: [ Status Updates, Cases, Paid ]
+      x-access-tier: paid
       security:
         - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
+      summary: Create Manual Status Update
+      operationId: createManualStatusUpdate
       requestBody:
         required: true
         content:
@@ -1344,14 +1457,121 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /cases/{id}/messages:
+    parameters: [ { $ref: '#/components/parameters/CaseId' } ]
+    post:
+      tags: [ Messaging, Cases, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: []
+        - firmApiKeyAuth: []
+      summary: Send a Partner Message
+      operationId: sendPartnerMessage
+      description: |
+        Sends a message to the partner firm on a case without changing the case status.
+        Optionally includes a requested status change that the partner can confirm via
+        a tokenized link emailed to them.
+
+        Accessible via JWT session or firm API key (`X-API-Key: cx_live_...`).
+
+        **Roles:** Any authenticated user with access to the case (`ADMIN`, `ACCOUNT_MANAGER`, `FIRM_ADMIN`, `MEMBER`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 5000
+                  description: The message body to send to the partner firm.
+                  example: "Can you provide an update on the investigation status?"
+                requestedStatus:
+                  $ref: '#/components/schemas/CaseStatus'
+                  description: |
+                    Optional. If provided, the partner receives a tokenized email link to
+                    confirm this status transition without logging in.
+      responses:
+        '201':
+          description: Message sent and recorded as a status update entry.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponse_StatusUpdate' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /cases/confirm-status-request/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string, minLength: 32 }
+        description: Secure token included in the status-request confirmation email.
+    get:
+      tags: [ Messaging, Cases, Public ]
+      x-access-tier: public
+      security: []
+      summary: Get Status Request by Token
+      operationId: getStatusRequestByToken
+      description: |
+        Retrieves the details of a pending status-update request using the secure token
+        from the confirmation email. No authentication required — token validates access.
+      responses:
+        '200':
+          description: Status request details.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      caseId: { type: string, format: uuid }
+                      requestedStatus: { $ref: '#/components/schemas/CaseStatus' }
+                      message: { type: string, nullable: true }
+                      requestedByFirmName: { type: string, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [ Messaging, Cases, Public ]
+      x-access-tier: public
+      security: []
+      summary: Confirm Status Request via Token
+      operationId: confirmStatusRequestViaToken
+      description: |
+        Confirms the status transition requested by the partner firm. Uses the secure
+        token from the email link — no authentication required.
+      responses:
+        '200':
+          description: Status change confirmed successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  message: { type: string, example: "Status change confirmed successfully." }
+                  data: { $ref: '#/components/schemas/StatusUpdateApiResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /cases/{id}/documents:
     parameters: [ { $ref: '#/components/parameters/CaseId' } ]
     get:
-      tags: [ Documents, Cases ]
-      summary: List Documents for a Case
-      operationId: listCaseDocuments
+      tags: [ Documents, Cases, Paid ]
+      x-access-tier: paid
       security:
         - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
+      summary: List Documents for a Case
+      operationId: listCaseDocuments
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
@@ -1365,11 +1585,13 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
-      tags: [ Documents, Cases ]
-      summary: Upload Document for a Case
-      operationId: uploadCaseDocument
+      tags: [ Documents, Cases, Paid ]
+      x-access-tier: paid
       security:
         - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
+      summary: Upload Document for a Case
+      operationId: uploadCaseDocument
       requestBody:
         required: true
         content:
@@ -1388,11 +1610,12 @@ paths:
 
   /documents:
     get:
-      tags: [ Documents ]
-      summary: List Accessible Documents
-      operationId: listDocuments
+      tags: [ Documents, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: List Accessible Documents
+      operationId: listDocuments
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
@@ -1411,11 +1634,12 @@ paths:
   /documents/{id}:
     parameters: [ { $ref: '#/components/parameters/DocumentId' } ]
     get:
-      tags: [ Documents ]
-      summary: Get Document Details
-      operationId: getDocumentById
+      tags: [ Documents, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Get Document Details
+      operationId: getDocumentById
       responses:
         '200':
           description: "Document details"
@@ -1426,12 +1650,13 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
-      tags: [ Documents ]
+      tags: [ Documents, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
       summary: Delete Document
       operationId: deleteDocumentById
       description: Uploader or Admin only.
-      security:
-        - bearerAuth: [ ]
       responses:
         '200':
           description: "Document deleted"
@@ -1445,11 +1670,12 @@ paths:
   /documents/{id}/download:
     parameters: [ { $ref: '#/components/parameters/DocumentId' } ]
     get:
-      tags: [ Documents ]
-      summary: Get Document Download URL
-      operationId: getDocumentDownloadUrl
+      tags: [ Documents, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Get Document Download URL
+      operationId: getDocumentDownloadUrl
       responses:
         '200':
           description: Secure download URL
@@ -1462,11 +1688,12 @@ paths:
 
   /csv/template:
     get:
-      tags: [ CSV Import ]
-      summary: Download CSV Import Template
-      operationId: downloadCsvTemplate
+      tags: [ CSV Import, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Download CSV Import Template
+      operationId: downloadCsvTemplate
       responses:
         '200':
           description: CSV template file
@@ -1477,11 +1704,12 @@ paths:
 
   /csv/validate:
     post:
-      tags: [ CSV Import ]
-      summary: Validate CSV File for Import
-      operationId: validateCsvImport
+      tags: [ CSV Import, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Validate CSV File for Import
+      operationId: validateCsvImport
       requestBody:
         required: true
         content:
@@ -1498,7 +1726,8 @@ paths:
 
   /integrations:
     get:
-      tags: [ Integrations ]
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       summary: Get Integration Settings for Current Firm
       operationId: getCurrentFirmIntegrationSettings
       security:
@@ -1511,7 +1740,8 @@ paths:
               schema: { $ref: '#/components/schemas/ApiResponse_IntegrationSettingsResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     put:
-      tags: [ Integrations ]
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       summary: Update Integration Settings for Current Firm
       operationId: updateCurrentFirmIntegrationSettings
       description: Requires Firm Admin role.
@@ -1539,7 +1769,8 @@ paths:
         required: true
         schema: { type: string, format: uuid }
     get:
-      tags: [ Integrations ]
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       summary: Get Integration Settings for Specific Firm (Admin)
       operationId: getSpecificFirmIntegrationSettings
       description: Requires System Admin role.
@@ -1555,7 +1786,8 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
-      tags: [ Integrations ]
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       summary: Update Integration Settings for Specific Firm (Admin)
       operationId: updateSpecificFirmIntegrationSettings
       description: Requires System Admin role.
@@ -1584,7 +1816,8 @@ paths:
         required: true
         schema: { type: string, format: uuid }
     get:
-      tags: [ Integrations ]
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       summary: Get Case Status Integration Status
       operationId: getCaseStatusIntegrationStatus
       security:
@@ -1606,7 +1839,9 @@ paths:
         required: true
         schema: { type: string, format: uuid }
     post:
-      tags: [ Integrations ]
+      tags: [ Integrations, Public ]
+      x-access-tier: public
+      security: []
       summary: Case Status Webhook Endpoint
       operationId: handleCaseStatusWebhook
       parameters:
@@ -1633,11 +1868,12 @@ paths:
 
   /integrations/salesforce/oauth/start:
     get:
-      tags: [ Integrations ]
-      summary: Start Salesforce OAuth Flow
-      operationId: startSalesforceOAuth
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       security:
         - bearerAuth: [ ]
+      summary: Start Salesforce OAuth Flow
+      operationId: startSalesforceOAuth
       responses:
         '302':
           description: "Redirects to Salesforce authorization URL."
@@ -1655,7 +1891,9 @@ paths:
 
   /integrations/salesforce/oauth/callback:
     get:
-      tags: [ Integrations ]
+      tags: [ Integrations, Public ]
+      x-access-tier: public
+      security: []
       summary: Salesforce OAuth Callback Handler
       operationId: handleSalesforceOAuthCallback
       parameters:
@@ -1682,7 +1920,8 @@ paths:
 
   /integrations/salesforce/sync:
     post:
-      tags: [ Integrations ]
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       summary: Trigger On-Demand Salesforce Status Sync
       operationId: triggerSalesforceSyncCurrentFirm
       description: "Runs the Salesforce status synchronization job immediately for the authenticated user's firm."
@@ -1706,7 +1945,8 @@ paths:
         schema: { type: string, format: uuid }
         description: "Target firm ID. Requires System Admin role unless firmId belongs to the requester."
     post:
-      tags: [ Integrations ]
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       summary: Trigger On-Demand Salesforce Sync for Specific Firm
       operationId: triggerSalesforceSyncForFirm
       description: "Runs the Salesforce status synchronization job immediately for the specified firm."
@@ -1730,7 +1970,8 @@ paths:
         required: true
         schema: { type: string, format: uuid }
     get:
-      tags: [ Integrations ]
+      tags: [ Integrations, Private ]
+      x-access-tier: private
       summary: Get Unmasked Case Status API Key (Admin)
       operationId: getUnmaskedCaseStatusKey
       description: "Requires Firm Admin or System Admin. Securely retrieves the raw, unmasked Case Status API key for the specified firm for temporary display."
@@ -1759,12 +2000,14 @@ paths:
 
   /analytics:
     get:
-      tags: [ Analytics ]
+      tags: [ Analytics, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Get Comprehensive Analytics Data
       description: "Retrieves role-centric analytics data for a firm. The response is split into two main sections: 'referrerAnalytics' (for cases the firm sent) and 'receiverAnalytics' (for cases the firm received). System Admins see platform-wide data unless a 'firmId' query parameter is provided."
       operationId: getAnalyticsData
-      security:
-        - bearerAuth: [ ]
       parameters:
         - name: startDate
           in: query
@@ -1791,12 +2034,14 @@ paths:
 
   /analytics/dashboard/summary:
     get:
-      tags: [ Analytics ]
+      tags: [ Analytics, Paid ]
+      x-access-tier: paid
+      security:
+        - bearerAuth: [ ]
+        - apiKeyAuth: [ ]
       summary: Get Dashboard Summary
       description: Retrieves key metrics and a list of recent activities for the main dashboard.
       operationId: getDashboardSummary
-      security:
-        - bearerAuth: [ ]
       responses:
         '200':
           description: Dashboard summary data.
@@ -1810,7 +2055,10 @@ paths:
 
   /routing/evaluate-api:
     post:
-      tags: [ Routing ]
+      tags: [ Routing, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
       summary: Evaluate Routing Rules for API Access
       description: |
         Evaluates routing rules based on Severity (tier), Case Type, and Jurisdiction.
@@ -1818,21 +2066,12 @@ paths:
         The routing evaluation is specific to the firm authorization that called this endpoint (determined from the JWT token).
         This endpoint functions like "Test Routing" but is designed specifically for API access.
       operationId: evaluateRoutingForApi
-      security:
-        - bearerAuth: [ ]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/EvaluateRoutingForApiRequest'
-            examples:
-              personal_injury_ca:
-                summary: Severity + case type + jurisdiction
-                value:
-                  severity: 1
-                  caseType: personal_injury
-                  jurisdiction: CA
       responses:
         '200':
           description: Routing evaluation result
@@ -1840,19 +2079,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponse_RoutingEvaluationResult'
-              examples:
-                matched_firm:
-                  summary: Routing matched a participating firm
-                  value:
-                    success: true
-                    data:
-                      firm:
-                        id: 11111111-1111-1111-1111-111111111111
-                        name: West Coast Injury LLP
-                        contactEmail: intake@wcinjury.example
-                        contactPhone: "+1-555-0199"
-                        isExternalContact: false
-                    message: null
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -1860,7 +2086,15 @@ paths:
   # --- Demo Seed Paths ---
   /admin/seed:
     get:
-      tags: [ Demo Seed ]
+      tags: [ Demo Seed, Admin, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
+      x-internal: true
+      x-mint:
+        metadata:
+          playground: none
+          groups: [ admin ]
       summary: List seed runs
       description: |
         Returns all seed runs ordered most-recent first.
@@ -1868,8 +2102,6 @@ paths:
         **Non-production only** — returns `403 Forbidden` when `NODE_ENV=production`.
         Requires the `ADMIN` role.
       operationId: listSeedRuns
-      security:
-        - bearerAuth: [ ]
       responses:
         '200':
           description: List of seed runs
@@ -1881,7 +2113,15 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
 
     post:
-      tags: [ Demo Seed ]
+      tags: [ Demo Seed, Admin, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
+      x-internal: true
+      x-mint:
+        metadata:
+          playground: none
+          groups: [ admin ]
       summary: Run a demo seed
       description: |
         Populates the database with realistic demo data across the requested modules
@@ -1895,24 +2135,12 @@ paths:
         the transaction rolls back (no partial data is committed) and the record is
         updated to `failed`.
       operationId: runDemoSeed
-      security:
-        - bearerAuth: [ ]
       requestBody:
         required: false
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SeedRunOptions'
-            examples:
-              defaults:
-                summary: All defaults
-                value: {}
-              casexOnly:
-                summary: CaseX only, clean first
-                value: { firmCount: 5, casesPerFirm: 8, modules: [ casex ], clean: true }
-              large:
-                summary: Large dataset
-                value: { firmCount: 30, casesPerFirm: 50, modules: [ casex, leadx, ads ] }
       responses:
         '200':
           description: Seed completed successfully
@@ -1925,7 +2153,15 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
 
     delete:
-      tags: [ Demo Seed ]
+      tags: [ Demo Seed, Admin, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
+      x-internal: true
+      x-mint:
+        metadata:
+          playground: none
+          groups: [ admin ]
       summary: Clean all demo data
       description: |
         Permanently deletes all firms, users, cases, referrals, leads, and ads
@@ -1938,8 +2174,6 @@ paths:
         **Non-production only** — returns `403 Forbidden` when `NODE_ENV=production`.
         Requires the `ADMIN` role.
       operationId: cleanAllSeedRuns
-      security:
-        - bearerAuth: [ ]
       responses:
         '200':
           description: All demo data removed
@@ -1952,7 +2186,15 @@ paths:
 
   /admin/seed/{id}:
     delete:
-      tags: [ Demo Seed ]
+      tags: [ Demo Seed, Admin, Private ]
+      x-access-tier: private
+      security:
+        - bearerAuth: [ ]
+      x-internal: true
+      x-mint:
+        metadata:
+          playground: none
+          groups: [ admin ]
       summary: Clean a specific seed run
       description: |
         Removes only the data created by the specified seed run, using the firm IDs
@@ -1962,8 +2204,6 @@ paths:
         **Non-production only** — returns `403 Forbidden` when `NODE_ENV=production`.
         Requires the `ADMIN` role.
       operationId: cleanSeedRun
-      security:
-        - bearerAuth: [ ]
       parameters:
         - name: id
           in: path
@@ -1983,15 +2223,151 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+# ==================== Vendor API Paths ====================
+  /vendor/leads:
+    post:
+      tags: [ Vendor API, Paid ]
+      x-access-tier: paid
+      security:
+        - apiKeyAuth: [ ]
+      summary: Submit a new lead
+      description: |
+        Submit a lead to the CaseXchange platform. If `destinationFirmId` is provided,
+        the lead is sent directly to that firm (requires an active vendor-firm relationship).
+        If omitted, the lead is posted to the Lead Marketplace where any firm can claim it.
+
+        **Note:** Posting leads is currently only available to vendors.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorLeadCreate'
+      responses:
+        '201':
+          description: Lead created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/VendorLeadResponse'
+        '401':
+          description: Invalid or missing API key
+        '403':
+          description: No active relationship with specified firm
+
+  /vendor/firms:
+    get:
+      tags: [ Vendor API, Paid ]
+      x-access-tier: paid
+      security:
+        - apiKeyAuth: [ ]
+      summary: Get firms available for lead submission
+      description: Returns firms that the vendor has an active relationship with.
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of firms
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VendorFirm'
+                  pagination:
+                    type: object
+
+  /vendor/jurisdictions:
+    get:
+      tags: [ Vendor API, Paid ]
+      x-access-tier: paid
+      security:
+        - apiKeyAuth: [ ]
+      summary: Get active jurisdictions
+      description: Returns all active jurisdictions available in the platform.
+      responses:
+        '200':
+          description: List of jurisdictions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                        name:
+                          type: string
+
+  /vendor/case-types:
+    get:
+      tags: [ Vendor API, Paid ]
+      x-access-tier: paid
+      security:
+        - apiKeyAuth: [ ]
+      summary: Get available case types
+      description: Returns all active, MVP-supported case types.
+      responses:
+        '200':
+          description: List of case types
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        displayName:
+                          type: string
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: |
-        Send a JWT access token in the `Authorization` header using the `Bearer` scheme.
-        Example: `Authorization: Bearer eyJ...`
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Vendor API key (prefix cx_vendor_)
+    firmApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Firm API key (prefix cx_live_). Generated in firm Integration Settings. Grants access equivalent to a Firm Admin of the key owner's firm.
 
   parameters:
     Page: { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
@@ -2005,104 +2381,12 @@ components:
     DocumentId: { name: id, in: path, required: true, schema: { type: string, format: uuid }, description: "Document UUID" }
 
   responses:
-    Unauthorized:
-      description: Authentication failed or token expired.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiErrorResponse' }
-          examples:
-            token_expired:
-              summary: Expired bearer token
-              value:
-                success: false
-                error:
-                  code: unauthorized
-                  message: Access token expired
-                  details: null
-                message: Re-authentication required
-    Forbidden:
-      description: Insufficient permissions or action not allowed.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiErrorResponse' }
-          examples:
-            insufficient_role:
-              summary: Role lacks permission
-              value:
-                success: false
-                error:
-                  code: forbidden
-                  message: You do not have permission to perform this action
-                  details: null
-                message: Requires firm_admin role
-    NotFound:
-      description: Resource not found.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiErrorResponse' }
-          examples:
-            missing_case:
-              summary: Referenced case does not exist
-              value:
-                success: false
-                error:
-                  code: not_found
-                  message: Case not found
-                  details: null
-                message: null
-    BadRequest:
-      description: Invalid request input or validation error.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiErrorResponse' }
-          examples:
-            validation_error:
-              summary: Invalid request body
-              value:
-                success: false
-                error:
-                  code: validation_error
-                  message: Request validation failed
-                  details:
-                    - field: referentFirmId
-                      message: must be a valid UUID
-                    - field: jurisdiction
-                      message: is required
-                message: null
-    Conflict:
-      description: Resource conflict (e.g., email or firm name exists).
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiErrorResponse' }
-          examples:
-            duplicate_resource:
-              summary: Duplicate record
-              value:
-                success: false
-                error:
-                  code: conflict
-                  message: A resource with these attributes already exists
-                  details: null
-                message: null
-    UserProfileResponse:
-      description: User details
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiResponse_User' }
-          examples:
-            current_user:
-              summary: Authenticated user profile
-              value:
-                success: true
-                data:
-                  id: 9f1c1f5d-8f0a-4ae0-91f7-7f0f1d71fd10
-                  email: integration-user@example.com
-                  firstName: Pat
-                  lastName: Lee
-                  role: member
-                  firmId: 8b6fd7f7-0ef6-4a5f-99f8-76b5b78ec5f1
-                  isActive: true
-                message: null
+    Unauthorized: { description: "Authentication failed or token expired.", content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } } }
+    Forbidden: { description: "Insufficient permissions or action not allowed.", content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } } }
+    NotFound: { description: "Resource not found.", content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } } }
+    BadRequest: { description: "Invalid request input or validation error.", content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } } }
+    Conflict: { description: "Resource conflict (e.g., email or firm name exists).", content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } } }
+    UserProfileResponse: { description: "User details", content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse_User' } } } }
 
   schemas:
     UserRole: { type: string, enum: [ admin, firm_admin, member ] }
@@ -2111,67 +2395,11 @@ components:
       enum: [ draft, sent, received, under_evaluation, investigating, signed, in_litigation, won, lost, rejected, withdrawn, closed ]
     StatusSource: { type: string, enum: [ manual, case_status, salesforce, system ] }
 
-    ApiErrorObject:
-      type: object
-      required: [ code, message ]
-      properties:
-        code: { type: string, example: validation_error }
-        message: { type: string, example: Request validation failed }
-        details:
-          type: array
-          items: { type: object }
-          nullable: true
-          example:
-            - field: email
-              message: must be a valid email address
-    ApiErrorResponse:
-      type: object
-      required: [ success, error ]
-      properties:
-        success: { type: boolean, example: false }
-        error: { $ref: '#/components/schemas/ApiErrorObject' }
-        message: { type: string, nullable: true, example: null }
-    PaginationInfo:
-      type: object
-      required: [ total, page, limit, totalPages ]
-      properties:
-        total: { type: integer, example: 124 }
-        page: { type: integer, example: 2 }
-        limit: { type: integer, example: 20 }
-        totalPages: { type: integer, example: 7 }
-    ApiSuccessMessage:
-      type: object
-      required: [ success, message ]
-      properties:
-        success: { type: boolean, example: true }
-        message: { type: string, example: Operation completed successfully }
-    ApiSuccessResponseBase:
-      type: object
-      required: [ success ]
-      properties:
-        success: { type: boolean, example: true }
-        message: { type: string, nullable: true, example: null }
-    NamedOption:
-      type: object
-      required: [ name ]
-      properties:
-        name:
-          type: string
-          description: System name (e.g., personal_injury)
-          example: personal_injury
-        displayName:
-          type: string
-          description: Display name for UI (e.g., Personal Injury). May be omitted when unavailable.
-          example: Personal Injury
-    ApiResponse_NamedOptionArray:
-      allOf:
-        - $ref: '#/components/schemas/ApiSuccessResponseBase'
-        - type: object
-          properties:
-            data:
-              type: array
-              items:
-                $ref: '#/components/schemas/NamedOption'
+    ApiErrorObject: { type: object, required: [ code, message ], properties: { code: { type: string }, message: { type: string }, details: { type: array, items: { type: object }, nullable: true } } }
+    ApiErrorResponse: { type: object, required: [ success, error ], properties: { success: { type: boolean, example: false }, error: { $ref: '#/components/schemas/ApiErrorObject' }, message: { type: string, nullable: true } } }
+    PaginationInfo: { type: object, required: [ total, page, limit, totalPages ], properties: { total: { type: integer }, page: { type: integer }, limit: { type: integer }, totalPages: { type: integer } } }
+    ApiSuccessMessage: { type: object, required: [ success, message ], properties: { success: { type: boolean, example: true }, message: { type: string } } }
+    ApiSuccessResponseBase: { type: object, required: [ success ], properties: { success: { type: boolean, example: true }, message: { type: string, nullable: true } } }
 
     AddressData: { type: object, properties: { street: { type: string, nullable: true }, city: { type: string, nullable: true }, state: { type: string, nullable: true }, zipCode: { type: string, nullable: true }, country: { type: string, nullable: true } }, nullable: true }
     BasicFirmInfo: { type: object, required: [ id, name ], properties: { id: { type: string, format: uuid }, name: { type: string } }, nullable: true }
@@ -2258,6 +2486,18 @@ components:
         documents: { type: array, items: { $ref: '#/components/schemas/DocumentApiResponse' }, nullable: true }
 
     CaseDetailApiResponse: { $ref: '#/components/schemas/_CaseDetailApiResponse_Def' }
+
+    ReferralDetail:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        caseId: { type: string, format: uuid }
+        referringFirmId: { type: string, format: uuid }
+        referentFirmId: { type: string, format: uuid }
+        sequenceNumber: { type: integer }
+        status: { type: string }
+        notes: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
 
     _LoginResponse_Def: { type: object, properties: { user: { $ref: '#/components/schemas/UserApiResponseData' }, accessToken: { type: string }, refreshToken: { type: string } } }
     LoginResponse: { $ref: '#/components/schemas/_LoginResponse_Def' }
@@ -2742,6 +2982,16 @@ components:
           type: boolean
           default: false
           description: If true, all previously seeded data is deleted before the new seed runs
+        dateFrom:
+          type: string
+          format: date
+          nullable: true
+          description: Optional lower bound (inclusive) for generated CaseX/LeadX timeline dates (YYYY-MM-DD)
+        dateTo:
+          type: string
+          format: date
+          nullable: true
+          description: Optional upper bound (inclusive) for generated CaseX/LeadX timeline dates (YYYY-MM-DD)
 
     SeedRunSummary:
       type: object
@@ -2829,3 +3079,99 @@ components:
             data:
               $ref: '#/components/schemas/CleanSeedResult'
     ApiResponse_CaseStatusIntegrationStatusData: { allOf: [ { $ref: '#/components/schemas/ApiSuccessResponseBase' }, { type: object, properties: { data: { type: object, properties: { isConfigured: { type: boolean }, lastUpdated: { type: string, format: date-time, nullable: true }, hasWebhook: { type: boolean }, hasStatusMapping: { type: boolean } } } } } ] }
+
+    # ==================== Vendor API Schemas ====================
+    VendorLeadCreate:
+      type: object
+      required:
+        - title
+        - clientFirstName
+        - clientLastName
+      properties:
+        title:
+          type: string
+          description: Lead title
+        clientFirstName:
+          type: string
+          description: Client first name
+        clientLastName:
+          type: string
+          description: Client last name
+        clientEmail:
+          type: string
+          format: email
+          nullable: true
+        clientPhone:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+          description: Jurisdiction code (e.g., 'CA', 'NY')
+        caseType:
+          type: string
+          nullable: true
+          description: Case type name
+        description:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        clientDateOfBirth:
+          type: string
+          format: date
+          nullable: true
+        incidentDate:
+          type: string
+          format: date
+          nullable: true
+        tier:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+        destinationFirmId:
+          type: string
+          format: uuid
+          nullable: true
+          description: If provided, sends lead directly to this firm. If omitted, posts to the marketplace.
+
+    VendorLeadResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        referenceNumber:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [sent, placed, handled, referred]
+        destinationFirmId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    VendorFirm:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        specialties:
+          type: array
+          items:
+            type: string
+        jurisdictions:
+          type: array
+          items:
+            type: string
+        contactEmail:
+          type: string
