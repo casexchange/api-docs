@@ -1,48 +1,70 @@
 ---
 title: "Error Handling"
-description: "Practical guidance for handling validation, auth, permission, and integration errors"
+description: "Practical guidance for handling validation, auth, permission, and rate-limit errors in the CaseXchange Public API"
 ---
 
 ## Error handling strategy
 
-The OpenAPI schema documents endpoint-specific status codes. The fastest path to resilient clients is:
+Every error response from the CaseXchange Public API uses a consistent envelope. The fastest path to resilient clients is:
 
 1. Branch on HTTP status code.
-2. Parse the shared `ApiErrorResponse` envelope.
+2. Parse the error envelope (see [Response Format](/api-reference/response-format) for the full specification).
 3. Use `error.code` for logic and `error.message` for logs/UI.
 4. Retry only when the failure mode is transient.
 
-## Authentication and authorization errors
+### Error envelope
+
+All error responses share this shape:
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Request validation failed"
+  },
+  "meta": {
+    "requestId": "req_f2dbe1d3f6ad4a7bb5b4c9f2",
+    "timestamp": "2026-03-31T12:00:00.000Z"
+  }
+}
+```
+
+- **`error.code`** -- a machine-readable string you can switch on.
+- **`error.message`** -- a human-readable explanation safe for logs or UI display.
+- **`meta.requestId`** -- include this when contacting support for faster triage.
+
+## Authentication errors
 
 ### `401 Unauthorized`
 
 Common causes:
 
-- Missing `Authorization` header
-- Expired JWT access token
-- Invalid refresh session / expired refresh credentials
-- Invalid webhook signature (for integration webhook endpoints)
+- Missing `X-API-Key` header
+- Invalid or revoked API key
 
 Client handling:
 
-- Trigger refresh flow (`POST /auth/refresh-session`) when appropriate.
-- If refresh fails, require re-authentication.
+- Verify the `X-API-Key` value matches the key issued in the CaseXchange dashboard.
+- Check whether the key has been revoked or rotated.
+- If the key is no longer valid, generate a new key from the dashboard.
 - Avoid infinite retry loops on repeated `401`s.
+
+## Authorization errors
 
 ### `403 Forbidden`
 
 Common causes:
 
-- Caller lacks role (`admin`, `firm_admin`, `member`)
-- Caller does not own the target case or firm
-- Action is not permitted for the resource state
-- Demo seed endpoints in production environments
+- API key tier is insufficient for the operation (e.g., a `read_only` key attempting a `POST`)
+- Caller's firm does not own the target resource
+- Action is not permitted for the current resource state
 
 Client handling:
 
-- Surface a clear permission error to the user.
+- Surface a clear permission error to the caller.
 - Do not retry automatically.
-- For admin-only actions, verify the authenticated user context with `GET /auth/me`.
+- Verify the firm context and key tier with `GET /firms/me`.
+- If a higher-tier key is required, generate one from the CaseXchange dashboard.
 
 ## Validation and state errors
 
@@ -53,12 +75,12 @@ Common causes:
 - Missing required fields
 - Invalid enum values
 - Invalid UUIDs or malformed dates
-- Invalid case state transition (for example trying to re-refer a non-terminal referral)
+- Invalid case state transition (for example, trying to re-refer a non-terminal referral)
 - Malformed multipart uploads or CSV files
 
 Client handling:
 
-- Inspect `error.details` and map field messages into form-level validation.
+- Inspect `error.code` and `error.message` to map field messages into form-level validation.
 - Keep raw request payloads in debug logs (without secrets) to speed up support.
 - Prefer client-side validation for enums and required fields, but still handle server validation.
 
@@ -75,14 +97,14 @@ Client handling:
 - Present a conflict-specific recovery path (use existing resource, change target, or refresh current state).
 - Refetch the resource before asking the user to retry.
 
-## Not found and upstream failures
+## Not found
 
 ### `404 Not Found`
 
 Common causes:
 
 - Stale IDs cached in the client
-- Resource deleted or not visible to current caller
+- Resource deleted or not visible to the calling firm
 - Environment mismatch (ID from QA used in production)
 
 Client handling:
@@ -90,31 +112,34 @@ Client handling:
 - Confirm the active environment and API base URL.
 - Refetch parent lists to refresh stale references.
 
-### `502 Bad Gateway` (integration sync endpoints)
+## Rate limiting
+
+### `429 Too Many Requests`
 
 Common causes:
 
-- Upstream integration service unavailable
-- Provider timeout or transport failure
-- Temporary provider auth/config issue
+- Rate limit exceeded for this API key
 
 Client handling:
 
-- Retry with backoff for background jobs.
-- Avoid immediate tight-loop retries in interactive UI.
-- Capture request correlation IDs (if available in headers/logs) for support triage.
+- Read the `X-RateLimit-Reset` header to determine when the limit resets.
+- Do **not** retry immediately -- wait until the reset window.
+- Implement exponential backoff with jitter for burst-retry scenarios.
+- If you consistently hit limits, consider batching requests or requesting a higher rate-limit tier.
 
 ## Logging recommendations
 
 - Log request method, path, status code, and a scrubbed request payload.
-- Log `error.code`, `error.message`, and `error.details`.
-- Never log raw passwords, tokens, or unmasked API keys.
+- Log `error.code` and `error.message`.
+- Log `meta.requestId` -- this is the fastest way to trace an issue with support.
+- Never log unmasked API keys or sensitive payload fields.
 
 ## Testing checklist
 
-- Expired token (`401`) path
-- Role restriction (`403`) path
+- Invalid API key (`401`) path
+- Insufficient key tier (`403`) path
+- Firm ownership restriction (`403`) path
 - Validation error (`400`) with field details
 - Not found (`404`) with stale UUID
 - Conflict (`409`) on duplicate/re-refer edge cases
-- Upstream failure (`502`) on sync endpoints
+- Rate limit (`429`) with backoff and retry

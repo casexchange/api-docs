@@ -3,17 +3,36 @@ title: "JWT Authentication"
 description: "Authenticate directly with CaseXchange using username/password plus refresh cookies"
 ---
 
+## Authentication Methods
+
+CaseXchange exposes two distinct API surfaces, each with its own authentication mechanism:
+
+| API | Auth method | Header | Use case |
+|-----|------------|--------|----------|
+| **Public API** (`/api/public/v1/...`) | API key | `X-API-Key: cxp_std_...` | Third-party integrations, data syncs, automations |
+| **Internal API** (`/api/v1/...`) | JWT Bearer token | `Authorization: Bearer <jwt>` | CaseXchange dashboard, API key management, OAuth client registration |
+
+This page documents the **Internal API JWT flow**. It is primarily used for:
+
+- The CaseXchange web dashboard
+- Creating and managing Public API keys via `POST /api/v1/public-api-keys`
+- OAuth client registration via `POST /api/v1/admin/oauth-clients`
+
+<Callout icon="key" color="blue">
+Most third-party integrations should use the **Public API** with API key authentication. See the [Quickstart](/quickstart) to get started. JWT authentication is only needed for CaseXchange dashboard access and API key management.
+</Callout>
+
 ## Overview
 
-JWT authentication is ideal for first-party web apps and server integrations that can safely store user credentials.
+JWT authentication is used by the CaseXchange web dashboard and by server integrations that need to manage API keys or OAuth clients.
 
 - `POST /api/v1/auth/login` exchanges credentials for an access token.
 - HttpOnly cookies (`auth_token`, `refresh_token_id`) are also set for browser clients.
 - Use `POST /api/v1/auth/refresh-session` to rotate short-lived tokens.
 
-<Callout icon="key" color="blue">
+<Warning>
 Access tokens expire quickly (15 minutes). Always implement refresh logic.
-</Callout>
+</Warning>
 
 ## Login Flow
 
@@ -34,7 +53,9 @@ Response:
 
 ```json
 {
-  "success": true,
+  "meta": {
+    "success": true
+  },
   "data": {
     "user": {
       "id": "uuid",
@@ -56,12 +77,12 @@ Response:
 ```
 
 <Note>
-The `accessToken` should be used in the `Authorization: Bearer <token>` header for subsequent API requests. The `refreshToken` can be used to obtain a new access token when it expires. HttpOnly cookies are also set for browser-based clients.
+The `accessToken` should be used in the `Authorization: Bearer <token>` header for subsequent Internal API requests. The `refreshToken` can be used to obtain a new access token when it expires. HttpOnly cookies are also set for browser-based clients.
 </Note>
 
 ## Using Tokens
 
-Include the JWT in every request:
+Include the JWT in every Internal API request:
 
 ```
 Authorization: Bearer <jwt>
@@ -91,8 +112,12 @@ Response:
 
 ```json
 {
-  "success": true,
-  "message": "Session refreshed successfully"
+  "meta": {
+    "success": true
+  },
+  "data": {
+    "message": "Session refreshed successfully"
+  }
 }
 ```
 
@@ -121,13 +146,64 @@ Use server-side storage for refresh tokens. Browser integrations should rely on 
 If refresh fails (token expired, revoked, or user inactive), the endpoint clears authentication cookies and returns a 401 error. Your application should redirect to login in this case.
 </Warning>
 
-## Error Codes
+## Creating Public API Keys via JWT
 
-All errors follow the standard error response format:
+After authenticating with JWT, you can programmatically create Public API keys. This is the same mechanism the CaseXchange dashboard uses under the hood.
+
+### Create a key
+
+```bash
+curl -X POST https://api.casexchange.com/api/v1/public-api-keys \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Key",
+    "tier": "STANDARD"
+  }'
+```
+
+Supported tiers: `READ_ONLY`, `STANDARD`, `FULL`. See the [Quickstart](/quickstart) for a breakdown of what each tier permits.
+
+Response:
 
 ```json
 {
-  "success": false,
+  "meta": {
+    "success": true
+  },
+  "data": {
+    "id": "uuid",
+    "name": "My Key",
+    "tier": "STANDARD",
+    "key": "cxp_std_live_abc123..."
+  }
+}
+```
+
+<Warning>
+The plaintext `key` value is only returned once at creation time. Store it securely -- you will not be able to retrieve it again.
+</Warning>
+
+### Switch to API key authentication
+
+Once you have a Public API key, use the `X-API-Key` header for all Public API calls:
+
+```bash
+curl https://api.casexchange.com/api/public/v1/firms/me \
+  -H "X-API-Key: cxp_std_live_abc123..."
+```
+
+From this point on, the JWT session is no longer needed for day-to-day integration work. Use the API key for all Public API endpoints.
+
+## Internal API Error Codes
+
+All Internal API errors follow the standard error response format:
+
+```json
+{
+  "meta": {
+    "success": false
+  },
   "error": {
     "code": "token_expired",
     "message": "Access token has expired",
@@ -138,15 +214,14 @@ All errors follow the standard error response format:
 
 Common authentication error codes:
 
-- `no_token` – Missing Authorization header
-- `token_expired` – Access token exceeded its TTL
-- `token_invalid` – Token signature or claims invalid
-- `rate_limited_email` / `rate_limited_ip` – Too many login attempts
-- `account_not_fully_activated` – User account is inactive
-- `account_inactive_login_attempt` – Login attempt on inactive account
+- `no_token` -- Missing Authorization header
+- `token_expired` -- Access token exceeded its TTL
+- `token_invalid` -- Token signature or claims invalid
+- `rate_limited_email` / `rate_limited_ip` -- Too many login attempts
+- `account_not_fully_activated` -- User account is inactive
+- `account_inactive_login_attempt` -- Login attempt on inactive account
 
 Standard HTTP status codes:
-- `400` – Bad Request (validation errors, invalid token)
-- `401` – Unauthorized (authentication failed)
-- `403` – Forbidden (account inactive)
-
+- `400` -- Bad Request (validation errors, invalid token)
+- `401` -- Unauthorized (authentication failed)
+- `403` -- Forbidden (account inactive)

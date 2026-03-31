@@ -1,65 +1,151 @@
 ---
 title: "Firms & Directory"
-description: "How CaseXchange represents law firms and directory data"
+description: "How the CaseXchange Public API represents law firms, your own firm profile, and the available-firms directory"
 ---
+
+## Authentication
+
+All firm endpoints require an API key passed via the `X-API-Key` header.
+
+```bash
+curl -H "X-API-Key: YOUR_API_KEY" \
+  https://api.casexchange.com/firms/me
+```
 
 ## Firm Object
 
-Key fields returned by `GET /api/v1/firms`:
+The `Firm` object represents a law firm registered in CaseXchange. Key fields returned by `GET /firms/me` and `GET /firms/{id}`:
 
 ```json
 {
-  "id": "uuid",
-  "name": "Law Firm Name",
-  "description": "Firm description",
-  "contactEmail": "contact@firm.com",
-  "contactPhone": "+1234567890",
-  "website": "https://firm.com",
-  "canSendReferrals": true,
-  "caseStatusSubscriber": false,
-  "specialties": ["personal_injury"],
-  "jurisdictions": ["CA", "NY"],
-  "address": {
-    "street": "123 Main St",
-    "city": "Los Angeles",
-    "state": "CA",
-    "zipCode": "90001",
-    "country": "USA"
-  },
-  "createdAt": "2024-01-01T00:00:00Z",
-  "updatedAt": "2024-01-01T00:00:00Z"
+  "id": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
+  "name": "Smith & Associates",
+  "phone": "+1-310-555-0199",
+  "address": "123 Main St",
+  "city": "Los Angeles",
+  "state": "CA",
+  "zip": "90001",
+  "website": "https://smithassociates.com",
+  "isInternal": false,
+  "createdAt": "2024-01-15T08:30:00Z",
+  "updatedAt": "2025-11-02T14:22:00Z"
 }
 ```
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string (uuid)` | Unique identifier for the firm |
+| `name` | `string` | Firm name |
+| `phone` | `string \| null` | Phone number |
+| `address` | `string \| null` | Street address |
+| `city` | `string \| null` | City |
+| `state` | `string \| null` | State |
+| `zip` | `string \| null` | ZIP / postal code |
+| `website` | `string (uri) \| null` | Firm website URL |
+| `isInternal` | `boolean` | Whether the firm is an internal CaseXchange firm |
+| `createdAt` | `string (date-time)` | When the firm record was created |
+| `updatedAt` | `string (date-time)` | When the firm record was last updated |
+
+## AvailableFirm Object
+
+The `AvailableFirm` object represents a firm that is available to receive referrals from your firm. It is returned by `GET /firms/available` and includes referral-specific metadata on top of basic firm info.
+
+```json
+{
+  "id": "e5f6a7b8-1234-56cd-ef78-9012abcdef34",
+  "name": "Jones Legal Group",
+  "description": "Multi-state personal injury and medical malpractice firm",
+  "jurisdictions": ["CA", "NY"],
+  "caseTypes": ["Personal Injury", "Medical Malpractice"],
+  "referralInstructions": "Submit via portal; include police report if available.",
+  "source": "private_network"
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string (uuid)` | Unique identifier for the firm |
+| `name` | `string` | Firm name |
+| `description` | `string \| null` | Brief description of the firm |
+| `jurisdictions` | `string[]` | States / jurisdictions the firm covers |
+| `caseTypes` | `string[]` | Resolved display names of accepted case types |
+| `referralInstructions` | `string \| null` | Relationship-specific instructions if available, otherwise the firm's general referral instructions |
+| `source` | `string` | How the firm is available to you — one of `private_network`, `public_directory`, or `both` |
+
+## Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/firms/directory` | Browse all firms in the public directory |
+| `GET` | `/firms/me` | Retrieve your own firm profile |
+| `GET` | `/firms/{id}` | Retrieve a single firm by ID |
+| `GET` | `/firms/available` | List firms available to receive referrals from your firm |
+| `PUT` | `/firms/me` | Update your own firm profile |
 
 ## Pagination & Filtering
 
-- `page` – defaults to 1
-- `limit` – defaults to 20, max 100
-- `search` – firm name search
-- `isInternal` – available to System Admins for internal-only filtering
+List endpoints (`/firms/directory`, `/firms/available`) accept the following query parameters:
 
-## Related Endpoints
+| Parameter | Default | Description |
+|---|---|---|
+| `page` | `1` | Page number (1-indexed) |
+| `limit` | `20` | Results per page (max `100`) |
+| `search` | — | Filter by firm name (partial match) |
 
-- `GET /api/v1/firms/{id}` – retrieve a single firm
-- `GET /api/v1/firms/directory` – public-friendly browsing for customer firms (if available)
+Example:
+
+```bash
+curl -H "X-API-Key: YOUR_API_KEY" \
+  "https://api.casexchange.com/firms/available?page=2&limit=50&search=jones"
+```
 
 ## Response Format
 
-All firm endpoints return responses wrapped in a standard format:
+All firm endpoints return responses in the standard Public API envelope:
+
+**List response (paginated):**
 
 ```json
 {
-  "success": true,
-  "data": { ... },
-  "pagination": { ... }
+  "data": [
+    { "id": "...", "name": "..." }
+  ],
+  "meta": {
+    "requestId": "req_abc123",
+    "timestamp": "2025-11-02T14:22:00Z"
+  },
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "totalPages": 5,
+    "totalCount": 94
+  }
 }
 ```
 
-For single firm responses, `pagination` is omitted.
+**Single resource response:**
+
+```json
+{
+  "data": {
+    "id": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
+    "name": "Smith & Associates"
+  },
+  "meta": {
+    "requestId": "req_def456",
+    "timestamp": "2025-11-02T14:22:00Z"
+  }
+}
+```
 
 ## Usage Tips
 
-- Cache firm lists to avoid hitting rate limits.
-- Use `jurisdictions` and `specialties` arrays to power user-facing filters.
-- Combine firm metadata with routing evaluations to display recommended matches.
+- **Cache firm lists** to avoid hitting rate limits. Directory data changes infrequently.
+- **Use `GET /firms/available`** to find referral partners — it combines your private network and the public directory in a single call.
+- **Check the `source` field** on `AvailableFirm` to distinguish private-network partners from public-directory firms.
+- **Use `jurisdictions` and `caseTypes`** on available firms to power user-facing filters and recommended matches.
+- **Keep your profile current** with `PUT /firms/me` so other firms see accurate contact information.
 
+## Examples
+
+For working code samples, see the [Firms examples](/api-reference/examples/firms).
