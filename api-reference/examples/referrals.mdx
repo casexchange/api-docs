@@ -37,7 +37,7 @@ Retrieves all referrals for a base case. Supports pagination and status filterin
 
 ```bash
 curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals?page=1&limit=20&status=investigating" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+  -H "X-API-Key: cxp_std_your_key_here"
 ```
 
 **Query parameters:**
@@ -69,7 +69,7 @@ curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
       "estimatedDateOfResolution": "2026-09-15",
       "estimatedDistributionDate": null,
       "statuteOfLimitationsExpiration": "2027-03-01",
-      "clientFeeAgreementPercentage": 33.33,
+      "clientFeeAgreementPercentage": 0.33,
       "sendingFirmPercentage": 25.00,
       "leadAttorneyName": "Sarah Chen",
       "phase": "discovery",
@@ -121,7 +121,7 @@ Returns a single referral by UUID.
 
 ```bash
 curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+  -H "X-API-Key: cxp_std_your_key_here"
 ```
 
 **Response `200 OK`:**
@@ -144,7 +144,7 @@ curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
     "estimatedDateOfResolution": "2026-09-15",
     "estimatedDistributionDate": null,
     "statuteOfLimitationsExpiration": "2027-03-01",
-    "clientFeeAgreementPercentage": 33.33,
+    "clientFeeAgreementPercentage": 0.33,
     "sendingFirmPercentage": 25.00,
     "leadAttorneyName": "Sarah Chen",
     "phase": "discovery",
@@ -170,7 +170,7 @@ Updates mutable fields on a referral: notes, phase, financial estimates, dates, 
 
 ```bash
 curl -X PUT "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
     "notes": "Expert report received. Preparing demand letter.",
@@ -179,7 +179,7 @@ curl -X PUT "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
     "estimatedDateOfResolution": "2026-08-01",
     "leadAttorneyName": "Sarah Chen",
     "sendingFirmPercentage": 25.00,
-    "clientFeeAgreementPercentage": 33.33
+    "clientFeeAgreementPercentage": 0.33
   }'
 ```
 
@@ -203,7 +203,7 @@ curl -X PUT "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
     "estimatedDateOfResolution": "2026-08-01",
     "estimatedDistributionDate": null,
     "statuteOfLimitationsExpiration": "2027-03-01",
-    "clientFeeAgreementPercentage": 33.33,
+    "clientFeeAgreementPercentage": 0.33,
     "sendingFirmPercentage": 25.00,
     "leadAttorneyName": "Sarah Chen",
     "phase": "demand",
@@ -229,7 +229,7 @@ Sends a `draft` referral to the specified receiving firm, transitioning it to `s
 
 ```bash
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6/send" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
     "referentFirmId": "22222222-dddd-eeee-ffff-222222222222"
@@ -282,7 +282,7 @@ Acknowledges a `sent` referral, transitioning it to `received`. Only the receivi
 
 ```bash
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/acknowledge" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+  -H "X-API-Key: cxp_std_your_key_here"
 ```
 
 **Response `200 OK`:**
@@ -311,7 +311,7 @@ Transitions a `received` referral to `investigating`. Only the receiving firm ma
 
 ```bash
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/begin-investigating" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+  -H "X-API-Key: cxp_std_your_key_here"
 ```
 
 **Response `200 OK`:**
@@ -340,7 +340,7 @@ Marks a referral as signed by the client, transitioning it to `signed`. Only the
 
 ```bash
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/sign" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+  -H "X-API-Key: cxp_std_your_key_here"
 ```
 
 **Response `200 OK`:**
@@ -370,7 +370,7 @@ Transitions a `signed` referral to `in_litigation`. Only the receiving firm may 
 
 ```bash
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/start-litigation" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+  -H "X-API-Key: cxp_std_your_key_here"
 ```
 
 **Response `200 OK`:**
@@ -401,7 +401,7 @@ Closes a referral with a required `closingStatus` and optional `closureReason`. 
 
 ```bash
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/close" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
     "closingStatus": "won_settled",
@@ -431,7 +431,7 @@ curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b
     "estimatedDateOfResolution": "2026-08-01",
     "estimatedDistributionDate": null,
     "statuteOfLimitationsExpiration": "2027-03-01",
-    "clientFeeAgreementPercentage": 33.33,
+    "clientFeeAgreementPercentage": 0.33,
     "sendingFirmPercentage": 25.00,
     "leadAttorneyName": "Sarah Chen",
     "phase": "closed",
@@ -457,7 +457,7 @@ Rejects an incoming referral. Requires a `reason` in the request body. Only the 
 
 ```bash
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/b8c9d0e1-2f3a-4b5c-6d7e-8f9a0b1c2d3e/reject" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
     "reason": "Case does not align with our current practice areas."
@@ -490,7 +490,7 @@ Withdraws a previously sent referral. Requires a `reason` in the request body. O
 
 ```bash
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6/withdraw" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
     "reason": "Client has decided not to pursue this matter further."
@@ -523,7 +523,7 @@ Returns all historical status transitions for a referral, ordered chronologicall
 
 ```bash
 curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/status-history" \
-  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+  -H "X-API-Key: cxp_std_your_key_here"
 ```
 
 **Response `200 OK`:**

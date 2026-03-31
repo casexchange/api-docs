@@ -11,7 +11,7 @@ This page maps real integration flows to the Public API endpoints under `/api/pu
 
 Public API authentication uses long-lived API keys instead of JWT sessions.
 
-1. Log in to the [CaseXchange dashboard](https://app.casexchange.com) or call the Internal API `POST /api/v1/auth/login` to access your account.
+1. Log in to the [CaseXchange dashboard](https://dashboard.casexchange.com) or call the Internal API `POST /api/v1/auth/login` to access your account.
 2. Create a Public API key from **Settings > API Keys** in the dashboard, or programmatically via `POST /api/v1/public-api-keys`.
 3. Include the key in the `X-API-Key` header for all subsequent Public API calls.
 4. Verify connectivity and confirm your firm context with `GET /firms/me`.
@@ -44,21 +44,22 @@ This workflow covers creating a case, attaching it to a receiving firm, and moni
 ```bash
 # Create a draft case
 curl -X POST "https://api.casexchange.com/api/public/v1/sent-cases" \
-  -H "X-API-Key: cxp_full_your_key_here" \
+  -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
-    "caseTypeId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
-    "jurisdictionCode": "NY",
-    "claimantFirstName": "Jane",
-    "claimantLastName": "Doe"
+    "title": "Doe v. Smith - Auto Accident",
+    "caseType": "Personal Injury",
+    "jurisdiction": "NY",
+    "clientFirstName": "Jane",
+    "clientLastName": "Doe"
   }'
 
 # Refer the draft to a firm
 curl -X POST "https://api.casexchange.com/api/public/v1/sent-cases/{id}/refer" \
-  -H "X-API-Key: cxp_full_your_key_here" \
+  -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
-    "receivingFirmId": "b2c3d4e5-6789-0abc-def1-234567890abc"
+    "referentFirmId": "b2c3d4e5-6789-0abc-def1-234567890abc"
   }'
 ```
 
@@ -111,9 +112,7 @@ Upload documents to a case and communicate with the partner firm on a referral.
 # Upload a document
 curl -X POST "https://api.casexchange.com/api/public/v1/cases/{caseId}/documents" \
   -H "X-API-Key: cxp_std_your_key_here" \
-  -F "file=@medical-records.pdf" \
-  -F "name=Medical Records" \
-  -F "type=medical"
+  -F "file=@medical-records.pdf"
 ```
 
 **Messages:**

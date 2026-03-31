@@ -104,41 +104,26 @@ POST /sent-cases/{id}/refer
   { "referentFirmId": "<different-firm-id>", "notes": "..." }
 ```
 
+## Common field glossary
+
+Fields that appear across case and referral responses:
+
+| Field | Type | Description |
+|---|---|---|
+| `cmsId` | `string \| null` | External case management system ID — the first non-null value from integrations (Dear Legal, Neos, Clio, SmartAdvocate, Salesforce). Used for flexible ID resolution alongside UUID and reference number. |
+| `tier` | `integer \| null` | Case priority tier (1-5). Set by the sending firm. Higher values indicate higher priority. |
+| `ratedTier` | `integer \| null` | Tier rating assigned by the receiving firm after evaluation. |
+| `source` | `string \| null` | Origin of the case (e.g., "Website Lead", "Attorney Referral", "Advertisement"). Free-text field set by the sending firm. |
+| `isRetainerSigned` | `boolean` | Whether the client retainer agreement has been signed. Set to `true` automatically by the sign lifecycle action, or can be set on case creation. |
+| `requiresUpdate` | `boolean` | System flag indicating the case has pending actions or stale data that the firm should review. |
+| `sequenceNumber` | `integer` | The referral's position in the chain (starts at 1 for the first referral, increments on re-refer). |
+| `clientFeeAgreementPercentage` | `number \| null` | Fee agreement percentage expressed as a decimal between 0 and 1 (e.g., `0.33` = 33%). |
+| `sendingFirmPercentage` | `number \| null` | Sending firm's share expressed as a whole number between 0 and 100 (e.g., `25` = 25%). |
+
+<Note>
+`clientFeeAgreementPercentage` uses a 0-1 scale while `sendingFirmPercentage` uses a 0-100 scale. This matches the OpenAPI spec constraints.
+</Note>
+
 ## Error handling
 
-All error responses follow a consistent envelope:
-
-```json
-{
-  "error": {
-    "code": "validation_error",
-    "message": "Human-readable description of the problem"
-  },
-  "meta": {
-    "requestId": "req_8a2b3c4d5e6f7890",
-    "timestamp": "2026-03-31T16:00:00.000Z"
-  }
-}
-```
-
-### Key error codes
-
-| Code | Meaning |
-|---|---|
-| `validation_error` | Invalid request input or failed validation rules. |
-| `resource_not_found` | The referenced resource does not exist or is not visible to the caller. |
-| `permission_denied` | Insufficient permissions or the action is not allowed for this firm/role. |
-| `invalid_api_key` | The `X-API-Key` header is missing, malformed, or does not match an active key. |
-| `insufficient_tier` | The API key's tier does not grant access to this endpoint (e.g., a `read_only` key calling a `standard` endpoint). |
-| `rate_limited` | Too many requests -- back off and retry. |
-
-### Standard HTTP status codes
-
-| Status | Meaning |
-|---|---|
-| `400` | Bad Request -- validation errors, invalid state transitions, or malformed input. |
-| `401` | Unauthorized -- missing or invalid API key. |
-| `403` | Forbidden -- the key is valid but lacks permission for this action or resource. |
-| `404` | Not Found -- the resource ID does not exist or is not accessible. |
-| `409` | Conflict -- duplicate resource or conflicting state (e.g., active referral already exists to the same firm). |
-| `429` | Too Many Requests -- rate limit exceeded. |
+All error responses follow a consistent envelope with `error.code`, `error.message`, and `meta.requestId`. See [Error Handling](/api-reference/error-handling) for the full error code reference table, status code guide, and troubleshooting patterns.

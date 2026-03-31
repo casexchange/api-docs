@@ -127,6 +127,33 @@ Client handling:
 - Implement exponential backoff with jitter for burst-retry scenarios.
 - If you consistently hit limits, consider batching requests or requesting a higher rate-limit tier.
 
+## Server errors
+
+### `5xx Internal Server Error`
+
+If the API returns a 500, 502, or 503, this indicates a server-side issue — not a problem with your request.
+
+Client handling:
+
+- Retry with exponential backoff (start at 1 second, max 30 seconds).
+- Include the `meta.requestId` from the error response (if present) when contacting support.
+- Do not retry immediately in a tight loop.
+- If 5xx errors persist for more than 5 minutes, check for platform status updates or email help@casexchange.com with your `requestId` values.
+
+## Error code reference
+
+| `error.code` | HTTP Status | Description |
+|---|---|---|
+| `invalid_api_key` | 401 | API key is missing, invalid, or revoked |
+| `insufficient_tier` | 403 | API key tier does not permit this operation |
+| `permission_denied` | 403 | Caller's firm does not own the target resource |
+| `validation_error` | 400 | Request body or query parameters failed validation |
+| `invalid_state_transition` | 400 | The requested status change is not allowed from the current state |
+| `resource_not_found` | 404 | The referenced resource ID does not exist |
+| `conflict` | 409 | Duplicate or conflicting state (e.g., active referral already exists) |
+| `rate_limited` | 429 | Rate limit exceeded for this API key |
+| `internal_error` | 500 | Unexpected server error |
+
 ## Logging recommendations
 
 - Log request method, path, status code, and a scrubbed request payload.

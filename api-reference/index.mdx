@@ -52,33 +52,10 @@ See the [JWT Guide](/auth/jwt) and [OAuth Guide](/auth/oauth) for full details.
 
 ### Response conventions
 
-Public API responses use a consistent envelope. See the [Response Format](/api-reference/response-format) page for full details.
+Public API responses use a consistent envelope with `data`, `meta` (requestId + timestamp), and optional `pagination`. Errors use `error.code` + `error.message`. See:
 
-```json
-{
-  "data": { },
-  "meta": { "requestId": "...", "timestamp": "..." },
-  "pagination": {
-    "total": 50,
-    "page": 1,
-    "limit": 20,
-    "totalPages": 3
-  }
-}
-```
-
-Error responses:
-
-```json
-{
-  "error": {
-    "code": "validation_error",
-    "message": "Request validation failed",
-    "details": []
-  },
-  "meta": { "requestId": "...", "timestamp": "..." }
-}
-```
+- [Response Format](/api-reference/response-format) for the full envelope specification
+- [Error Handling](/api-reference/error-handling) for error codes, status codes, and troubleshooting
 
 ### Rate limiting
 
@@ -91,6 +68,20 @@ Public API endpoints are rate limited per API key. Rate limit headers are includ
 | `X-RateLimit-Reset` | Unix timestamp when the window resets |
 
 When you exceed the limit, you will receive a `429 Too Many Requests` response. Implement exponential backoff and respect the `X-RateLimit-Reset` header before retrying.
+
+### Webhooks
+
+Webhooks are not currently available. To detect new referrals or status changes, poll `GET /received-referrals` or `GET /status-updates` with date range filters. We recommend polling intervals of 1-5 minutes depending on your use case.
+
+### Versioning
+
+The Public API is currently at `v1`. New fields may be added to response objects without a version bump — your client should ignore unknown fields. Breaking changes (removed fields, changed types, removed endpoints) will be communicated in advance and will result in a new version path (`/v2`).
+
+### OpenAPI spec
+
+The full OpenAPI 3.0 spec is available for download to generate client libraries or import into tools:
+
+- [Download openapi.yml](/api-reference/openapi.yml)
 
 ### How to navigate the endpoints
 
