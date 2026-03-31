@@ -1,40 +1,108 @@
 ---
-title: "Jurisdictions"
-description: "Reference data for state and regional coverage"
+title: "Jurisdictions & Counties"
+description: "Reference data for state, territory, and county coverage"
 ---
+
+## Overview
+
+Jurisdictions represent the US states and territories supported by CaseXchange. Each jurisdiction has a two-letter `code` and a display `name`. Counties are a related resource — every county belongs to exactly one jurisdiction and can be fetched independently or filtered by jurisdiction code.
+
+Both endpoints require the `read_only` API key tier and authenticate via the `X-API-Key` header.
 
 ## Endpoints
 
-- List codes only: `GET /api/v1/firms/jurisdictions/list`
-- Detailed metadata: `GET /api/v1/firms/jurisdictions`
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/jurisdictions` | Returns all supported jurisdictions |
+| `GET` | `/counties` | Returns counties, optionally filtered by jurisdiction |
 
-## Sample Response
+## List jurisdictions
+
+Returns an array of `{ code, name }` objects for every supported US state and territory.
+
+```bash
+curl "https://api.casexchange.com/api/public/v1/jurisdictions" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+Example response:
 
 ```json
 {
-  "success": true,
   "data": [
-    {
-      "code": "CA",
-      "name": "California",
-      "type": "state"
-    },
-    {
-      "code": "NY",
-      "name": "New York",
-      "type": "state"
-    }
-  ]
+    { "code": "AL", "name": "Alabama" },
+    { "code": "AK", "name": "Alaska" },
+    { "code": "CA", "name": "California" },
+    { "code": "FL", "name": "Florida" },
+    { "code": "NJ", "name": "New Jersey" },
+    { "code": "NY", "name": "New York" },
+    { "code": "TX", "name": "Texas" }
+  ],
+  "meta": {
+    "requestId": "req_8a4c2e1b9d3f5071a6c8e4d2",
+    "timestamp": "2026-03-31T14:22:45.000Z"
+  }
 }
 ```
 
-## Use Cases
+Use the two-letter `code` value when filtering counties or setting the jurisdiction on a case.
 
-- Power dropdowns when creating cases.
-- Validate inputs client-side before calling `/api/v1/cases`.
-- Combine with firm specialties to filter destinations.
+## List counties
+
+Returns counties, optionally filtered by one or more jurisdiction codes via the `jurisdictionCodes` query parameter.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `jurisdictionCodes` | string | No | Comma-separated jurisdiction codes (e.g. `NY,NJ`). Omit to return all counties. |
+
+```bash
+curl "https://api.casexchange.com/api/public/v1/counties?jurisdictionCodes=NY,NJ" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "id": "e5f6a7b8-9abc-def0-1234-567890abcdef",
+      "name": "Kings County",
+      "jurisdictionCode": "NY"
+    },
+    {
+      "id": "f6a7b8c9-abcd-ef01-2345-67890abcdef0",
+      "name": "New York County",
+      "jurisdictionCode": "NY"
+    },
+    {
+      "id": "b8c9d0e1-cdef-0123-4567-890abcdef012",
+      "name": "Bergen County",
+      "jurisdictionCode": "NJ"
+    }
+  ],
+  "meta": {
+    "requestId": "req_1b3d5f7a9c2e4068b0d2f4a6",
+    "timestamp": "2026-03-31T14:23:12.000Z"
+  }
+}
+```
+
+Without `jurisdictionCodes` the response includes every county across all jurisdictions. Filter to keep payloads small when you only need specific states.
+
+## Use cases
+
+- Power jurisdiction and county dropdowns when creating or filtering cases.
+- Validate inputs client-side before calling `POST /sent-cases`.
+- Combine with firm specialties to narrow destination firms by region.
+- Use the counties endpoint to build a two-step picker: select a jurisdiction first, then load its counties.
 
 <Note>
 Jurisdiction codes follow standard postal abbreviations. Use uppercase strings in requests.
 </Note>
 
+## Related
+
+- [Reference Data examples](/api-reference/examples/reference-data) — full curl examples for jurisdictions, counties, and case types.
