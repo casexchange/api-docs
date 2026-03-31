@@ -62,6 +62,10 @@
   "navbar": {
     "links": [
       {
+        "label": "Postman Collection",
+        "href": "/postman/CaseXchange-Public-API.postman_collection.json"
+      },
+      {
         "label": "Support",
         "href": "mailto:help@casexchange.com"
       }

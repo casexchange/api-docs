@@ -5,7 +5,7 @@ description: "Everything you need to build with the CaseXchange platform"
 
 ## Build with Confidence
 
-CaseXchange connects law firms with the referrals, routing logic, and case data they need to collaborate securely. This guide gives third parties a single place to learn the platform, authenticate, and ship integrations faster.
+CaseXchange connects law firms with the referrals, routing logic, and case data they need to collaborate securely. The Public API uses **API key authentication** with tiered access levels, giving third parties a straightforward path to integration.
 
 <Columns cols={2}>
   <Card
@@ -14,55 +14,107 @@ CaseXchange connects law firms with the referrals, routing logic, and case data 
     href="/quickstart"
     horizontal
   >
-    Spin up an integration-ready workspace in minutes.
+    Get your API key and make your first call in minutes.
   </Card>
   <Card
     title="API Reference"
     icon="terminal"
     href="/api-reference"
   >
-    Explore every public endpoint with examples.
+    Explore every endpoint with request/response examples.
   </Card>
 </Columns>
 
-## Platform Highlights
+## Try It Now
 
-<Columns cols={3}>
+Import the collection into Postman and start making requests immediately.
+
+<Columns cols={2}>
   <Card
-    title="JWT + OAuth"
-    icon="key"
-    href="/auth/jwt"
+    title="Postman Collection"
+    icon="download"
+    href="/postman/CaseXchange-Public-API.postman_collection.json"
   >
-    Secure requests with JWT sessions or OAuth 2.0 Authorization Code flow.
+    Pre-built requests for every Public API endpoint with automated test scripts and environment variable chaining.
   </Card>
   <Card
-    title="Referral Engine"
-    icon="shuffle"
-    href="/concepts/cases"
+    title="Postman Environment"
+    icon="gear"
+    href="/postman/CaseXchange-Public-API.postman_environment.production.json"
   >
-    Standardized objects for cases, referrals, routing, and firm handoffs.
-  </Card>
-  <Card
-    title="Routing Intelligence"
-    icon="diagram-project"
-    href="/api-reference"
-  >
-    Evaluate routing rules to recommend the best firm automatically.
+    Production environment template with all required variables pre-configured.
   </Card>
 </Columns>
+
+## Access Tiers
+
+The Public API uses `X-API-Key` authentication with three access levels:
+
+| Tier | Key prefix | Permissions |
+|------|-----------|-------------|
+| **READ_ONLY** | `cxp_ro_...` | GET endpoints only |
+| **STANDARD** | `cxp_std_...` | READ_ONLY + create/update operations |
+| **FULL** | `cxp_full_...` | STANDARD + destructive and admin-grade operations |
 
 ## What's Inside
 
-- **Authentication** - JWT session login, refresh, profile, password reset, and invitation-completion endpoints.
-- **Case APIs** - Create, list, update, send, re-refer, manage status updates, and attach documents.
-- **Directory APIs** - Firm directory, specialties, jurisdictions list, and firm detail endpoints.
-- **Integrations & Routing** - Salesforce and Case Status integrations plus `POST /routing/evaluate-api`.
-- **Error Handling** - Consistent response envelopes with shared error schemas across endpoints.
+<Columns cols={3}>
+  <Card
+    title="Cases & Referrals"
+    icon="folder-open"
+    href="/concepts/cases"
+  >
+    Create, send, re-refer, and track cases from both sender and receiver perspectives.
+  </Card>
+  <Card
+    title="Firms & Directory"
+    icon="building"
+    href="/concepts/firms"
+  >
+    Browse the firm directory, manage your profile, and discover available referral partners.
+  </Card>
+  <Card
+    title="Routing Rules"
+    icon="diagram-project"
+    href="/api-reference"
+  >
+    Configure and evaluate automatic routing rules to match cases with the right firm.
+  </Card>
+</Columns>
+
+<Columns cols={3}>
+  <Card
+    title="Documents"
+    icon="file-arrow-up"
+    href="/api-reference"
+  >
+    Upload, list, and download case documents with pre-signed S3 URLs.
+  </Card>
+  <Card
+    title="Analytics"
+    icon="chart-line"
+    href="/api-reference"
+  >
+    Dashboard summaries and case-level analytics with date range filtering.
+  </Card>
+  <Card
+    title="Bulk Import"
+    icon="file-csv"
+    href="/api-reference"
+  >
+    Import and update cases in bulk via CSV upload.
+  </Card>
+</Columns>
+
+- **Users** - List, invite, update, and deactivate users within your firm.
+- **Medical Referrals** - Create and manage medical provider referrals linked to cases.
+- **Notifications** - Configure email notification preferences and recipient lists.
+- **Key Management** - Create, list, inspect usage, and revoke API keys via the internal API.
 
 <Card
   title="Need help?"
   icon="life-ring"
   href="mailto:help@casexchange.com"
 >
-  Contact support for OAuth client registration or onboarding assistance.
+  Contact support for API key provisioning or onboarding assistance.
 </Card>
