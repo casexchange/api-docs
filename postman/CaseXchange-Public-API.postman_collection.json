@@ -1,0 +1,3548 @@
+{
+	"info": {
+		"name": "CaseXchange Public API",
+		"description": "The CaseXchange Public API enables law firms to integrate referral management directly into their own systems.\n\n## Authentication\n- Public endpoints require `X-API-Key` with a public API key (tiered format: `cxp_ro_...`, `cxp_std_...`, `cxp_full_...`).\n- Key Management endpoints (`/api/v1/public-api-keys`) use internal auth. In Postman, run Login first and rely on session cookies.\n\n## Access Tiers\n- `READ_ONLY` \u2014 GET endpoints only\n- `STANDARD` \u2014 READ_ONLY + create/update operations\n- `FULL` \u2014 STANDARD + destructive and admin-grade operations\n\n## Quick Start\n1. Set `base_url` in the active environment (local: `http://localhost:3001`, production: `https://api.casexchange.com`).\n2. Run **Login** to establish an authenticated internal session.\n3. Run **Create Public API Key** to generate and auto-save `api_key`.\n4. Use public endpoints under `{{public_api_url}}`.\n\n## Response Format\nPublic API responses use envelope:\n- Success: `{ data, meta, pagination? }`\n- Error: `{ error, meta }`",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication Setup",
+			"description": "Get a JWT token and create a public API key. Run these in order before using other requests.",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{login_email}}\",\n  \"password\": \"{{login_password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{internal_api_url}}/auth/login",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						},
+						"description": "Authenticate with the internal API to obtain a JWT token. The test script saves the token to the `jwt_token` environment variable automatically."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200 - Login successful', () => {",
+									"  pm.response.to.have.status(200);",
+									"});",
+									"",
+									"const json = pm.response.json();",
+									"pm.expect(json).to.be.an('object');",
+									"",
+									"// New auth flow is cookie-based. Keep jwt_token only if explicitly returned.",
+									"if (json && json.accessToken) {",
+									"  pm.environment.set('jwt_token', json.accessToken);",
+									"  console.log('JWT token saved to jwt_token');",
+									"} else if (json && json.data && json.data.accessToken) {",
+									"  pm.environment.set('jwt_token', json.data.accessToken);",
+									"  console.log('JWT token saved to jwt_token');",
+									"} else {",
+									"  pm.environment.unset('jwt_token');",
+									"  console.log('No accessToken in body (cookie-based login). Cleared jwt_token to avoid stale Bearer auth.');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Create Public API Key",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Postman Test Key\",\n  \"tier\": \"FULL\"\n}"
+						},
+						"url": {
+							"raw": "{{internal_api_url}}/public-api-keys",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"public-api-keys"
+							]
+						},
+						"description": "Creates a new public API key for the authenticated user's firm. The plaintext key is only returned once \u2014 the test script saves it to `api_key` automatically.\n\nTier options: `READ_ONLY`, `STANDARD`, `FULL`"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - Key created', () => pm.response.to.have.status(201));",
+									"pm.test('Response contains plainKey', () => {",
+									"  const json = pm.response.json();",
+									"  const data = json.data || json;",
+									"  const key = data && data.plainKey;",
+									"  pm.expect(key).to.be.a('string');",
+									"  pm.environment.set('api_key', key);",
+									"  if (data && data.id) {",
+									"    pm.environment.set('key_id', data.id);",
+									"  }",
+									"  console.log('Saved api_key and key_id. Key prefix: ' + key.substring(0, 12) + '...');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Health",
+			"description": "API health check \u2014 no authentication required.",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{public_api_url}}/health",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "Returns API health status and rate limit configuration. No API key required."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns ok status', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.status).to.equal('ok');",
+									"  pm.expect(json.rateLimits).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Reference Data",
+			"description": "Case types, jurisdictions, and counties. All endpoints require at minimum READ_ONLY tier.",
+			"item": [
+				{
+					"name": "List Case Types",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/case-types",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"case-types"
+							]
+						},
+						"description": "Returns all active case types available for creating referrals. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Response has success flag', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "List Jurisdictions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/jurisdictions",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"jurisdictions"
+							]
+						},
+						"description": "Returns all jurisdictions (US states and territories) supported by the platform. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns jurisdiction list', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "List Counties",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/counties?jurisdictionCodes=NY,NJ",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"counties"
+							],
+							"query": [
+								{
+									"key": "jurisdictionCodes",
+									"value": "NY,NJ",
+									"description": "Comma-separated jurisdiction codes to filter by (optional)"
+								}
+							]
+						},
+						"description": "Returns counties, optionally filtered by one or more jurisdiction codes (comma-separated). Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns counties array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Firms",
+			"description": "Firm directory and profile management.",
+			"item": [
+				{
+					"name": "Get Firm Directory",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/firms/directory",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"firms",
+								"directory"
+							]
+						},
+						"description": "Returns a directory of all active firms on the platform. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns firm list', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  if (json.data.length > 0) {",
+									"    pm.environment.set('firm_id', json.data[0].id);",
+									"    console.log('Saved first firm ID: ' + json.data[0].id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Own Firm",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/firms/me",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"firms",
+								"me"
+							]
+						},
+						"description": "Returns the firm associated with the API key making the request. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns own firm', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data.id).to.be.a('string');",
+									"  pm.environment.set('firm_id', json.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Firm by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/firms/{{firm_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"firms",
+								"{{firm_id}}"
+							]
+						},
+						"description": "Returns a single firm by its UUID. Set `firm_id` in the environment or run Get Firm Directory first. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns firm object', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.equal(pm.environment.get('firm_id'));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "List Available Firms",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/firms/available?source=network&page=1&limit=25",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"firms",
+								"available"
+							],
+							"query": [
+								{
+									"key": "source",
+									"value": "network",
+									"description": "Filter by source: 'network', 'directory', or omit for both"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (1-indexed)"
+								},
+								{
+									"key": "limit",
+									"value": "25",
+									"description": "Results per page (max 100)"
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "Case-insensitive partial match on firm name",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Returns firms available for referrals from the requesting firm's private network and/or the public directory. Includes resolved case type display names and referral instructions. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns available firms list', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  pm.expect(json.pagination).to.be.an('object');",
+									"  if (json.data.length > 0) {",
+									"    const firm = json.data[0];",
+									"    pm.expect(firm).to.have.property('id');",
+									"    pm.expect(firm).to.have.property('name');",
+									"    pm.expect(firm).to.have.property('caseTypes');",
+									"    pm.expect(firm).to.have.property('source');",
+									"    pm.expect(firm).to.have.property('referralInstructions');",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Own Firm",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Acme Law Group\",\n  \"phone\": \"555-123-4567\",\n  \"address\": \"123 Main Street\",\n  \"city\": \"New York\",\n  \"state\": \"NY\",\n  \"zip\": \"10001\",\n  \"website\": \"https://acmelaw.example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/firms/me",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"firms",
+								"me"
+							]
+						},
+						"description": "Updates editable fields on the API key's own firm. All body fields are optional. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated firm', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Sent Cases",
+			"description": "Cases created and sent by your firm (sender perspective). These endpoints provide a sender-centric view with flexible ID resolution (UUID, reference number, or Salesforce record ID).",
+			"item": [
+				{
+					"name": "List Sent Cases",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/sent-cases?page=1&limit=20",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"sent-cases"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (default: 1)"
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Items per page (default: 20, max: 100)"
+								},
+								{
+									"key": "status",
+									"value": "",
+									"description": "Filter by status",
+									"disabled": true
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "Search by reference number or receiving firm name",
+									"disabled": true
+								},
+								{
+									"key": "sort",
+									"value": "",
+									"description": "Sort field: updatedAt (default), status, referenceNumber",
+									"disabled": true
+								},
+								{
+									"key": "order",
+									"value": "desc",
+									"description": "Sort order: asc or desc (default)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Returns a paginated list of cases owned by your firm (sender perspective). Lean response: id, referenceNumber, cmsId, receivingFirmName, receivingFirmId, status, closingStatus, updatedAt.\n\nSupports flexible ID lookup (UUID, reference number, or Salesforce record ID).\n\nTier: READ_ONLY"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns paginated data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  pm.expect(json.pagination).to.be.an('object');",
+									"  if (json.data.length > 0) {",
+									"    pm.environment.set('sent_case_id', json.data[0].id);",
+									"    console.log('Saved first sent case ID: ' + json.data[0].id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Sent Case",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/sent-cases/{{sent_case_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"sent-cases",
+								"{{sent_case_id}}"
+							]
+						},
+						"description": "Returns full detail for a sent case, including all referrals. Accepts UUID, reference number, or Salesforce record ID.\n\nResponse includes base case fields, most recent referral fields (flattened), and a referrals array with per-referral summaries.\n\nTier: READ_ONLY"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns sent case detail', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data).to.have.property('id');",
+									"  pm.expect(json.data).to.have.property('title');",
+									"  pm.expect(json.data).to.have.property('status');",
+									"  pm.expect(json.data.referrals).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Available Statuses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/sent-cases/{{sent_case_id}}/available-statuses",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"sent-cases",
+								"{{sent_case_id}}",
+								"available-statuses"
+							]
+						},
+						"description": "Returns available next status transitions from the sender's perspective for the most recent referral.\n\nTier: READ_ONLY"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns available transitions', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data).to.have.property('currentStatus');",
+									"  pm.expect(json.data.availableTransitions).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Create Sent Case",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"isRetainerSigned\": false\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/sent-cases",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"sent-cases"
+							]
+						},
+						"description": "Creates a new case. Required fields: title, caseType, jurisdiction, clientFirstName, clientLastName.\n\nIf referentFirmId is included, the case is sent immediately (SENT status). Otherwise, it starts as DRAFT.\n\nTier: STANDARD"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - Case created', () => pm.response.to.have.status(201));",
+									"pm.test('Returns created case', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data.id).to.be.a('string');",
+									"  pm.environment.set('sent_case_id', json.data.id);",
+									"  console.log('Saved new sent case ID: ' + json.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Refer Case",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"referentFirmId\": \"{{firm_id}}\",\n  \"notes\": \"Priority referral - strong liability\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/sent-cases/{{sent_case_id}}/refer",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"sent-cases",
+								"{{sent_case_id}}",
+								"refer"
+							]
+						},
+						"description": "Sends a DRAFT case to a receiving firm, or creates a new referral on an existing base case (re-refer).\n\nTier: STANDARD"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns referral result', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Sent Case",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"tier\": 4,\n  \"source\": \"Website Lead\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/sent-cases/{{sent_case_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"sent-cases",
+								"{{sent_case_id}}"
+							]
+						},
+						"description": "Updates sender-editable fields on a sent case. Only tier and source can be updated.\n\nAccepts UUID, reference number, or Salesforce record ID.\n\nTier: STANDARD"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated case', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Received Referrals",
+			"description": "Referrals received by your firm (receiver perspective). These endpoints provide a receiver-centric view of referrals sent to your firm, with flexible ID resolution (UUID, reference number, or CMS ID).",
+			"item": [
+				{
+					"name": "List Received Referrals",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/received-referrals?page=1&limit=20",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"received-referrals"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (default: 1)"
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Items per page (default: 20, max: 100)"
+								},
+								{
+									"key": "status",
+									"value": "",
+									"description": "Filter by status (e.g., under_evaluation, investigating, signed)",
+									"disabled": true
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "Search by reference number or sending firm name",
+									"disabled": true
+								},
+								{
+									"key": "sort",
+									"value": "",
+									"description": "Sort field: updatedAt (default), status, referenceNumber",
+									"disabled": true
+								},
+								{
+									"key": "order",
+									"value": "desc",
+									"description": "Sort order: asc or desc (default)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Returns a paginated list of referrals received by your firm. Lean response shape includes: id, referenceNumber, cmsId, sendingFirmName, sendingFirmId, status, closingStatus, updatedAt.\n\nTier: READ_ONLY"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns paginated data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  pm.expect(json.pagination).to.be.an('object');",
+									"  pm.expect(json.pagination).to.have.property('total');",
+									"  if (json.data.length > 0) {",
+									"    const item = json.data[0];",
+									"    pm.expect(item).to.have.property('id');",
+									"    pm.expect(item).to.have.property('sendingFirmName');",
+									"    pm.expect(item).to.have.property('status');",
+									"    // Save first referral ID for subsequent requests",
+									"    pm.environment.set('received_referral_id', item.id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Received Referral",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/received-referrals/{{received_referral_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"received-referrals",
+								"{{received_referral_id}}"
+							]
+						},
+						"description": "Returns full detail for a received referral. Accepts UUID, reference number, or CMS ID as the identifier.\n\nPII masking: When the referral is in SENT status, client PII (first/last name, email, phone, date of birth) and description are masked (returned as null).\n\nTier: READ_ONLY"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns referral detail', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data).to.have.property('id');",
+									"  pm.expect(json.data).to.have.property('sendingFirmName');",
+									"  pm.expect(json.data).to.have.property('status');",
+									"  pm.expect(json.data).to.have.property('title');",
+									"  // SENT-status referrals should have PII masked",
+									"  if (json.data.status === 'sent') {",
+									"    pm.expect(json.data.clientFirstName).to.be.null;",
+									"    pm.expect(json.data.clientLastName).to.be.null;",
+									"    pm.expect(json.data.clientEmail).to.be.null;",
+									"    pm.expect(json.data.description).to.be.null;",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Available Statuses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/received-referrals/{{received_referral_id}}/available-statuses",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"received-referrals",
+								"{{received_referral_id}}",
+								"available-statuses"
+							]
+						},
+						"description": "Returns the available next status transitions for a received referral, from the receiver perspective.\n\nAccepts UUID, reference number, or CMS ID as the identifier.\n\nExample response:\n```json\n{\n  \"data\": {\n    \"currentStatus\": \"under_evaluation\",\n    \"availableTransitions\": [\n      { \"status\": \"investigating\", \"label\": \"Begin Investigating\" },\n      { \"status\": \"signed\", \"label\": \"Mark as Signed\" },\n      { \"status\": \"rejected\", \"label\": \"Reject Case\", \"requiresReason\": true }\n    ]\n  }\n}\n```\n\nTier: READ_ONLY"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns available transitions', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data).to.have.property('currentStatus');",
+									"  pm.expect(json.data.availableTransitions).to.be.an('array');",
+									"  if (json.data.availableTransitions.length > 0) {",
+									"    pm.expect(json.data.availableTransitions[0]).to.have.property('status');",
+									"    pm.expect(json.data.availableTransitions[0]).to.have.property('label');",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Received Referral",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"leadAttorneyName\": \"Jane Smith\",\n  \"phase\": \"Discovery\",\n  \"notes\": \"Initial review completed\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/received-referrals/{{received_referral_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"received-referrals",
+								"{{received_referral_id}}"
+							]
+						},
+						"description": "Partially updates a received referral. Only specified fields are updated; omitted fields remain unchanged.\n\nAccepts UUID, reference number, or CMS ID as the identifier.\n\nUpdatable fields: leadAttorneyName, phase, notes, statuteOfLimitationsExpiration, clientFeeAgreementPercentage, attorneyFees, estimatedDateOfResolution, estimatedDistributionDate, projectedSettlementAmount, sendingFirmPercentage, settlementAmount, isRetainerSigned.\n\nTier: STANDARD"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data).to.have.property('id');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Documents",
+			"description": "Document upload, download, and management for cases.",
+			"item": [
+				{
+					"name": "List Documents",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{case_id}}/documents",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{case_id}}",
+								"documents"
+							]
+						},
+						"description": "Returns all documents attached to the specified case. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns documents array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  if (json.data.length > 0) {",
+									"    pm.environment.set('document_id', json.data[0].id);",
+									"    console.log('Saved first document ID: ' + json.data[0].id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Download Document",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{case_id}}/documents/{{document_id}}/download",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{case_id}}",
+								"documents",
+								"{{document_id}}",
+								"download"
+							]
+						},
+						"description": "Returns a short-lived pre-signed S3 URL for downloading the specified document. Set `document_id` in the environment or run List Documents first. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns download URL payload', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.downloadUrl).to.be.a('string');",
+									"  pm.expect(json.data.fileName).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Upload Document",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "File to upload (max 50 MB). Select a file from your local machine."
+								}
+							]
+						},
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{case_id}}/documents",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{case_id}}",
+								"documents"
+							]
+						},
+						"description": "Uploads a file and attaches it to the specified case (multipart/form-data). Max file size 50 MB. Tier: STANDARD."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - Document uploaded', () => pm.response.to.have.status(201));",
+									"pm.test('Returns document metadata', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.be.a('string');",
+									"  pm.environment.set('document_id', json.data.id);",
+									"  console.log('Saved document ID: ' + json.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Delete Document",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{case_id}}/documents/{{document_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{case_id}}",
+								"documents",
+								"{{document_id}}"
+							]
+						},
+						"description": "Permanently deletes the specified document from the case and S3. Returns 204 No Content on success. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 204 - Document deleted', () => pm.response.to.have.status(204));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Users",
+			"description": "User management within the caller's firm.",
+			"item": [
+				{
+					"name": "List Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/users?page=1&limit=25",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"users"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (1-indexed)"
+								},
+								{
+									"key": "limit",
+									"value": "25",
+									"description": "Results per page (max 100)"
+								}
+							]
+						},
+						"description": "Returns all users belonging to the API key's own firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns user list', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  if (json.data.length > 0) {",
+									"    pm.environment.set('user_id', json.data[0].id);",
+									"    console.log('Saved first user ID: ' + json.data[0].id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Invite User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"newuser@example.com\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"role\": \"MEMBER\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/users",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"users"
+							]
+						},
+						"description": "Invites a new user to the caller's firm. Required fields: email, firstName, lastName, role. Valid roles: ADMIN, ACCOUNT_MANAGER, FIRM_ADMIN, MEMBER, VIEWER. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - User invited', () => pm.response.to.have.status(201));",
+									"pm.test('Returns invited user', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.be.a('string');",
+									"  pm.environment.set('user_id', json.data.id);",
+									"  console.log('Saved new user ID: ' + json.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update User",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Smith\",\n  \"email\": \"jane.smith@example.com\",\n  \"role\": \"FIRM_ADMIN\",\n  \"isActive\": true\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/users/{{user_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"users",
+								"{{user_id}}"
+							]
+						},
+						"description": "Updates a user in the caller's firm. All body fields are optional: firstName, lastName, email, role, isActive. Email must be unique. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated user', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.equal(pm.environment.get('user_id'));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Deactivate User",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/users/{{user_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"users",
+								"{{user_id}}"
+							]
+						},
+						"description": "Deactivates a user in the caller's firm. Sets isActive to false, clears security tokens, and revokes all sessions. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 204', () => pm.response.to.have.status(204));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Routing Rules",
+			"description": "Referral routing rules for automatic case assignment.",
+			"item": [
+				{
+					"name": "List Rules",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/routing/rules",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"routing",
+								"rules"
+							]
+						},
+						"description": "Returns the referral routing rules configured for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns routing rules array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  if (json.data.length > 0) {",
+									"    pm.environment.set('rule_id', json.data[0].id);",
+									"    console.log('Saved first rule ID: ' + json.data[0].id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Create Rule",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Auto-route NY Personal Injury\",\n  \"caseTypeIds\": [\"<case-type-uuid>\"],\n  \"jurisdictionCodes\": [\"NY\"],\n  \"assignments\": [\n    {\n      \"recipientType\": \"casexchange_firm\",\n      \"casexchangeFirmId\": \"{{firm_id}}\",\n      \"distributionWeight\": 1\n    }\n  ],\n  \"priority\": 1\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/routing/rules",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"routing",
+								"rules"
+							]
+						},
+						"description": "Creates a new referral routing rule for the firm. Required fields: name, caseTypeIds (at least one valid case type UUID), assignments. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - Rule created', () => pm.response.to.have.status(201));",
+									"pm.test('Returns created rule', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.be.a('string');",
+									"  pm.environment.set('rule_id', json.data.id);",
+									"  console.log('Saved rule ID: ' + json.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Rule",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Auto-route NY Personal Injury (Updated)\",\n  \"priority\": 2,\n  \"isActive\": true\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/routing/rules/{{rule_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"routing",
+								"rules",
+								"{{rule_id}}"
+							]
+						},
+						"description": "Updates an existing routing rule. All body fields are optional. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated rule', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.equal(pm.environment.get('rule_id'));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Delete Rule",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/routing/rules/{{rule_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"routing",
+								"rules",
+								"{{rule_id}}"
+							]
+						},
+						"description": "Deletes a routing rule. Returns 204 No Content on success. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 204 - Rule deleted', () => pm.response.to.have.status(204));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Analytics",
+			"description": "Dashboard and case analytics for the caller's firm.",
+			"item": [
+				{
+					"name": "Dashboard Summary",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/dashboard",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"dashboard"
+							]
+						},
+						"description": "Returns high-level referral analytics for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns dashboard data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Case Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/cases?dateFrom=2025-01-01&dateTo=2025-12-31",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"cases"
+							],
+							"query": [
+								{
+									"key": "dateFrom",
+									"value": "2025-01-01",
+									"description": "Filter from date (YYYY-MM-DD)"
+								},
+								{
+									"key": "dateTo",
+									"value": "2025-12-31",
+									"description": "Filter to date (YYYY-MM-DD)"
+								}
+							]
+						},
+						"description": "Returns case-level analytics with optional date range filtering. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns analytics data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Notifications",
+			"description": "Notification preferences and email address management.",
+			"item": [
+				{
+					"name": "Get Preferences",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/notifications/preferences",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"notifications",
+								"preferences"
+							]
+						},
+						"description": "Returns the notification preferences for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns preferences object', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Preferences",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"emailOnNewReferral\": true,\n  \"emailOnStatusChange\": true,\n  \"emailOnDocumentUpload\": false\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/notifications/preferences",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"notifications",
+								"preferences"
+							]
+						},
+						"description": "Updates the notification preferences for the caller's firm. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated preferences', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "List Email Recipients",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/notifications/emails",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"notifications",
+								"emails"
+							]
+						},
+						"description": "Returns all notification email addresses configured for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns email list', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Add Email Recipient",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"notifications@acmelaw.example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/notifications/emails",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"notifications",
+								"emails"
+							]
+						},
+						"description": "Adds an email address to the firm's notification list. Required field: email. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - Email added', () => pm.response.to.have.status(201));",
+									"pm.test('Returns added email', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.email).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Medical Referrals",
+			"description": "Medical provider referrals linked to cases.",
+			"item": [
+				{
+					"name": "List Medical Referrals",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/medical-referrals",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"medical-referrals"
+							]
+						},
+						"description": "Returns all medical referrals linked to the caller's cases. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns medical referrals array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  if (json.data.length > 0) {",
+									"    pm.environment.set('medical_referral_id', json.data[0].id);",
+									"    console.log('Saved first medical referral ID: ' + json.data[0].id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Medical Referral",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/medical-referrals/{{medical_referral_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"medical-referrals",
+								"{{medical_referral_id}}"
+							]
+						},
+						"description": "Returns a single medical referral by UUID. Set `medical_referral_id` in the environment or run List Medical Referrals first. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns medical referral object', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.equal(pm.environment.get('medical_referral_id'));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Create Medical Referral",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"baseCaseId\": \"{{case_id}}\",\n  \"clientFirstName\": \"Jane\",\n  \"clientLastName\": \"Doe\",\n  \"clientEmail\": \"jane.doe@example.com\",\n  \"clientPhone\": \"555-123-4567\",\n  \"providerId\": \"{{firm_id}}\",\n  \"notes\": \"Medical referral created via API\",\n  \"dateOfInjury\": \"2026-01-15\",\n  \"injuryDescription\": \"Knee injury from auto accident\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/medical-referrals",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"medical-referrals"
+							]
+						},
+						"description": "Creates a new medical referral. Required fields: clientFirstName, clientLastName. Note: this model is evolving. Tier: STANDARD."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - Medical referral created', () => pm.response.to.have.status(201));",
+									"pm.test('Returns created medical referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.be.a('string');",
+									"  pm.environment.set('medical_referral_id', json.data.id);",
+									"  console.log('Saved medical referral ID: ' + json.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Medical Referral",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"clientPhone\": \"555-999-8888\",\n  \"notes\": \"Updated evaluation notes\",\n  \"injuryDescription\": \"Knee and shoulder injury from auto accident\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/medical-referrals/{{medical_referral_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"medical-referrals",
+								"{{medical_referral_id}}"
+							]
+						},
+						"description": "Updates an existing medical referral. All body fields are optional. Tier: STANDARD."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated medical referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.equal(pm.environment.get('medical_referral_id'));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Bulk Import",
+			"description": "Bulk case import and update via CSV file upload. Both endpoints require FULL tier.",
+			"item": [
+				{
+					"name": "Import Cases (CSV)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "CSV file to import (max 20 MB). Select a CSV file from your local machine."
+								}
+							]
+						},
+						"url": {
+							"raw": "{{public_api_url}}/import/cases",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"import",
+								"cases"
+							]
+						},
+						"description": "Creates or upserts cases from a CSV file upload. Max file size 20 MB. Returns a summary with created, updated, skipped counts and any per-row errors. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200 - Import processed', () => pm.response.to.have.status(200));",
+									"pm.test('Returns import summary', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  console.log('Import result:', JSON.stringify(json.data, null, 2));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Bulk Update Cases (CSV)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "CSV file with updates (max 20 MB). Only existing cases are affected \u2014 no new records created."
+								}
+							]
+						},
+						"url": {
+							"raw": "{{public_api_url}}/import/cases/update",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"import",
+								"cases",
+								"update"
+							]
+						},
+						"description": "Updates existing cases from a CSV file. Only existing cases are affected \u2014 no new records are created. Max file size 20 MB. Tier: FULL.\n\nNote: The 'notes' field has field-level RBAC \u2014 only the receiving (referent) firm can update it. The referring firm's requests to update 'notes' will be rejected per-row."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200 - Bulk update processed', () => pm.response.to.have.status(200));",
+									"pm.test('Returns update summary', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  console.log('Bulk update result:', JSON.stringify(json.data, null, 2));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Key Management (Internal API)",
+			"description": "Manage public API keys via the internal API. These endpoints use Bearer JWT authentication (not X-API-Key). Firm admins use these to create, list, inspect usage, and revoke keys.",
+			"item": [
+				{
+					"name": "List API Keys",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{internal_api_url}}/public-api-keys",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"public-api-keys"
+							]
+						},
+						"description": "Returns all public API keys for the authenticated user's firm. Uses JWT Bearer authentication."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns API keys list', () => {",
+									"  const json = pm.response.json();",
+									"  const keys = Array.isArray(json) ? json : (json.data || []);",
+									"  pm.expect(keys).to.be.an('array');",
+									"  if (keys.length > 0 && keys[0].id) {",
+									"    pm.environment.set('key_id', keys[0].id);",
+									"    console.log('Saved first key_id: ' + keys[0].id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Create API Key",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Integration Key - Production\",\n  \"tier\": \"STANDARD\"\n}"
+						},
+						"url": {
+							"raw": "{{internal_api_url}}/public-api-keys",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"public-api-keys"
+							]
+						},
+						"description": "Creates a new public API key. The plaintext key (`plainKey`) is only returned in this response \u2014 store it securely. Valid tiers: READ_ONLY, STANDARD, FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - Key created', () => pm.response.to.have.status(201));",
+									"pm.test('Response contains plainKey', () => {",
+									"  const json = pm.response.json();",
+									"  const data = json.data || json;",
+									"  const key = data && data.plainKey;",
+									"  pm.expect(key).to.be.a('string');",
+									"  pm.environment.set('api_key', key);",
+									"  if (data && data.id) {",
+									"    pm.environment.set('key_id', data.id);",
+									"  }",
+									"  console.log('Saved api_key and key_id. Key prefix: ' + key.substring(0, 12) + '...');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Key Usage",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{internal_api_url}}/public-api-keys/{{key_id}}/usage",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"public-api-keys",
+								"{{key_id}}",
+								"usage"
+							]
+						},
+						"description": "Returns usage statistics for a specific public API key. Set `key_id` in the environment (the key's UUID, not the plaintext key value)."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns usage data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Revoke API Key",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{internal_api_url}}/public-api-keys/{{key_id}}",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"public-api-keys",
+								"{{key_id}}"
+							]
+						},
+						"description": "Permanently revokes a public API key. All subsequent requests using the revoked key will return 401. This action cannot be undone."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200 or 204 - Key revoked', () => {",
+									"  pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Referrals",
+			"description": "Referral sub-resources linked to a BaseCase. All endpoints are scoped to /cases/:baseCaseId/referrals. Set base_case_id before running these requests.",
+			"item": [
+				{
+					"name": "List Referrals",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (1-indexed)",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Results per page (max 100)",
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "",
+									"description": "Filter by CaseStatus enum value (e.g. sent, received, investigating)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "List all referrals for a base case. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns referral list', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"  if (json.data.length > 0) {",
+									"    pm.environment.set('referral_id', json.data[0].id);",
+									"    console.log('Saved first referral ID: ' + json.data[0].id);",
+									"  }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Referral",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}"
+							]
+						},
+						"description": "Returns a single referral by UUID. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns referral object', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.id).to.equal(pm.environment.get('referral_id'));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Referral",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"notes\": \"Updated via API\",\n  \"phase\": \"investigation\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}"
+							]
+						},
+						"description": "Updates mutable fields on a referral (notes, phase, financial estimates, etc.). Tier: STANDARD. Note: only the referent firm can update notes."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Send Referral",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"referentFirmId\": \"<receiving-firm-uuid \u2014 replace with the target firm ID from GET /firms/directory>\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/send",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"send"
+							]
+						},
+						"description": "Sends a DRAFT referral to the specified receiving firm, transitioning it to SENT. Tier: STANDARD. Only the referring firm may call this action."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Acknowledge Referral",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/acknowledge",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"acknowledge"
+							]
+						},
+						"description": "Acknowledges a SENT referral, transitioning it to RECEIVED. Tier: STANDARD. Only the receiving (referent) firm may call this action."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Begin Investigating",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/begin-investigating",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"begin-investigating"
+							]
+						},
+						"description": "Begins investigation on a RECEIVED referral, transitioning it to INVESTIGATING. Tier: STANDARD. Only the receiving firm may call this action."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Sign Referral",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/sign",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"sign"
+							]
+						},
+						"description": "Marks a referral as signed by the client, transitioning it to SIGNED. Tier: STANDARD. Only the receiving firm may call this action."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Start Litigation",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/start-litigation",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"start-litigation"
+							]
+						},
+						"description": "Transitions a SIGNED referral to IN_LITIGATION. Tier: STANDARD. Only the receiving firm may call this action."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Close Referral",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"closingStatus\": \"won_settled\",\n  \"closureReason\": \"Settlement reached\",\n  \"settlementAmount\": 75000,\n  \"attorneyFees\": 25000\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/close",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"close"
+							]
+						},
+						"description": "Closes a referral with a closing status (won_settled, lost, etc.). Tier: FULL. Only the receiving firm may call this action."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns closed referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Reject Referral",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Not a good fit for our practice\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/reject",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"reject"
+							]
+						},
+						"description": "Rejects an incoming referral. Tier: STANDARD. Only the receiving firm may call this action."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns rejected referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Withdraw Referral",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Client no longer pursuing\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/withdraw",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"withdraw"
+							]
+						},
+						"description": "Withdraws a sent referral back to the referring firm. Tier: STANDARD. Only the referring firm may call this action."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns withdrawn referral', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Delete Referral",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}"
+							]
+						},
+						"description": "Deletes a DRAFT referral. Only the referring firm may delete. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 204', () => pm.response.to.have.status(204));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Referral Status History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/status-history",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"{{base_case_id}}",
+								"referrals",
+								"{{referral_id}}",
+								"status-history"
+							]
+						},
+						"description": "Returns all historical status transitions for a referral. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns status history array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Status Updates",
+			"description": "Status update lookups and listings. All endpoints require at minimum READ_ONLY tier.",
+			"item": [
+				{
+					"name": "Lookup Status Updates",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/status-updates/lookup?id={{case_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"status-updates",
+								"lookup"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "{{case_id}}",
+									"description": "The case or referral ID to look up status updates for"
+								}
+							]
+						},
+						"description": "Returns status updates for a specific case or referral identified by the provided ID. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns status updates array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});",
+									"pm.test('Returns meta with requestId', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.meta).to.be.an('object');",
+									"  pm.expect(json.meta.requestId).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "List All Status Updates",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/status-updates?page=1&limit=20",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"status-updates"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (1-indexed)"
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Results per page (max 100)"
+								}
+							]
+						},
+						"description": "Returns all status updates accessible to the API key's firm, paginated. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns status updates array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});",
+									"pm.test('Returns pagination object', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.pagination).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Messages",
+			"description": "Send messages on referrals. Requires at minimum STANDARD tier.",
+			"item": [
+				{
+					"name": "Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id\": \"{{case_id}}\",\n  \"message\": \"Please provide an update on this case.\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/messages/send",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"messages",
+								"send"
+							]
+						},
+						"description": "Sends a message on a referral identified by the provided ID. Tier: STANDARD."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201', () => pm.response.to.have.status(201));",
+									"pm.test('Returns message with isMessage flag', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data.isMessage).to.be.true;",
+									"});",
+									"pm.test('Returns meta with requestId', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.meta).to.be.an('object');",
+									"  pm.expect(json.meta.requestId).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Routing Evaluation",
+			"description": "Evaluate routing rules to determine which firms a case would be routed to.",
+			"item": [
+				{
+					"name": "Evaluate Routing Rules",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/routing/evaluate?caseType=Personal Injury&jurisdiction=CA",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"routing",
+								"evaluate"
+							],
+							"query": [
+								{
+									"key": "caseType",
+									"value": "Personal Injury",
+									"description": "Case type name to evaluate routing rules for"
+								},
+								{
+									"key": "jurisdiction",
+									"value": "CA",
+									"description": "Jurisdiction code to evaluate routing rules for"
+								},
+								{
+									"key": "tier",
+									"value": "",
+									"description": "Optional routing tier filter",
+									"disabled": true
+								},
+								{
+									"key": "county",
+									"value": "",
+									"description": "Optional county filter",
+									"disabled": true
+								},
+								{
+									"key": "typeCategory",
+									"value": "",
+									"description": "Optional case type category filter",
+									"disabled": true
+								},
+								{
+									"key": "attempt",
+									"value": "",
+									"description": "Optional attempt number for re-referral evaluation",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Evaluates routing rules for the given case type and jurisdiction, returning the ranked list of firms that would receive the referral. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns routing evaluation result', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Re-refer Evaluation",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/routing/re-refer?caseId={{referral_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"routing",
+								"re-refer"
+							],
+							"query": [
+								{
+									"key": "caseId",
+									"value": "{{referral_id}}",
+									"description": "Referral UUID to evaluate re-referral routing for"
+								},
+								{
+									"key": "tier",
+									"value": "",
+									"description": "Optional routing tier filter",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Evaluates which firms would receive a re-referral for an existing case, taking into account previous routing attempts. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns re-refer evaluation result', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Network",
+			"description": "Manage the firm's private referral network \u2014 outbound and inbound relationships with partner firms.",
+			"item": [
+				{
+					"name": "Get Outbound Network Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/network/outbound/{{target_firm_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"network",
+								"outbound",
+								"{{target_firm_id}}"
+							]
+						},
+						"description": "Returns the outbound network relationship between the caller's firm and the specified target firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns outbound relationship', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Inbound Network Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/network/inbound/{{target_firm_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"network",
+								"inbound",
+								"{{target_firm_id}}"
+							]
+						},
+						"description": "Returns the inbound network relationship between the specified target firm and the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns inbound relationship', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "List Pending Relationships",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/network/pending",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"network",
+								"pending"
+							]
+						},
+						"description": "Returns all pending inbound network relationship requests awaiting the caller's firm's acceptance. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns pending relationships array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Create/Update Outbound Relationship",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"description\": \"Strategic referral partner\",\n  \"sendingPercentage\": 33.5,\n  \"daysForUnderEvaluation\": 14,\n  \"daysForInvestigating\": 30\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/network/outbound/{{target_firm_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"network",
+								"outbound",
+								"{{target_firm_id}}"
+							]
+						},
+						"description": "Creates or fully replaces the outbound network relationship with the specified target firm. Tier: FULL."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200 or 201', () => {",
+									"  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+									"});",
+									"pm.test('Returns relationship data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Outbound Relationship",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sendingPercentage\": 50\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/network/outbound/{{target_firm_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"network",
+								"outbound",
+								"{{target_firm_id}}"
+							]
+						},
+						"description": "Partially updates the outbound network relationship with the specified target firm. Only provided fields are updated. Tier: STANDARD."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated relationship', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Inbound Relationship",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"active\",\n  \"referralInstructions\": \"Send cases via API\"\n}"
+						},
+						"url": {
+							"raw": "{{public_api_url}}/network/inbound/{{target_firm_id}}",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"network",
+								"inbound",
+								"{{target_firm_id}}"
+							]
+						},
+						"description": "Partially updates the inbound network relationship from the specified target firm \u2014 e.g., accepting a pending request or updating referral instructions. Tier: STANDARD."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns updated relationship', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "{{base_url}}",
+			"description": "CaseXchange backend base URL"
+		},
+		{
+			"key": "public_api_url",
+			"value": "{{public_api_url}}",
+			"description": "Public API base URL"
+		},
+		{
+			"key": "internal_api_url",
+			"value": "{{internal_api_url}}",
+			"description": "Internal API base URL (for auth and key management)"
+		},
+		{
+			"key": "login_email",
+			"value": "{{login_email}}",
+			"type": "string"
+		},
+		{
+			"key": "login_password",
+			"value": "{{login_password}}",
+			"type": "string"
+		}
+	]
+}
