@@ -1,5 +1,5 @@
 ---
-title: "API Reference Overview"
+title: "Integration Overview"
 description: "How to use the CaseXchange API reference and Postman collection"
 ---
 
@@ -22,8 +22,8 @@ The fastest way to explore and test the API is with the pre-built Postman collec
 
 ### What is covered
 
-- 58 paths and 74 operations in the OpenAPI schema (internal API).
-- The Public API (`/api/public/v1`) adds dedicated endpoints for sent cases, received referrals, medical referrals, routing rules, notifications, and analytics — all authenticated via `X-API-Key`.
+- The Public API (`/api/public/v1`) provides endpoints for sent cases, received referrals, firms, documents, medical referrals, routing rules, notifications, analytics, users, and bulk import — all authenticated via `X-API-Key`.
+- The Internal API (`/api/v1`) covers authentication, session management, and API key administration — authenticated via JWT bearer tokens.
 - Shared request/response schemas and standardized error envelopes across both API layers.
 
 ### Base URLs
@@ -41,31 +41,28 @@ The fastest way to explore and test the API is with the pre-built Postman collec
 X-API-Key: cxp_std_your_key_here
 ```
 
-**Internal API** — use JWT bearer tokens:
+**Internal API** — use JWT bearer tokens (relative to `/api/v1`):
 
-1. `POST /auth/login`
-2. `GET /auth/me`
-3. `POST /auth/refresh-session` (when the access token expires)
+1. `POST /api/v1/auth/login`
+2. `GET /api/v1/auth/me`
+3. `POST /api/v1/auth/refresh-session` (when the access token expires)
 4. Continue requests with `Authorization: Bearer <accessToken>`
 
-See:
-
-- `/api-reference/examples` for end-to-end request examples
-- `/api-reference/error-handling` for auth failure troubleshooting
+See the [JWT Guide](/auth/jwt) and [OAuth Guide](/auth/oauth) for full details.
 
 ### Response conventions
 
-Public API responses use a consistent envelope:
+Public API responses use a consistent envelope. See the [Response Format](/api-reference/response-format) page for full details.
 
 ```json
 {
   "data": { },
   "meta": { "requestId": "...", "timestamp": "..." },
   "pagination": {
-    "total": 124,
-    "page": 2,
+    "total": 50,
+    "page": 1,
     "limit": 20,
-    "totalPages": 7
+    "totalPages": 3
   }
 }
 ```
@@ -82,6 +79,18 @@ Error responses:
   "meta": { "requestId": "...", "timestamp": "..." }
 }
 ```
+
+### Rate limiting
+
+Public API endpoints are rate limited per API key. Rate limit headers are included on every response:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed in the current window |
+| `X-RateLimit-Remaining` | Remaining requests in the current window |
+| `X-RateLimit-Reset` | Unix timestamp when the window resets |
+
+When you exceed the limit, you will receive a `429 Too Many Requests` response. Implement exponential backoff and respect the `X-RateLimit-Reset` header before retrying.
 
 ### How to navigate the endpoints
 

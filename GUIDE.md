@@ -15,11 +15,11 @@ This documentation primarily covers the **Public API**. The internal API is docu
 
 All Public API requests require an `X-API-Key` header with a tiered key:
 
-| Tier | Prefix | Permissions |
-|------|--------|-------------|
-| READ_ONLY | `cxp_ro_...` | GET endpoints only |
-| STANDARD | `cxp_std_...` | Read + create/update |
-| FULL | `cxp_full_...` | All operations including destructive actions |
+| Tier | Prefix | Permissions | Best for |
+|------|--------|-------------|----------|
+| READ_ONLY | `cxp_ro_...` | GET endpoints only | Dashboards, read integrations |
+| STANDARD | `cxp_std_...` | Read + create/update referrals | Case intake, referral workflows |
+| FULL | `cxp_full_...` | All operations including delete, bulk import, routing rules, firm profile updates | Admin integrations |
 
 ```
 X-API-Key: cxp_std_your_key_here
@@ -29,7 +29,7 @@ Keys are created via the internal API (`POST /api/v1/public-api-keys`) by firm a
 
 ### Internal API — JWT / OAuth 2.0
 
-See `/auth/jwt` and `/auth/oauth` in the docs site for details on JWT session and OAuth Authorization Code flows.
+See the [JWT Guide](/auth/jwt) and [OAuth Guide](/auth/oauth) in the docs site for details on JWT session and OAuth Authorization Code flows.
 
 ## Base URLs
 
@@ -39,7 +39,7 @@ See `/auth/jwt` and `/auth/oauth` in the docs site for details on JWT session an
 
 ## Public API Endpoint Groups
 
-- **Health** — `GET /health` (no auth required)
+- **Health** — `GET /api/public/v1/health` (no auth required)
 - **Reference Data** — Case types, jurisdictions, counties
 - **Firms** — Directory, own firm profile, available firms, firm by ID
 - **Sent Cases** — Create, list, detail, refer, update (sender perspective)
@@ -94,10 +94,15 @@ A pre-built Postman collection and production environment are available in the `
 
 ## Rate Limiting
 
-Rate limit headers are returned on every response:
-- `X-RateLimit-Limit` — Maximum requests allowed
-- `X-RateLimit-Remaining` — Remaining requests in current window
-- `X-RateLimit-Reset` — Time when limit resets (Unix timestamp)
+Public API endpoints are rate limited per API key. Rate limit headers are included on every response:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed in the current window |
+| `X-RateLimit-Remaining` | Remaining requests in the current window |
+| `X-RateLimit-Reset` | Unix timestamp when the window resets |
+
+When you exceed the limit, you will receive a `429 Too Many Requests` response. Implement exponential backoff and respect the `X-RateLimit-Reset` header before retrying.
 
 ## Support
 

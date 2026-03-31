@@ -38,7 +38,7 @@
             ]
           },
           {
-            "group": "API Guides",
+            "group": "Integration Guides",
             "pages": [
               "api-reference/index",
               "api-reference/examples",

@@ -7,14 +7,13 @@ description: "Everything you need to build with the CaseXchange platform"
 
 CaseXchange connects law firms with the referrals, routing logic, and case data they need to collaborate securely. The Public API uses **API key authentication** with tiered access levels, giving third parties a straightforward path to integration.
 
-<Columns cols={2}>
+<CardGroup cols={2}>
   <Card
     title="Quickstart"
     icon="rocket"
     href="/quickstart"
-    horizontal
   >
-    Get your API key and make your first call in minutes.
+    Get your API key and make your first call.
   </Card>
   <Card
     title="API Reference"
@@ -23,42 +22,35 @@ CaseXchange connects law firms with the referrals, routing logic, and case data 
   >
     Explore every endpoint with request/response examples.
   </Card>
-</Columns>
-
-## Try It Now
-
-Import the collection into Postman and start making requests immediately.
-
-<Columns cols={2}>
   <Card
     title="Postman Collection"
     icon="download"
-    href="/postman/CaseXchange-Public-API.postman_collection.json"
+    href="/quickstart#3-set-up-postman-optional"
   >
-    Pre-built requests for every Public API endpoint with automated test scripts and environment variable chaining.
+    Pre-built requests with automated test scripts and variable chaining.
   </Card>
   <Card
-    title="Postman Environment"
-    icon="gear"
-    href="/postman/CaseXchange-Public-API.postman_environment.production.json"
+    title="Error Handling"
+    icon="triangle-exclamation"
+    href="/api-reference/error-handling"
   >
-    Production environment template with all required variables pre-configured.
+    Response envelopes, status codes, and troubleshooting patterns.
   </Card>
-</Columns>
+</CardGroup>
 
 ## Access Tiers
 
 The Public API uses `X-API-Key` authentication with three access levels:
 
-| Tier | Key prefix | Permissions |
-|------|-----------|-------------|
-| **READ_ONLY** | `cxp_ro_...` | GET endpoints only |
-| **STANDARD** | `cxp_std_...` | READ_ONLY + create/update operations |
-| **FULL** | `cxp_full_...` | STANDARD + destructive and admin-grade operations |
+| Tier | Key prefix | Permissions | Best for |
+|------|-----------|-------------|----------|
+| **READ_ONLY** | `cxp_ro_...` | GET endpoints only | Dashboards, read integrations |
+| **STANDARD** | `cxp_std_...` | Read + create/update referrals | Case intake, referral workflows |
+| **FULL** | `cxp_full_...` | All operations including delete, bulk import, routing rules, firm profile updates | Admin integrations |
 
 ## What's Inside
 
-<Columns cols={3}>
+<CardGroup cols={2}>
   <Card
     title="Cases & Referrals"
     icon="folder-open"
@@ -74,42 +66,24 @@ The Public API uses `X-API-Key` authentication with three access levels:
     Browse the firm directory, manage your profile, and discover available referral partners.
   </Card>
   <Card
-    title="Routing Rules"
-    icon="diagram-project"
-    href="/api-reference"
+    title="Jurisdictions"
+    icon="map"
+    href="/concepts/jurisdictions"
   >
-    Configure and evaluate automatic routing rules to match cases with the right firm.
+    US states and territories supported by the platform.
   </Card>
-</Columns>
+  <Card
+    title="Case Types"
+    icon="tag"
+    href="/concepts/case-types"
+  >
+    Practice areas and specialties available for referral routing.
+  </Card>
+</CardGroup>
 
-<Columns cols={3}>
-  <Card
-    title="Documents"
-    icon="file-arrow-up"
-    href="/api-reference"
-  >
-    Upload, list, and download case documents with pre-signed S3 URLs.
-  </Card>
-  <Card
-    title="Analytics"
-    icon="chart-line"
-    href="/api-reference"
-  >
-    Dashboard summaries and case-level analytics with date range filtering.
-  </Card>
-  <Card
-    title="Bulk Import"
-    icon="file-csv"
-    href="/api-reference"
-  >
-    Import and update cases in bulk via CSV upload.
-  </Card>
-</Columns>
+The API also covers **documents** (upload, download via pre-signed URLs), **routing rules** (automatic case assignment), **analytics** (dashboard and case-level), **users** (invite, update, deactivate), **medical referrals**, **notifications** (email preferences), **bulk CSV import/update**, and **API key management**.
 
-- **Users** - List, invite, update, and deactivate users within your firm.
-- **Medical Referrals** - Create and manage medical provider referrals linked to cases.
-- **Notifications** - Configure email notification preferences and recipient lists.
-- **Key Management** - Create, list, inspect usage, and revoke API keys via the internal API.
+See the [API Reference](/api-reference) for the complete endpoint list, or explore every request in the [Postman Collection](/quickstart#3-set-up-postman-optional).
 
 <Card
   title="Need help?"

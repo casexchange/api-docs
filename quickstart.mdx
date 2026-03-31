@@ -7,62 +7,72 @@ description: "Launch your CaseXchange integration in three steps"
 
 ### 1. Get your API key
 
-<AccordionGroup>
-  <Accordion icon="id-card" title="Request API access">
-    1. Email `help@casexchange.com` with your firm name, use case, and environment (Prod or QA/UAT).\n
-    2. Receive onboarding details from the team.\n
-    3. Log in to CaseXchange and generate a Public API key from **Settings > API Keys**.
-  </Accordion>
-  <Accordion icon="key" title="Choose your access tier">
-    - **READ_ONLY** (`cxp_ro_...`) — GET endpoints only. Best for dashboards and read integrations.\n
-    - **STANDARD** (`cxp_std_...`) — Read + create/update. Best for case intake and referral workflows.\n
-    - **FULL** (`cxp_full_...`) — Full access including destructive operations. Best for admin integrations.\n
-    - Store your key securely; it is only shown once at creation time.
-  </Accordion>
-</AccordionGroup>
+Contact us to get started, then generate a key from the dashboard.
 
-### 2. Set up Postman (optional)
+1. Email `help@casexchange.com` with your firm name, use case, and environment (Prod or QA/UAT).
+2. Receive onboarding details from the team (allow 1-2 business days).
+3. Log in to CaseXchange and generate a Public API key from **Settings > API Keys**.
 
-The fastest way to explore the API is with the pre-built Postman collection.
+Choose the tier that fits your integration:
 
-<AccordionGroup>
-  <Accordion icon="download" title="Import the collection">
-    1. Download the [Postman Collection](/postman/CaseXchange-Public-API.postman_collection.json) and [Production Environment](/postman/CaseXchange-Public-API.postman_environment.production.json).\n
-    2. In Postman, click **Import** and select both files.\n
-    3. Select the **CaseXchange Public API - Production** environment from the environment dropdown.
-  </Accordion>
-  <Accordion icon="gear" title="Configure your environment">
-    1. Set `login_email` and `login_password` for your CaseXchange account.\n
-    2. Run the **Login** request under _Authentication Setup_ to establish a session.\n
-    3. Run **Create Public API Key** to generate and auto-save your `api_key`.\n
-    4. All subsequent requests will use the `api_key` via the `X-API-Key` header automatically.
-  </Accordion>
-</AccordionGroup>
+| Tier | Key prefix | Permissions | Best for |
+|------|-----------|-------------|----------|
+| **READ_ONLY** | `cxp_ro_...` | GET endpoints only | Dashboards, read integrations |
+| **STANDARD** | `cxp_std_...` | Read + create/update referrals | Case intake, referral workflows |
+| **FULL** | `cxp_full_...` | All operations including delete, bulk import, routing rules, firm profile updates | Admin integrations |
 
-### 3. Make your first API call
+<Warning>
+  Your API key is only shown once at creation time. Store it securely.
+</Warning>
 
-<Accordion icon="circle-check" title="Validate your key and explore">
-1. Call `GET /api/public/v1/health` — no API key required, confirms connectivity.\n
-2. Call `GET /api/public/v1/firms/me` with your `X-API-Key` header to verify your firm context.\n
-3. Browse available firms with `GET /api/public/v1/firms/directory`.\n
-4. List your sent cases with `GET /api/public/v1/sent-cases`.\n
-5. List received referrals with `GET /api/public/v1/received-referrals`.
-</Accordion>
+### 2. Make your first API call
 
-### Quick cURL example
+Confirm connectivity, then verify your key works.
 
 ```bash
-# Health check (no auth)
-curl https://api.casexchange.com/api/public/v1/health
-
-# Get your firm profile
+# Verify your key — returns your firm profile
 curl https://api.casexchange.com/api/public/v1/firms/me \
   -H "X-API-Key: cxp_std_your_key_here"
+```
 
-# List sent cases
+Once that returns your firm data, try these:
+
+```bash
+# List sent cases (paginated)
 curl "https://api.casexchange.com/api/public/v1/sent-cases?page=1&limit=20" \
   -H "X-API-Key: cxp_std_your_key_here"
+
+# List received referrals
+curl "https://api.casexchange.com/api/public/v1/received-referrals?page=1&limit=20" \
+  -H "X-API-Key: cxp_std_your_key_here"
+
+# Browse available firms
+curl https://api.casexchange.com/api/public/v1/firms/directory \
+  -H "X-API-Key: cxp_std_your_key_here"
+
+# Get reference data
+curl https://api.casexchange.com/api/public/v1/case-types \
+  -H "X-API-Key: cxp_std_your_key_here"
 ```
+
+### 3. Set up Postman (optional)
+
+The Postman collection provides pre-built requests for every endpoint with automated test scripts that chain environment variables between requests.
+
+1. Download the [Postman Collection](/postman/CaseXchange-Public-API.postman_collection.json) and [Production Environment](/postman/CaseXchange-Public-API.postman_environment.production.json).
+2. In Postman, click **Import** and select both files.
+3. Select the **CaseXchange Public API - Production** environment from the dropdown.
+
+<Accordion icon="gear" title="Alternative: generate an API key via Postman">
+  If you prefer to create your API key programmatically instead of via the dashboard UI:
+
+  1. Set `login_email` and `login_password` in the Postman environment for your CaseXchange account.
+  2. Run the **Login** request under _Authentication Setup_ — this uses the **Internal API** (`/api/v1`) to establish a JWT session.
+  3. Run **Create Public API Key** to generate and auto-save your `api_key`.
+  4. All subsequent Public API requests will use the `api_key` via the `X-API-Key` header automatically.
+
+  **Note:** Login and key creation use Internal API authentication (JWT). Once your key is created, all other requests use Public API authentication (`X-API-Key`) only.
+</Accordion>
 
 ## Next steps
 
