@@ -1,0 +1,151 @@
+---
+title: "Reference Data"
+description: "Case types, jurisdictions, and counties"
+---
+
+These endpoints return the lookup values used when creating and filtering case referrals. All three require the `read_only` tier or above.
+
+### List case types
+
+Returns every active case type available for creating referrals.
+
+<span style={{ fontSize: "0.75rem", background: "#e0f2fe", padding: "2px 8px", borderRadius: "4px" }}>read_only</span>
+
+```bash
+curl "https://api.casexchange.com/api/public/v1/case-types" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+Example `200` response:
+
+```json
+{
+  "data": [
+    {
+      "id": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+      "name": "personal_injury",
+      "displayName": "Personal Injury",
+      "explanation": "Bodily injury claims arising from negligence, including auto accidents, slip-and-fall, and premises liability."
+    },
+    {
+      "id": "b2c3d4e5-6789-abcd-ef01-234567890abc",
+      "name": "medical_malpractice",
+      "displayName": "Medical Malpractice",
+      "explanation": "Claims against healthcare providers for substandard treatment resulting in patient harm."
+    },
+    {
+      "id": "c3d4e5f6-789a-bcde-f012-34567890abcd",
+      "name": "workers_compensation",
+      "displayName": "Workers' Compensation",
+      "explanation": null
+    },
+    {
+      "id": "d4e5f6a7-89ab-cdef-0123-4567890abcde",
+      "name": "mass_tort",
+      "displayName": "Mass Tort",
+      "explanation": "Large-scale litigation where many plaintiffs allege harm from the same product or action."
+    }
+  ],
+  "meta": {
+    "requestId": "req_f2dbe1d3f6ad4a7bb5b4c9f2",
+    "timestamp": "2026-03-31T14:22:08.000Z"
+  }
+}
+```
+
+The `displayName` and `explanation` fields may be `null` for some case types. Use the `name` value when creating referrals.
+
+---
+
+### List jurisdictions
+
+Returns all US states and territories supported by the platform.
+
+<span style={{ fontSize: "0.75rem", background: "#e0f2fe", padding: "2px 8px", borderRadius: "4px" }}>read_only</span>
+
+```bash
+curl "https://api.casexchange.com/api/public/v1/jurisdictions" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+Example `200` response (truncated):
+
+```json
+{
+  "data": [
+    { "code": "AL", "name": "Alabama" },
+    { "code": "AK", "name": "Alaska" },
+    { "code": "AZ", "name": "Arizona" },
+    { "code": "CA", "name": "California" },
+    { "code": "FL", "name": "Florida" },
+    { "code": "NY", "name": "New York" },
+    { "code": "NJ", "name": "New Jersey" },
+    { "code": "TX", "name": "Texas" }
+  ],
+  "meta": {
+    "requestId": "req_8a4c2e1b9d3f5071a6c8e4d2",
+    "timestamp": "2026-03-31T14:22:45.000Z"
+  }
+}
+```
+
+Use the two-letter `code` value when filtering counties or setting jurisdiction on a case.
+
+---
+
+### List counties
+
+Returns counties, optionally filtered by one or more jurisdiction codes.
+
+<span style={{ fontSize: "0.75rem", background: "#e0f2fe", padding: "2px 8px", borderRadius: "4px" }}>read_only</span>
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `jurisdictionCodes` | string | No | Comma-separated jurisdiction codes (e.g. `NY,NJ`). Omit to return all counties. |
+
+```bash
+curl "https://api.casexchange.com/api/public/v1/counties?jurisdictionCodes=NY,NJ" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+Example `200` response (truncated):
+
+```json
+{
+  "data": [
+    {
+      "id": "e5f6a7b8-9abc-def0-1234-567890abcdef",
+      "name": "Kings County",
+      "jurisdictionCode": "NY"
+    },
+    {
+      "id": "f6a7b8c9-abcd-ef01-2345-67890abcdef0",
+      "name": "New York County",
+      "jurisdictionCode": "NY"
+    },
+    {
+      "id": "a7b8c9d0-bcde-f012-3456-7890abcdef01",
+      "name": "Suffolk County",
+      "jurisdictionCode": "NY"
+    },
+    {
+      "id": "b8c9d0e1-cdef-0123-4567-890abcdef012",
+      "name": "Bergen County",
+      "jurisdictionCode": "NJ"
+    },
+    {
+      "id": "c9d0e1f2-def0-1234-5678-90abcdef0123",
+      "name": "Essex County",
+      "jurisdictionCode": "NJ"
+    }
+  ],
+  "meta": {
+    "requestId": "req_1b3d5f7a9c2e4068b0d2f4a6",
+    "timestamp": "2026-03-31T14:23:12.000Z"
+  }
+}
+```
+
+Without `jurisdictionCodes` the response includes every county across all jurisdictions. Filter to keep payloads small when you only need specific states.

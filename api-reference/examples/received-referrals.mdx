@@ -1,0 +1,365 @@
+---
+title: "Received Referrals"
+description: "Referrals received by your firm (receiver perspective)"
+---
+
+## Received Referrals Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+These endpoints provide a receiver-centric view of referrals sent to your firm, with flexible ID resolution (UUID, reference number, or CMS ID).
+
+---
+
+### GET /received-referrals
+
+Returns a paginated list of referrals received by your firm. Lean response shape includes only summary fields.
+
+**Tier:** `read_only`
+
+**Query parameters:**
+
+| Parameter | Type    | Default     | Description                                                     |
+|-----------|---------|-------------|-----------------------------------------------------------------|
+| `page`    | integer | `1`         | Page number (1-indexed).                                        |
+| `limit`   | integer | `20`        | Items per page (max 100).                                       |
+| `status`  | string  | —           | Filter by status (e.g., `under_evaluation`, `investigating`).   |
+| `search`  | string  | —           | Search by reference number or sending firm name.                |
+| `sort`    | string  | `updatedAt` | Sort field: `updatedAt`, `status`, or `referenceNumber`.        |
+| `order`   | string  | `desc`      | Sort order: `asc` or `desc`.                                    |
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/received-referrals?page=1&limit=20&status=under_evaluation&sort=updatedAt&order=desc" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": [
+    {
+      "id": "e4f5a6b7-1234-5678-9abc-def012345678",
+      "referenceNumber": "CX-RR-90412",
+      "cmsId": "NEOS-44821",
+      "sendingFirmName": "Whitfield & Garza LLP",
+      "sendingFirmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+      "status": "under_evaluation",
+      "closingStatus": null,
+      "updatedAt": "2026-03-28T14:32:00.000Z"
+    },
+    {
+      "id": "f5a6b7c8-2345-6789-0abc-ef0123456789",
+      "referenceNumber": "CX-RR-90387",
+      "cmsId": null,
+      "sendingFirmName": "Delacroix Injury Law",
+      "sendingFirmId": "d4e5f6a7-8901-2bcd-ef34-567890abcde0",
+      "status": "under_evaluation",
+      "closingStatus": null,
+      "updatedAt": "2026-03-27T09:15:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 47,
+    "totalPages": 3
+  },
+  "meta": {
+    "requestId": "req_a1b2c3d4e5f67890",
+    "timestamp": "2026-03-31T16:00:00.000Z"
+  }
+}
+```
+
+---
+
+### GET /received-referrals/{id}
+
+Returns full detail for a single received referral. The `{id}` parameter accepts a UUID, reference number, or CMS ID -- the server resolves whichever format you provide.
+
+**PII masking:** When the referral status is `sent`, client PII fields (`clientFirstName`, `clientLastName`, `clientEmail`, `clientPhone`, `clientDateOfBirth`) along with `description`, `notes`, `incidentDate`, and `leadAttorneyName` are masked and returned as `null`. PII is revealed once the receiver moves the referral to `under_evaluation` or any later status.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/received-referrals/e4f5a6b7-1234-5678-9abc-def012345678" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+You can also look up by reference number or CMS ID:
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/received-referrals/CX-RR-90412" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/received-referrals/NEOS-44821" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200` -- status is `under_evaluation` (PII visible)**
+
+```json
+{
+  "data": {
+    "id": "e4f5a6b7-1234-5678-9abc-def012345678",
+    "baseCaseId": "a0b1c2d3-4567-89ab-cdef-0123456789ab",
+    "referenceNumber": "CX-RR-90412",
+    "cmsId": "NEOS-44821",
+    "sequenceNumber": 1,
+    "status": "under_evaluation",
+    "closingStatus": null,
+    "closureReason": null,
+    "sendingFirmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+    "sendingFirmName": "Whitfield & Garza LLP",
+    "receivingFirmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+    "title": "Motor Vehicle Accident - Martinez",
+    "description": "Rear-end collision on I-10 near exit 42. Client was stopped at traffic when struck from behind.",
+    "caseType": "personal_injury",
+    "jurisdiction": "CA",
+    "county": "Los Angeles",
+    "clientFirstName": "Sofia",
+    "clientLastName": "Martinez",
+    "clientEmail": "s.martinez@example.com",
+    "clientPhone": "310-555-0192",
+    "clientDateOfBirth": "1988-04-12T00:00:00.000Z",
+    "incidentDate": "2026-02-14T00:00:00.000Z",
+    "notes": "Client prefers evening callbacks after 5 PM.",
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "leadAttorneyName": null,
+    "clientFeeAgreementPercentage": null,
+    "sendingFirmPercentage": 25,
+    "projectedSettlementAmount": null,
+    "estimatedDateOfResolution": null,
+    "estimatedDistributionDate": null,
+    "statuteOfLimitationsExpiration": "2028-02-14T00:00:00.000Z",
+    "phase": null,
+    "isRetainerSigned": false,
+    "createdAt": "2026-03-15T10:22:00.000Z",
+    "updatedAt": "2026-03-28T14:32:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_b2c3d4e5f6789012",
+    "timestamp": "2026-03-31T16:00:05.000Z"
+  }
+}
+```
+
+**Response `200` -- status is `sent` (PII masked)**
+
+When the referral has not yet been evaluated, PII fields are returned as `null`:
+
+```json
+{
+  "data": {
+    "id": "f5a6b7c8-2345-6789-0abc-ef0123456789",
+    "baseCaseId": "b1c2d3e4-5678-9abc-def0-123456789abc",
+    "referenceNumber": "CX-RR-90387",
+    "cmsId": null,
+    "sequenceNumber": 1,
+    "status": "sent",
+    "closingStatus": null,
+    "closureReason": null,
+    "sendingFirmId": "d4e5f6a7-8901-2bcd-ef34-567890abcde0",
+    "sendingFirmName": "Delacroix Injury Law",
+    "receivingFirmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+    "title": "Slip and Fall - Confidential",
+    "description": null,
+    "caseType": "premises_liability",
+    "jurisdiction": "TX",
+    "county": "Harris",
+    "clientFirstName": null,
+    "clientLastName": null,
+    "clientEmail": null,
+    "clientPhone": null,
+    "clientDateOfBirth": null,
+    "incidentDate": null,
+    "notes": null,
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "leadAttorneyName": null,
+    "clientFeeAgreementPercentage": null,
+    "sendingFirmPercentage": 30,
+    "projectedSettlementAmount": null,
+    "estimatedDateOfResolution": null,
+    "estimatedDistributionDate": null,
+    "statuteOfLimitationsExpiration": null,
+    "phase": null,
+    "isRetainerSigned": false,
+    "createdAt": "2026-03-27T09:15:00.000Z",
+    "updatedAt": "2026-03-27T09:15:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_c3d4e5f67890a123",
+    "timestamp": "2026-03-31T16:00:10.000Z"
+  }
+}
+```
+
+---
+
+### GET /received-referrals/{id}/available-statuses
+
+Returns the current status and the available next status transitions for a received referral. Each transition indicates whether a reason or closing status is required. Use this before presenting status-change options in your UI or before calling a status-update endpoint.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/received-referrals/e4f5a6b7-1234-5678-9abc-def012345678/available-statuses" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "currentStatus": "under_evaluation",
+    "availableTransitions": [
+      {
+        "status": "investigating",
+        "label": "Begin Investigating",
+        "requiresReason": false,
+        "requiresClosingStatus": false
+      },
+      {
+        "status": "signed",
+        "label": "Mark as Signed",
+        "requiresReason": false,
+        "requiresClosingStatus": false
+      },
+      {
+        "status": "rejected",
+        "label": "Reject Case",
+        "requiresReason": true,
+        "requiresClosingStatus": false
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_d4e5f6a78901b234",
+    "timestamp": "2026-03-31T16:00:15.000Z"
+  }
+}
+```
+
+A referral in `in_litigation` status might show a `closing` transition that requires a closing status:
+
+```json
+{
+  "data": {
+    "currentStatus": "in_litigation",
+    "availableTransitions": [
+      {
+        "status": "closing",
+        "label": "Begin Closing",
+        "requiresReason": false,
+        "requiresClosingStatus": false
+      },
+      {
+        "status": "closed",
+        "label": "Close Case",
+        "requiresReason": false,
+        "requiresClosingStatus": true
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_e5f6a7b89012c345",
+    "timestamp": "2026-03-31T16:00:16.000Z"
+  }
+}
+```
+
+---
+
+### PATCH /received-referrals/{id}
+
+Partially updates fields on a received referral. Only the fields you include in the request body are changed; omitted fields remain unchanged. At least one field must be provided.
+
+**Tier:** `standard`
+
+**Updatable fields:**
+
+| Field                            | Type    | Notes                                            |
+|----------------------------------|---------|--------------------------------------------------|
+| `leadAttorneyName`               | string  | Max 500 characters. Nullable.                    |
+| `phase`                          | string  | Max 200 characters. Nullable.                    |
+| `notes`                          | string  | Max 10,000 characters. Nullable.                 |
+| `statuteOfLimitationsExpiration` | date    | ISO 8601 datetime. Nullable.                     |
+| `clientFeeAgreementPercentage`   | number  | 0 to 1 (e.g., `0.33` for 33%). Nullable.        |
+| `attorneyFees`                   | number  | Minimum 0. Nullable.                             |
+| `estimatedDateOfResolution`      | date    | ISO 8601 datetime. Nullable.                     |
+| `estimatedDistributionDate`      | date    | ISO 8601 datetime. Nullable.                     |
+| `projectedSettlementAmount`      | number  | Minimum 0. Nullable.                             |
+| `sendingFirmPercentage`          | number  | 0 to 100. Nullable.                              |
+| `settlementAmount`               | number  | Minimum 0. Nullable.                             |
+
+```bash
+curl -X PATCH "https://api.casexchange.com/api/public/v1/received-referrals/e4f5a6b7-1234-5678-9abc-def012345678" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "leadAttorneyName": "Jane Smith",
+    "phase": "Discovery",
+    "notes": "Initial review completed. Medical records requested from provider.",
+    "projectedSettlementAmount": 175000,
+    "estimatedDateOfResolution": "2027-01-15T00:00:00.000Z",
+    "clientFeeAgreementPercentage": 0.33,
+    "attorneyFees": 12500
+  }'
+```
+
+**Response `200`**
+
+The response returns the full updated referral detail:
+
+```json
+{
+  "data": {
+    "id": "e4f5a6b7-1234-5678-9abc-def012345678",
+    "baseCaseId": "a0b1c2d3-4567-89ab-cdef-0123456789ab",
+    "referenceNumber": "CX-RR-90412",
+    "cmsId": "NEOS-44821",
+    "sequenceNumber": 1,
+    "status": "under_evaluation",
+    "closingStatus": null,
+    "closureReason": null,
+    "sendingFirmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+    "sendingFirmName": "Whitfield & Garza LLP",
+    "receivingFirmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+    "title": "Motor Vehicle Accident - Martinez",
+    "description": "Rear-end collision on I-10 near exit 42. Client was stopped at traffic when struck from behind.",
+    "caseType": "personal_injury",
+    "jurisdiction": "CA",
+    "county": "Los Angeles",
+    "clientFirstName": "Sofia",
+    "clientLastName": "Martinez",
+    "clientEmail": "s.martinez@example.com",
+    "clientPhone": "310-555-0192",
+    "clientDateOfBirth": "1988-04-12T00:00:00.000Z",
+    "incidentDate": "2026-02-14T00:00:00.000Z",
+    "notes": "Initial review completed. Medical records requested from provider.",
+    "settlementAmount": null,
+    "attorneyFees": 12500,
+    "leadAttorneyName": "Jane Smith",
+    "clientFeeAgreementPercentage": 0.33,
+    "sendingFirmPercentage": 25,
+    "projectedSettlementAmount": 175000,
+    "estimatedDateOfResolution": "2027-01-15T00:00:00.000Z",
+    "estimatedDistributionDate": null,
+    "statuteOfLimitationsExpiration": "2028-02-14T00:00:00.000Z",
+    "phase": "Discovery",
+    "isRetainerSigned": false,
+    "createdAt": "2026-03-15T10:22:00.000Z",
+    "updatedAt": "2026-03-31T16:00:20.000Z"
+  },
+  "meta": {
+    "requestId": "req_f6a7b8c90123d456",
+    "timestamp": "2026-03-31T16:00:20.000Z"
+  }
+}
+```

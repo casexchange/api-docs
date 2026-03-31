@@ -1,0 +1,176 @@
+---
+title: "Users"
+description: "User management within the caller's firm"
+---
+
+## Users Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+---
+
+### GET /users
+
+Returns all users belonging to the API key's own firm. Supports pagination.
+
+**Tier:** `read_only`
+
+**Query parameters:**
+
+| Parameter | Type    | Default | Description                  |
+|-----------|---------|---------|------------------------------|
+| `page`    | integer | `1`     | Page number (1-indexed).     |
+| `limit`   | integer | `25`    | Results per page (max 100).  |
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/users?page=1&limit=25" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": [
+    {
+      "id": "e1f2a3b4-5678-9cde-f012-3456789abcde",
+      "email": "morgan.reilly@sterlinglaw.example.com",
+      "firstName": "Morgan",
+      "lastName": "Reilly",
+      "role": "ADMIN",
+      "isActive": true,
+      "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+      "createdAt": "2024-06-15T09:35:00.000Z"
+    },
+    {
+      "id": "f2a3b4c5-6789-0def-0123-456789abcdef",
+      "email": "dana.kim@sterlinglaw.example.com",
+      "firstName": "Dana",
+      "lastName": "Kim",
+      "role": "ACCOUNT_MANAGER",
+      "isActive": true,
+      "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+      "createdAt": "2024-09-22T14:10:00.000Z"
+    },
+    {
+      "id": "a3b4c5d6-7890-1ef0-1234-567890abcdef",
+      "email": "leo.chan@sterlinglaw.example.com",
+      "firstName": "Leo",
+      "lastName": "Chan",
+      "role": "MEMBER",
+      "isActive": false,
+      "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+      "createdAt": "2025-01-08T11:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "requestId": "req_2e8f6a7b9c012345",
+    "timestamp": "2026-03-31T16:01:00.000Z"
+  }
+}
+```
+
+---
+
+### POST /users
+
+Invites a new user to the caller's firm. An invitation email is sent to the provided address.
+
+**Tier:** `full`
+
+**Required fields:** `email`, `firstName`, `lastName`, `role`
+
+**Valid roles:** `ADMIN`, `ACCOUNT_MANAGER`, `FIRM_ADMIN`, `MEMBER`, `VIEWER`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/users" \
+  -H "X-API-Key: cxp_full_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "priya.sharma@sterlinglaw.example.com",
+    "firstName": "Priya",
+    "lastName": "Sharma",
+    "role": "MEMBER"
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "data": {
+    "id": "b4c5d6e7-8901-2f01-2345-6789abcdef01",
+    "email": "priya.sharma@sterlinglaw.example.com",
+    "firstName": "Priya",
+    "lastName": "Sharma",
+    "role": "MEMBER",
+    "isActive": true,
+    "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+    "createdAt": "2026-03-31T16:02:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_3f9a7b8c0d123456",
+    "timestamp": "2026-03-31T16:02:00.000Z"
+  }
+}
+```
+
+---
+
+### PUT /users/{id}
+
+Updates a user in the caller's firm. All body fields are optional -- include only the fields you want to change. Email must be unique across all users and is lowercased automatically.
+
+**Tier:** `full`
+
+**Optional fields:** `firstName`, `lastName`, `email`, `role`, `isActive`
+
+```bash
+curl -X PUT "https://api.casexchange.com/api/public/v1/users/f2a3b4c5-6789-0def-0123-456789abcdef" \
+  -H "X-API-Key: cxp_full_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Dana",
+    "lastName": "Kim-Torres",
+    "role": "FIRM_ADMIN",
+    "isActive": true
+  }'
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "id": "f2a3b4c5-6789-0def-0123-456789abcdef",
+    "email": "dana.kim@sterlinglaw.example.com",
+    "firstName": "Dana",
+    "lastName": "Kim-Torres",
+    "role": "FIRM_ADMIN",
+    "isActive": true,
+    "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+    "createdAt": "2024-09-22T14:10:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_4a0b8c9d1e234567",
+    "timestamp": "2026-03-31T16:03:00.000Z"
+  }
+}
+```
+
+---
+
+### DELETE /users/{id}
+
+Deactivates a user in the caller's firm. Sets the user to inactive, clears security tokens, and revokes all active sessions. This action does not permanently delete the user record.
+
+**Tier:** `full`
+
+```bash
+curl -X DELETE "https://api.casexchange.com/api/public/v1/users/a3b4c5d6-7890-1ef0-1234-567890abcdef" \
+  -H "X-API-Key: cxp_full_your_key_here"
+```
+
+**Response `204`**
+
+No content returned.

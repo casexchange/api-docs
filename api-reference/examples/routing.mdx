@@ -1,0 +1,328 @@
+---
+title: "Routing"
+description: "Referral routing rules and evaluation"
+---
+
+## Routing Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+---
+
+### GET /routing/rules
+
+Returns the referral routing rules configured for the caller's firm.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/routing/rules" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": [
+    {
+      "id": "e4a71c9f-2b38-4d06-a9f1-7c8e350d12ab",
+      "name": "Auto-route NY Personal Injury",
+      "conditions": [
+        {
+          "field": "caseType",
+          "operator": "in",
+          "value": ["Personal Injury"]
+        },
+        {
+          "field": "jurisdiction",
+          "operator": "eq",
+          "value": "NY"
+        }
+      ],
+      "targetFirmId": "b2c3d4e5-6789-0abc-def1-234567890abc",
+      "priority": 1,
+      "isActive": true,
+      "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+      "createdAt": "2025-09-10T14:30:00.000Z",
+      "updatedAt": "2026-01-05T11:15:00.000Z"
+    },
+    {
+      "id": "f5b82daf-3c49-5e17-baf2-8d9f461e23bc",
+      "name": "CA Med-Mal to Caldwell",
+      "conditions": [
+        {
+          "field": "caseType",
+          "operator": "in",
+          "value": ["Medical Malpractice"]
+        },
+        {
+          "field": "jurisdiction",
+          "operator": "eq",
+          "value": "CA"
+        }
+      ],
+      "targetFirmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+      "priority": 2,
+      "isActive": true,
+      "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+      "createdAt": "2025-10-22T09:00:00.000Z",
+      "updatedAt": "2026-02-14T16:45:00.000Z"
+    }
+  ],
+  "meta": {
+    "requestId": "req_4e7a1b2c3d5f6789",
+    "timestamp": "2026-03-31T16:00:00.000Z"
+  }
+}
+```
+
+---
+
+### POST /routing/rules
+
+Creates a new referral routing rule for the firm. Required fields: `name`, `caseTypeIds` (at least one valid case type UUID), and `assignments`.
+
+**Tier:** `full`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/routing/rules" \
+  -H "X-API-Key: cxp_full_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Auto-route NY Personal Injury",
+    "caseTypeIds": ["d7f8a9b0-1234-5678-9abc-def012345678"],
+    "jurisdictionCodes": ["NY"],
+    "assignments": [
+      {
+        "recipientType": "casexchange_firm",
+        "casexchangeFirmId": "b2c3d4e5-6789-0abc-def1-234567890abc",
+        "distributionWeight": 1
+      }
+    ],
+    "priority": 1
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "data": {
+    "id": "e4a71c9f-2b38-4d06-a9f1-7c8e350d12ab",
+    "name": "Auto-route NY Personal Injury",
+    "conditions": [
+      {
+        "field": "caseType",
+        "operator": "in",
+        "value": ["Personal Injury"]
+      },
+      {
+        "field": "jurisdiction",
+        "operator": "eq",
+        "value": "NY"
+      }
+    ],
+    "targetFirmId": "b2c3d4e5-6789-0abc-def1-234567890abc",
+    "priority": 1,
+    "isActive": true,
+    "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+    "createdAt": "2026-03-31T16:01:00.000Z",
+    "updatedAt": "2026-03-31T16:01:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_5f8b2c3d4e6a7890",
+    "timestamp": "2026-03-31T16:01:00.000Z"
+  }
+}
+```
+
+---
+
+### PUT /routing/rules/{id}
+
+Updates an existing routing rule. All body fields are optional -- include only the fields you want to change.
+
+**Tier:** `full`
+
+```bash
+curl -X PUT "https://api.casexchange.com/api/public/v1/routing/rules/e4a71c9f-2b38-4d06-a9f1-7c8e350d12ab" \
+  -H "X-API-Key: cxp_full_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Auto-route NY Personal Injury (Updated)",
+    "priority": 2,
+    "isActive": true
+  }'
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "id": "e4a71c9f-2b38-4d06-a9f1-7c8e350d12ab",
+    "name": "Auto-route NY Personal Injury (Updated)",
+    "conditions": [
+      {
+        "field": "caseType",
+        "operator": "in",
+        "value": ["Personal Injury"]
+      },
+      {
+        "field": "jurisdiction",
+        "operator": "eq",
+        "value": "NY"
+      }
+    ],
+    "targetFirmId": "b2c3d4e5-6789-0abc-def1-234567890abc",
+    "priority": 2,
+    "isActive": true,
+    "firmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+    "createdAt": "2026-03-31T16:01:00.000Z",
+    "updatedAt": "2026-03-31T16:02:30.000Z"
+  },
+  "meta": {
+    "requestId": "req_6a9c3d4e5f7b8901",
+    "timestamp": "2026-03-31T16:02:30.000Z"
+  }
+}
+```
+
+---
+
+### DELETE /routing/rules/{id}
+
+Deletes a routing rule. Returns `204 No Content` on success.
+
+**Tier:** `full`
+
+```bash
+curl -X DELETE "https://api.casexchange.com/api/public/v1/routing/rules/e4a71c9f-2b38-4d06-a9f1-7c8e350d12ab" \
+  -H "X-API-Key: cxp_full_your_key_here"
+```
+
+**Response `204`**
+
+No response body.
+
+---
+
+### GET /routing/evaluate
+
+Evaluates routing rules for a hypothetical case profile and returns the matching rule with its firm assignments. Useful for previewing which firms would receive a referral before it is created.
+
+**Tier:** `read_only`
+
+**Query parameters:**
+
+| Parameter      | Type    | Required | Description                                              |
+|----------------|---------|----------|----------------------------------------------------------|
+| `caseType`     | string  | Yes      | Case type name or ID to match against routing rules.     |
+| `jurisdiction` | string  | Yes      | Jurisdiction code (e.g. `NY`, `CA`).                     |
+| `tier`         | integer | No       | Routing tier to evaluate.                                |
+| `county`       | string  | No       | County name to match against routing rule conditions.    |
+| `typeCategory` | string  | No       | Case type category filter.                               |
+| `attempt`      | integer | No       | Routing attempt number (default `1`).                    |
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/routing/evaluate?caseType=Personal%20Injury&jurisdiction=CA" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "rule": {
+      "id": "f5b82daf-3c49-5e17-baf2-8d9f461e23bc",
+      "name": "CA Injury to Rivera"
+    },
+    "assignments": [
+      {
+        "firmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+        "firmName": "Rivera Injury Law",
+        "referralInstructions": "Email intake@riverainjury.example.com with case summary and client contact info."
+      },
+      {
+        "firmId": "d4e5f6a7-8901-2bcd-ef34-567890abcde0",
+        "firmName": "Hawkins & Pratt LLP",
+        "referralInstructions": null
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_7b0d4e5f6a8c9012",
+    "timestamp": "2026-03-31T16:03:00.000Z"
+  }
+}
+```
+
+When no routing rule matches the given parameters, `data` is `null`:
+
+```json
+{
+  "data": null,
+  "meta": {
+    "requestId": "req_8c1e5f6a7b9d0123",
+    "timestamp": "2026-03-31T16:03:05.000Z"
+  }
+}
+```
+
+---
+
+### GET /routing/re-refer
+
+Evaluates which firms would receive a re-referral for an existing case, taking into account previous routing attempts.
+
+**Tier:** `read_only`
+
+**Query parameters:**
+
+| Parameter | Type    | Required | Description                                                            |
+|-----------|---------|----------|------------------------------------------------------------------------|
+| `caseId`  | string  | Yes      | UUID, reference number, or CMS ID of the case to evaluate.            |
+| `tier`    | integer | No       | Routing tier to evaluate.                                              |
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/routing/re-refer?caseId=a9b0c1d2-3456-7890-abcd-ef0123456789" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "rule": {
+      "id": "f5b82daf-3c49-5e17-baf2-8d9f461e23bc",
+      "name": "CA Injury to Rivera"
+    },
+    "assignments": [
+      {
+        "firmId": "e5f6a7b8-9012-3cde-f456-7890abcdef01",
+        "firmName": "Whitfield Trial Attorneys",
+        "referralInstructions": "Call 415-555-0312 and reference the CaseXchange ID."
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_9d2f6a7b8c0e1234",
+    "timestamp": "2026-03-31T16:04:00.000Z"
+  }
+}
+```
+
+When no routing rule matches, `data` is `null`:
+
+```json
+{
+  "data": null,
+  "meta": {
+    "requestId": "req_0e3a7b8c9d1f2345",
+    "timestamp": "2026-03-31T16:04:05.000Z"
+  }
+}
+```

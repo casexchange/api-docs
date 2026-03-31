@@ -1,0 +1,98 @@
+---
+title: "Bulk Import"
+description: "Bulk case import and update via CSV"
+---
+
+## Bulk Import Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+---
+
+### POST /import/cases
+
+Creates or upserts cases from a CSV file upload. The file must be a valid CSV with headers matching the expected case fields. Maximum file size is 20 MB.
+
+**Tier:** `full`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/import/cases" \
+  -H "X-API-Key: cxp_full_your_key_here" \
+  -F "file=@cases.csv"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "created": 14,
+    "updated": 3,
+    "skipped": 1,
+    "errors": [
+      {
+        "row": 7,
+        "field": "caseType",
+        "message": "Invalid case type 'WORKERZ_COMP'. Expected one of: PERSONAL_INJURY, WORKERS_COMP, MASS_TORT, MEDICAL_MALPRACTICE."
+      },
+      {
+        "row": 19,
+        "field": "referentFirmId",
+        "message": "Firm 'c9a1b2d3-4e56-7f89-0123-456789abcdef' not found or is not an active partner."
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_8d2f4a6b9c1e3570",
+    "timestamp": "2026-03-31T17:45:00.000Z"
+  }
+}
+```
+
+---
+
+### POST /import/cases/update
+
+Updates existing cases from a CSV file. Only existing cases are affected — no new records are created. Each row must include a valid case identifier so the system can match it to an existing record. Maximum file size is 20 MB.
+
+> **Note:** The `notes` field has field-level RBAC. Only the receiving (referent) firm can update it. If the referring firm's CSV includes changes to `notes`, those rows will be rejected with a per-row error.
+
+**Tier:** `full`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/import/cases/update" \
+  -H "X-API-Key: cxp_full_your_key_here" \
+  -F "file=@cases.csv"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "updated": 22,
+    "skipped": 5,
+    "errors": [
+      {
+        "row": 3,
+        "field": "caseId",
+        "message": "Case 'b7e4f1a2-8c39-4d05-9612-fa73de850b41' not found. This endpoint only updates existing cases."
+      },
+      {
+        "row": 11,
+        "field": "notes",
+        "message": "Permission denied. Only the receiving firm can update the 'notes' field."
+      },
+      {
+        "row": 28,
+        "field": "status",
+        "message": "Invalid status transition from 'CLOSED' to 'OPEN'. Closed cases cannot be reopened via bulk update."
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_1e7c3a5d9f2b4806",
+    "timestamp": "2026-03-31T17:48:00.000Z"
+  }
+}
+```

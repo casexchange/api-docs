@@ -1,0 +1,434 @@
+---
+title: "Sent Cases"
+description: "Cases created and sent by your firm (sender perspective)"
+---
+
+## Sent Cases Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+All sent-cases endpoints support flexible ID resolution -- you can pass a UUID, a reference number (e.g. `CX-ABC123`), or a Salesforce record ID wherever `{id}` appears.
+
+---
+
+### GET /sent-cases
+
+Returns a paginated list of cases owned by your firm (sender perspective). The response uses a lean shape with only the fields needed for list views.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/sent-cases?page=1&limit=20&status=sent&sort=updatedAt&order=desc" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": [
+    {
+      "id": "d4e5f6a7-1234-5678-9abc-def012345678",
+      "referenceNumber": "CX-PI-00142",
+      "cmsId": "NEO-88431",
+      "receivingFirmName": "Sterling & Associates",
+      "receivingFirmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+      "status": "sent",
+      "closingStatus": null,
+      "updatedAt": "2026-03-28T15:44:00.000Z"
+    },
+    {
+      "id": "e5f6a7b8-2345-6789-0abc-ef0123456789",
+      "referenceNumber": "CX-PI-00139",
+      "cmsId": null,
+      "receivingFirmName": "Caldwell Legal Group",
+      "receivingFirmId": "b2c3d4e5-6789-0abc-def1-234567890abc",
+      "status": "under_evaluation",
+      "closingStatus": null,
+      "updatedAt": "2026-03-25T10:12:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 47,
+    "totalPages": 3
+  },
+  "meta": {
+    "requestId": "req_8a2b3c4d5e6f7890",
+    "timestamp": "2026-03-31T16:00:00.000Z"
+  }
+}
+```
+
+**Query parameters**
+
+| Param    | Type    | Default     | Description |
+|----------|---------|-------------|-------------|
+| `page`   | integer | `1`         | Page number (1-indexed) |
+| `limit`  | integer | `20`        | Results per page (max 100) |
+| `status` | string  | --          | Filter by status: `draft`, `sent`, `under_evaluation`, `investigating`, `signed`, `in_litigation`, `closing`, `rejected`, `withdrawn`, `closed` |
+| `search` | string  | --          | Search by reference number, receiving firm name, or client name (max 200 chars) |
+| `sort`   | string  | `updatedAt` | Sort field: `updatedAt`, `status`, `referenceNumber` |
+| `order`  | string  | `desc`      | Sort order: `asc` or `desc` |
+
+---
+
+### GET /sent-cases/{id}
+
+Returns full detail for a sent case, including all referrals. The `{id}` parameter accepts a UUID, reference number, or Salesforce record ID.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/sent-cases/d4e5f6a7-1234-5678-9abc-def012345678" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+You can also look up by reference number:
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/sent-cases/CX-PI-00142" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "id": "d4e5f6a7-1234-5678-9abc-def012345678",
+    "referenceNumber": "CX-PI-00142",
+    "cmsId": "NEO-88431",
+    "title": "Martinez v. National Freight - Trucking Accident",
+    "description": "Multi-vehicle collision on I-95. Client was rear-ended by an 18-wheeler.",
+    "caseType": "Personal Injury",
+    "jurisdiction": "FL",
+    "county": "Miami-Dade",
+    "clientFirstName": "Sofia",
+    "clientLastName": "Martinez",
+    "clientEmail": "s.martinez@example.com",
+    "clientPhone": "305-555-0198",
+    "clientDateOfBirth": "1990-04-22T00:00:00.000Z",
+    "incidentDate": "2026-01-15T00:00:00.000Z",
+    "tier": 3,
+    "ratedTier": null,
+    "ratingNotes": null,
+    "source": "Website Lead",
+    "isTestCase": false,
+    "createdBy": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+    "createdAt": "2026-02-10T09:15:00.000Z",
+    "updatedAt": "2026-03-28T15:44:00.000Z",
+    "status": "sent",
+    "closingStatus": null,
+    "closureReason": null,
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "leadAttorneyName": null,
+    "clientFeeAgreementPercentage": null,
+    "statuteOfLimitationsExpiration": null,
+    "estimatedDateOfResolution": null,
+    "estimatedDistributionDate": null,
+    "projectedSettlementAmount": null,
+    "phase": null,
+    "requiresUpdate": false,
+    "referrals": [
+      {
+        "id": "c3d4e5f6-7890-1234-5678-9abcdef01234",
+        "referentFirmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+        "referentFirmName": "Sterling & Associates",
+        "status": "sent",
+        "closingStatus": null,
+        "notes": "Priority referral - strong liability evidence",
+        "createdBy": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+        "lastUpdatedBy": null,
+        "createdAt": "2026-02-10T09:16:00.000Z",
+        "updatedAt": "2026-03-28T15:44:00.000Z"
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_1b2c3d4e5f6a7890",
+    "timestamp": "2026-03-31T16:00:00.000Z"
+  }
+}
+```
+
+---
+
+### GET /sent-cases/{id}/available-statuses
+
+Returns the available next status transitions for the most recent referral on a sent case, from the sender's perspective.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/sent-cases/d4e5f6a7-1234-5678-9abc-def012345678/available-statuses" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "currentStatus": "sent",
+    "availableTransitions": [
+      {
+        "status": "withdrawn",
+        "label": "Withdraw",
+        "requiresReason": true,
+        "requiresClosingStatus": false
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_2c3d4e5f6a7b8901",
+    "timestamp": "2026-03-31T16:00:00.000Z"
+  }
+}
+```
+
+---
+
+### POST /sent-cases
+
+Creates a new case from the sender perspective. The case starts in `draft` status unless a `referentFirmId` is provided, in which case it is immediately sent.
+
+**Tier:** `standard`
+
+**Required fields:** `title`, `caseType`, `jurisdiction`, `clientFirstName`, `clientLastName`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/sent-cases" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Rivera v. Metro Transit - Slip and Fall",
+    "description": "Client slipped on unmarked wet floor in subway station.",
+    "caseType": "Personal Injury",
+    "jurisdiction": "NY",
+    "county": "New York",
+    "clientFirstName": "Marco",
+    "clientLastName": "Rivera",
+    "clientEmail": "m.rivera@example.com",
+    "clientPhone": "212-555-0374",
+    "clientDateOfBirth": "1988-11-03",
+    "incidentDate": "2026-03-10",
+    "tier": 2,
+    "source": "Attorney Referral",
+    "notes": "Witnesses present. Incident report filed with MTA.",
+    "isRetainerSigned": false
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "data": {
+    "id": "f6a7b8c9-3456-7890-1abc-def234567890",
+    "referenceNumber": "CX-PI-00158",
+    "cmsId": null,
+    "title": "Rivera v. Metro Transit - Slip and Fall",
+    "description": "Client slipped on unmarked wet floor in subway station.",
+    "caseType": "Personal Injury",
+    "jurisdiction": "NY",
+    "county": "New York",
+    "clientFirstName": "Marco",
+    "clientLastName": "Rivera",
+    "clientEmail": "m.rivera@example.com",
+    "clientPhone": "212-555-0374",
+    "clientDateOfBirth": "1988-11-03T00:00:00.000Z",
+    "incidentDate": "2026-03-10T00:00:00.000Z",
+    "tier": 2,
+    "ratedTier": null,
+    "ratingNotes": null,
+    "source": "Attorney Referral",
+    "isTestCase": false,
+    "createdBy": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+    "createdAt": "2026-03-31T16:05:00.000Z",
+    "updatedAt": "2026-03-31T16:05:00.000Z",
+    "status": "draft",
+    "closingStatus": null,
+    "closureReason": null,
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "leadAttorneyName": null,
+    "clientFeeAgreementPercentage": null,
+    "statuteOfLimitationsExpiration": null,
+    "estimatedDateOfResolution": null,
+    "estimatedDistributionDate": null,
+    "projectedSettlementAmount": null,
+    "phase": null,
+    "requiresUpdate": false,
+    "referrals": []
+  },
+  "meta": {
+    "requestId": "req_3d4e5f6a7b8c9012",
+    "timestamp": "2026-03-31T16:05:00.000Z"
+  }
+}
+```
+
+---
+
+### POST /sent-cases/{id}/refer
+
+Sends a draft case to a receiving firm, or creates a new referral on an existing case (re-refer). The case status transitions from `draft` to `sent`.
+
+**Tier:** `standard`
+
+**Required fields:** `referentFirmId`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/sent-cases/f6a7b8c9-3456-7890-1abc-def234567890/refer" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "referentFirmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+    "notes": "Priority referral - strong liability, multiple witnesses"
+  }'
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "id": "f6a7b8c9-3456-7890-1abc-def234567890",
+    "referenceNumber": "CX-PI-00158",
+    "cmsId": null,
+    "title": "Rivera v. Metro Transit - Slip and Fall",
+    "description": "Client slipped on unmarked wet floor in subway station.",
+    "caseType": "Personal Injury",
+    "jurisdiction": "NY",
+    "county": "New York",
+    "clientFirstName": "Marco",
+    "clientLastName": "Rivera",
+    "clientEmail": "m.rivera@example.com",
+    "clientPhone": "212-555-0374",
+    "clientDateOfBirth": "1988-11-03T00:00:00.000Z",
+    "incidentDate": "2026-03-10T00:00:00.000Z",
+    "tier": 2,
+    "ratedTier": null,
+    "ratingNotes": null,
+    "source": "Attorney Referral",
+    "isTestCase": false,
+    "createdBy": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+    "createdAt": "2026-03-31T16:05:00.000Z",
+    "updatedAt": "2026-03-31T16:10:00.000Z",
+    "status": "sent",
+    "closingStatus": null,
+    "closureReason": null,
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "leadAttorneyName": null,
+    "clientFeeAgreementPercentage": null,
+    "statuteOfLimitationsExpiration": null,
+    "estimatedDateOfResolution": null,
+    "estimatedDistributionDate": null,
+    "projectedSettlementAmount": null,
+    "phase": null,
+    "requiresUpdate": false,
+    "referrals": [
+      {
+        "id": "a7b8c9d0-4567-8901-2abc-ef3456789012",
+        "referentFirmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+        "referentFirmName": "Sterling & Associates",
+        "status": "sent",
+        "closingStatus": null,
+        "notes": "Priority referral - strong liability, multiple witnesses",
+        "createdBy": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+        "lastUpdatedBy": null,
+        "createdAt": "2026-03-31T16:10:00.000Z",
+        "updatedAt": "2026-03-31T16:10:00.000Z"
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_4e5f6a7b8c9d0123",
+    "timestamp": "2026-03-31T16:10:00.000Z"
+  }
+}
+```
+
+---
+
+### PATCH /sent-cases/{id}
+
+Updates sender-owned fields on a sent case. Only `tier` and `source` can be updated. At least one field must be provided. Omitted fields remain unchanged.
+
+**Tier:** `standard`
+
+```bash
+curl -X PATCH "https://api.casexchange.com/api/public/v1/sent-cases/f6a7b8c9-3456-7890-1abc-def234567890" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tier": 4,
+    "source": "Website Lead"
+  }'
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "id": "f6a7b8c9-3456-7890-1abc-def234567890",
+    "referenceNumber": "CX-PI-00158",
+    "cmsId": null,
+    "title": "Rivera v. Metro Transit - Slip and Fall",
+    "description": "Client slipped on unmarked wet floor in subway station.",
+    "caseType": "Personal Injury",
+    "jurisdiction": "NY",
+    "county": "New York",
+    "clientFirstName": "Marco",
+    "clientLastName": "Rivera",
+    "clientEmail": "m.rivera@example.com",
+    "clientPhone": "212-555-0374",
+    "clientDateOfBirth": "1988-11-03T00:00:00.000Z",
+    "incidentDate": "2026-03-10T00:00:00.000Z",
+    "tier": 4,
+    "ratedTier": null,
+    "ratingNotes": null,
+    "source": "Website Lead",
+    "isTestCase": false,
+    "createdBy": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+    "createdAt": "2026-03-31T16:05:00.000Z",
+    "updatedAt": "2026-03-31T16:15:00.000Z",
+    "status": "sent",
+    "closingStatus": null,
+    "closureReason": null,
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "leadAttorneyName": null,
+    "clientFeeAgreementPercentage": null,
+    "statuteOfLimitationsExpiration": null,
+    "estimatedDateOfResolution": null,
+    "estimatedDistributionDate": null,
+    "projectedSettlementAmount": null,
+    "phase": null,
+    "requiresUpdate": false,
+    "referrals": [
+      {
+        "id": "a7b8c9d0-4567-8901-2abc-ef3456789012",
+        "referentFirmId": "a1b2c3d4-5678-9abc-def0-1234567890ab",
+        "referentFirmName": "Sterling & Associates",
+        "status": "sent",
+        "closingStatus": null,
+        "notes": "Priority referral - strong liability, multiple witnesses",
+        "createdBy": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+        "lastUpdatedBy": null,
+        "createdAt": "2026-03-31T16:10:00.000Z",
+        "updatedAt": "2026-03-31T16:10:00.000Z"
+      }
+    ]
+  },
+  "meta": {
+    "requestId": "req_5f6a7b8c9d0e1234",
+    "timestamp": "2026-03-31T16:15:00.000Z"
+  }
+}
+```

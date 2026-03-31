@@ -1,0 +1,609 @@
+---
+title: "Referrals"
+description: "Referral sub-resources — lifecycle actions and management"
+---
+
+All referral endpoints are scoped under `/cases/{baseCaseId}/referrals`. A referral represents a single case sent from one firm to another and progresses through a defined lifecycle of statuses.
+
+**Base URL:** `https://api.casexchange.com/api/public/v1`
+
+**Authentication:** Pass your API key in the `X-API-Key` header on every request.
+
+---
+
+## Referral status lifecycle
+
+```
+draft -> sent -> received -> under_evaluation -> investigating -> signed -> in_litigation -> closing -> closed
+                                                                                                  \-> won
+                                                                                                  \-> lost
+         sent -> rejected (by receiving firm)
+         sent -> withdrawn (by referring firm)
+```
+
+**Status enum values:**
+`draft` | `sent` | `received` | `under_evaluation` | `investigating` | `signed` | `in_litigation` | `closing` | `won` | `lost` | `rejected` | `withdrawn` | `closed`
+
+**Closing status enum values (used when closing):**
+`won_settled` | `lost` | `no_longer_pursuing`
+
+---
+
+## 1. List Referrals
+
+Retrieves all referrals for a base case. Supports pagination and status filtering.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals?page=1&limit=20&status=investigating" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+```
+
+**Query parameters:**
+
+| Parameter | Type    | Description                              |
+|-----------|---------|------------------------------------------|
+| `page`    | integer | Page number, 1-indexed (default: 1)      |
+| `limit`   | integer | Results per page, max 100 (default: 20)  |
+| `status`  | string  | Filter by CaseStatus enum value          |
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": [
+    {
+      "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+      "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "referenceNumber": "CX-MNO456-R1",
+      "sequenceNumber": 1,
+      "status": "investigating",
+      "closingStatus": null,
+      "closureReason": null,
+      "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
+      "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+      "settlementAmount": null,
+      "attorneyFees": null,
+      "projectedSettlementAmount": 150000.00,
+      "estimatedDateOfResolution": "2026-09-15",
+      "estimatedDistributionDate": null,
+      "statuteOfLimitationsExpiration": "2027-03-01",
+      "clientFeeAgreementPercentage": 33.33,
+      "sendingFirmPercentage": 25.00,
+      "leadAttorneyName": "Sarah Chen",
+      "phase": "discovery",
+      "notes": "Medical records under review. Awaiting expert report.",
+      "isRetainerSigned": true,
+      "createdAt": "2025-11-20T14:30:00.000Z",
+      "updatedAt": "2026-03-28T09:15:22.000Z"
+    },
+    {
+      "id": "b8c9d0e1-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
+      "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "referenceNumber": "CX-MNO456-R2",
+      "sequenceNumber": 2,
+      "status": "rejected",
+      "closingStatus": null,
+      "closureReason": null,
+      "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
+      "referentFirmId": "33333333-aaaa-bbbb-cccc-333333333333",
+      "settlementAmount": null,
+      "attorneyFees": null,
+      "projectedSettlementAmount": null,
+      "estimatedDateOfResolution": null,
+      "estimatedDistributionDate": null,
+      "statuteOfLimitationsExpiration": null,
+      "clientFeeAgreementPercentage": null,
+      "sendingFirmPercentage": null,
+      "leadAttorneyName": null,
+      "phase": null,
+      "notes": null,
+      "isRetainerSigned": false,
+      "createdAt": "2025-10-05T08:00:00.000Z",
+      "updatedAt": "2025-10-06T11:22:33.000Z"
+    }
+  ],
+  "meta": {
+    "requestId": "req_8f2a1b3c4d5e6f7a",
+    "timestamp": "2026-03-31T12:00:01.234Z"
+  }
+}
+```
+
+---
+
+## 2. Get Referral
+
+Returns a single referral by UUID.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+    "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "referenceNumber": "CX-MNO456-R1",
+    "sequenceNumber": 1,
+    "status": "investigating",
+    "closingStatus": null,
+    "closureReason": null,
+    "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
+    "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "projectedSettlementAmount": 150000.00,
+    "estimatedDateOfResolution": "2026-09-15",
+    "estimatedDistributionDate": null,
+    "statuteOfLimitationsExpiration": "2027-03-01",
+    "clientFeeAgreementPercentage": 33.33,
+    "sendingFirmPercentage": 25.00,
+    "leadAttorneyName": "Sarah Chen",
+    "phase": "discovery",
+    "notes": "Medical records under review. Awaiting expert report.",
+    "isRetainerSigned": true,
+    "createdAt": "2025-11-20T14:30:00.000Z",
+    "updatedAt": "2026-03-28T09:15:22.000Z"
+  },
+  "meta": {
+    "requestId": "req_9a3b2c4d5e6f7a8b",
+    "timestamp": "2026-03-31T12:00:05.678Z"
+  }
+}
+```
+
+---
+
+## 3. Update Referral
+
+Updates mutable fields on a referral: notes, phase, financial estimates, dates, and lead attorney. Only the referent (receiving) firm can update notes.
+
+**Tier:** `standard`
+
+```bash
+curl -X PUT "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notes": "Expert report received. Preparing demand letter.",
+    "phase": "demand",
+    "projectedSettlementAmount": 175000.00,
+    "estimatedDateOfResolution": "2026-08-01",
+    "leadAttorneyName": "Sarah Chen",
+    "sendingFirmPercentage": 25.00,
+    "clientFeeAgreementPercentage": 33.33
+  }'
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+    "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "referenceNumber": "CX-MNO456-R1",
+    "sequenceNumber": 1,
+    "status": "investigating",
+    "closingStatus": null,
+    "closureReason": null,
+    "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
+    "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "projectedSettlementAmount": 175000.00,
+    "estimatedDateOfResolution": "2026-08-01",
+    "estimatedDistributionDate": null,
+    "statuteOfLimitationsExpiration": "2027-03-01",
+    "clientFeeAgreementPercentage": 33.33,
+    "sendingFirmPercentage": 25.00,
+    "leadAttorneyName": "Sarah Chen",
+    "phase": "demand",
+    "notes": "Expert report received. Preparing demand letter.",
+    "isRetainerSigned": true,
+    "createdAt": "2025-11-20T14:30:00.000Z",
+    "updatedAt": "2026-03-31T12:05:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_c4d5e6f7a8b9c0d1",
+    "timestamp": "2026-03-31T12:05:00.123Z"
+  }
+}
+```
+
+---
+
+## 4. Send Referral
+
+Sends a `draft` referral to the specified receiving firm, transitioning it to `sent`. Only the referring firm may call this action.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6/send" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "referentFirmId": "22222222-dddd-eeee-ffff-222222222222"
+  }'
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6",
+    "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "referenceNumber": "CX-MNO456-R3",
+    "sequenceNumber": 3,
+    "status": "sent",
+    "closingStatus": null,
+    "closureReason": null,
+    "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
+    "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "projectedSettlementAmount": null,
+    "estimatedDateOfResolution": null,
+    "estimatedDistributionDate": null,
+    "statuteOfLimitationsExpiration": null,
+    "clientFeeAgreementPercentage": null,
+    "sendingFirmPercentage": null,
+    "leadAttorneyName": null,
+    "phase": null,
+    "notes": null,
+    "isRetainerSigned": false,
+    "createdAt": "2026-03-31T12:10:00.000Z",
+    "updatedAt": "2026-03-31T12:10:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_e6f7a8b9c0d1e2f3",
+    "timestamp": "2026-03-31T12:10:00.456Z"
+  }
+}
+```
+
+---
+
+## 5. Acknowledge Referral
+
+Acknowledges a `sent` referral, transitioning it to `received`. Only the receiving (referent) firm may call this action.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/acknowledge" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+    "status": "received",
+    "updatedAt": "2026-03-31T12:15:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_a1b2c3d4e5f6a7b8",
+    "timestamp": "2026-03-31T12:15:00.789Z"
+  }
+}
+```
+
+---
+
+## 6. Begin Investigating
+
+Transitions a `received` referral to `investigating`. Only the receiving firm may call this action.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/begin-investigating" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+    "status": "investigating",
+    "updatedAt": "2026-03-31T12:20:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_b2c3d4e5f6a7b8c9",
+    "timestamp": "2026-03-31T12:20:00.321Z"
+  }
+}
+```
+
+---
+
+## 7. Sign Referral
+
+Marks a referral as signed by the client, transitioning it to `signed`. Only the receiving firm may call this action.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/sign" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+    "status": "signed",
+    "isRetainerSigned": true,
+    "updatedAt": "2026-03-31T12:25:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_c3d4e5f6a7b8c9d0",
+    "timestamp": "2026-03-31T12:25:00.654Z"
+  }
+}
+```
+
+---
+
+## 8. Start Litigation
+
+Transitions a `signed` referral to `in_litigation`. Only the receiving firm may call this action.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/start-litigation" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+    "status": "in_litigation",
+    "updatedAt": "2026-03-31T12:30:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_d4e5f6a7b8c9d0e1",
+    "timestamp": "2026-03-31T12:30:00.987Z"
+  }
+}
+```
+
+---
+
+## 9. Close Referral
+
+Closes a referral with a required `closingStatus` and optional `closureReason`. Financial fields (`settlementAmount`, `attorneyFees`) can also be supplied in the body. Only the receiving firm may call this action.
+
+**Tier:** `standard`
+
+**Closing status values:** `won_settled` | `lost` | `no_longer_pursuing`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/close" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "closingStatus": "won_settled",
+    "closureReason": "Settlement reached after mediation.",
+    "settlementAmount": 185000.00,
+    "attorneyFees": 61650.00
+  }'
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+    "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "referenceNumber": "CX-MNO456-R1",
+    "sequenceNumber": 1,
+    "status": "closed",
+    "closingStatus": "won_settled",
+    "closureReason": "Settlement reached after mediation.",
+    "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
+    "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+    "settlementAmount": 185000.00,
+    "attorneyFees": 61650.00,
+    "projectedSettlementAmount": 175000.00,
+    "estimatedDateOfResolution": "2026-08-01",
+    "estimatedDistributionDate": null,
+    "statuteOfLimitationsExpiration": "2027-03-01",
+    "clientFeeAgreementPercentage": 33.33,
+    "sendingFirmPercentage": 25.00,
+    "leadAttorneyName": "Sarah Chen",
+    "phase": "closed",
+    "notes": "Expert report received. Preparing demand letter.",
+    "isRetainerSigned": true,
+    "createdAt": "2025-11-20T14:30:00.000Z",
+    "updatedAt": "2026-03-31T12:35:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_e5f6a7b8c9d0e1f2",
+    "timestamp": "2026-03-31T12:35:00.111Z"
+  }
+}
+```
+
+---
+
+## 10. Reject Referral
+
+Rejects an incoming referral. Requires a `reason` in the request body. Only the receiving firm may call this action.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/b8c9d0e1-2f3a-4b5c-6d7e-8f9a0b1c2d3e/reject" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Case does not align with our current practice areas."
+  }'
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "b8c9d0e1-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
+    "status": "rejected",
+    "updatedAt": "2026-03-31T12:40:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_f6a7b8c9d0e1f2a3",
+    "timestamp": "2026-03-31T12:40:00.222Z"
+  }
+}
+```
+
+---
+
+## 11. Withdraw Referral
+
+Withdraws a previously sent referral. Requires a `reason` in the request body. Only the referring firm may call this action.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6/withdraw" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Client has decided not to pursue this matter further."
+  }'
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": {
+    "id": "d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6",
+    "status": "withdrawn",
+    "updatedAt": "2026-03-31T12:45:00.000Z"
+  },
+  "meta": {
+    "requestId": "req_a7b8c9d0e1f2a3b4",
+    "timestamp": "2026-03-31T12:45:00.333Z"
+  }
+}
+```
+
+---
+
+## 12. Get Referral Status History
+
+Returns all historical status transitions for a referral, ordered chronologically. Each entry includes the status, an optional message, the source of the transition, and who triggered it.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/status-history" \
+  -H "X-API-Key: cxp_test_k7Rm9sLpQ2xWvN8yJ4hT6bGfA1dC3eZ5"
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "data": [
+    {
+      "id": "aa11bb22-cc33-dd44-ee55-ff6677889900",
+      "referralId": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+      "referenceNumber": "CX-MNO456-R1",
+      "status": "draft",
+      "message": null,
+      "isMessage": false,
+      "source": "system",
+      "createdAt": "2025-11-20T14:30:00.000Z",
+      "createdByName": null
+    },
+    {
+      "id": "bb22cc33-dd44-ee55-ff66-778899001122",
+      "referralId": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+      "referenceNumber": "CX-MNO456-R1",
+      "status": "sent",
+      "message": null,
+      "isMessage": false,
+      "source": "manual",
+      "createdAt": "2025-11-20T15:00:00.000Z",
+      "createdByName": "Jordan Wells"
+    },
+    {
+      "id": "cc33dd44-ee55-ff66-7788-990011223344",
+      "referralId": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+      "referenceNumber": "CX-MNO456-R1",
+      "status": "sent",
+      "message": "We will review this case within 48 hours.",
+      "isMessage": true,
+      "source": "manual",
+      "createdAt": "2025-11-21T09:00:00.000Z",
+      "createdByName": "Sarah Chen"
+    },
+    {
+      "id": "dd44ee55-ff66-7788-9900-112233445566",
+      "referralId": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+      "referenceNumber": "CX-MNO456-R1",
+      "status": "investigating",
+      "message": null,
+      "isMessage": false,
+      "source": "api",
+      "createdAt": "2025-11-22T10:30:00.000Z",
+      "createdByName": "API Integration"
+    },
+    {
+      "id": "ee55ff66-7788-9900-1122-334455667788",
+      "referralId": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
+      "referenceNumber": "CX-MNO456-R1",
+      "status": "signed",
+      "message": null,
+      "isMessage": false,
+      "source": "api",
+      "createdAt": "2025-12-15T16:45:00.000Z",
+      "createdByName": "API Integration"
+    }
+  ],
+  "meta": {
+    "requestId": "req_b8c9d0e1f2a3b4c5",
+    "timestamp": "2026-03-31T12:50:00.444Z"
+  }
+}
+```
+
+**Status history fields:**
+
+| Field             | Type    | Description                                                              |
+|-------------------|---------|--------------------------------------------------------------------------|
+| `id`              | uuid    | Unique ID of the status history entry                                    |
+| `referralId`      | uuid    | The referral this entry belongs to                                       |
+| `referenceNumber` | string  | Human-readable reference number (nullable)                               |
+| `status`          | string  | The status at the time of this entry                                     |
+| `message`         | string  | Optional message attached to the transition (nullable)                   |
+| `isMessage`       | boolean | `true` = message without status change; `false` = actual status transition |
+| `source`          | string  | Origin of the transition: `manual`, `case_status`, `salesforce`, `system`, `dearlegal`, `api` |
+| `createdAt`       | string  | ISO 8601 timestamp of when the entry was created                         |
+| `createdByName`   | string  | Display name of the user who triggered the transition (nullable)         |

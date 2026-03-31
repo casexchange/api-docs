@@ -1,0 +1,48 @@
+---
+title: "Messages"
+description: "Send messages to partner firms on referrals"
+---
+
+## Messages Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+---
+
+### POST /messages/send
+
+Sends a message to the partner firm on a referral. The message will appear in the referral's status history as an entry with `isMessage: true`. Optionally, you can include a `requestedStatus` to ask the partner firm to transition the referral to a specific status. Triggers an email notification to the opposite firm. When the identifier resolves to a base case, the message is sent on the most recent accessible referral.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/messages/send" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+    "message": "Please provide an update on the client deposition scheduled for next week."
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "data": {
+    "id": "a7c3e9f2-48d1-4f6a-b83c-91e5d2047bfa",
+    "referralId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+    "referenceNumber": "CX-R4FG012-M7N",
+    "status": "investigating",
+    "message": "Please provide an update on the client deposition scheduled for next week.",
+    "isMessage": true,
+    "source": "api",
+    "createdAt": "2026-03-31T14:22:08.000Z",
+    "createdByName": "API Integration"
+  },
+  "meta": {
+    "requestId": "req_8c2d6e0f5a7b9413",
+    "timestamp": "2026-03-31T14:22:08.000Z"
+  }
+}
+```
