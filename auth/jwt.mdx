@@ -175,7 +175,7 @@ Response:
     "id": "uuid",
     "name": "My Key",
     "tier": "STANDARD",
-    "key": "cxp_std_live_abc123..."
+    "key": "cxp_std_abc123def456..."
   }
 }
 ```
@@ -190,7 +190,7 @@ Once you have a Public API key, use the `X-API-Key` header for all Public API ca
 
 ```bash
 curl https://api.casexchange.com/api/public/v1/firms/me \
-  -H "X-API-Key: cxp_std_live_abc123..."
+  -H "X-API-Key: cxp_std_abc123def456..."
 ```
 
 From this point on, the JWT session is no longer needed for day-to-day integration work. Use the API key for all Public API endpoints.

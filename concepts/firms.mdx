@@ -8,8 +8,8 @@ description: "How the CaseXchange Public API represents law firms, your own firm
 All firm endpoints require an API key passed via the `X-API-Key` header.
 
 ```bash
-curl -H "X-API-Key: YOUR_API_KEY" \
-  https://api.casexchange.com/firms/me
+curl -H "X-API-Key: cxp_ro_your_key_here" \
+  https://api.casexchange.com/api/public/v1/firms/me
 ```
 
 ## Firm Object
@@ -42,7 +42,7 @@ The `Firm` object represents a law firm registered in CaseXchange. Key fields re
 | `state` | `string \| null` | State |
 | `zip` | `string \| null` | ZIP / postal code |
 | `website` | `string (uri) \| null` | Firm website URL |
-| `isInternal` | `boolean` | Whether the firm is an internal CaseXchange firm |
+| `isInternal` | `boolean` | Whether the firm is a CaseXchange-operated internal firm (most integrators can ignore this — filter to `false` if you only want external firms) |
 | `createdAt` | `string (date-time)` | When the firm record was created |
 | `updatedAt` | `string (date-time)` | When the firm record was last updated |
 
@@ -95,8 +95,8 @@ List endpoints (`/firms/directory`, `/firms/available`) accept the following que
 Example:
 
 ```bash
-curl -H "X-API-Key: YOUR_API_KEY" \
-  "https://api.casexchange.com/firms/available?page=2&limit=50&search=jones"
+curl -H "X-API-Key: cxp_ro_your_key_here" \
+  "https://api.casexchange.com/api/public/v1/firms/available?page=2&limit=50&search=jones"
 ```
 
 ## Response Format
@@ -118,7 +118,7 @@ All firm endpoints return responses in the standard Public API envelope:
     "page": 1,
     "limit": 20,
     "totalPages": 5,
-    "totalCount": 94
+    "total": 94
   }
 }
 ```

@@ -47,14 +47,19 @@
             ]
           },
           {
-            "group": "Endpoint Examples",
+            "group": "Core Examples",
             "pages": [
               "api-reference/examples/reference-data",
               "api-reference/examples/firms",
               "api-reference/examples/sent-cases",
               "api-reference/examples/received-referrals",
               "api-reference/examples/referrals",
-              "api-reference/examples/documents",
+              "api-reference/examples/documents"
+            ]
+          },
+          {
+            "group": "Extended Examples",
+            "pages": [
               "api-reference/examples/users",
               "api-reference/examples/routing",
               "api-reference/examples/analytics",

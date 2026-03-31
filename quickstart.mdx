@@ -13,13 +13,7 @@ Contact us to get started, then generate a key from the dashboard.
 2. Receive onboarding details from the team (allow 1-2 business days).
 3. Log in to CaseXchange and generate a Public API key from **Settings > API Keys**.
 
-Choose the tier that fits your integration:
-
-| Tier | Key prefix | Permissions | Best for |
-|------|-----------|-------------|----------|
-| **READ_ONLY** | `cxp_ro_...` | GET endpoints only | Dashboards, read integrations |
-| **STANDARD** | `cxp_std_...` | Read + create/update referrals | Case intake, referral workflows |
-| **FULL** | `cxp_full_...` | All operations including delete, bulk import, routing rules, firm profile updates | Admin integrations |
+Choose the tier that fits your integration — see [Access Tiers](/#access-tiers) for the full breakdown. In short: `READ_ONLY` for dashboards, `STANDARD` for case intake/referrals, `FULL` for admin operations.
 
 <Warning>
   Your API key is only shown once at creation time. Store it securely.
@@ -34,6 +28,31 @@ Confirm connectivity, then verify your key works.
 curl https://api.casexchange.com/api/public/v1/firms/me \
   -H "X-API-Key: cxp_std_your_key_here"
 ```
+
+**Expected 200 response:**
+
+```json
+{
+  "data": {
+    "id": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
+    "name": "Your Firm Name",
+    "phone": "+1-555-000-1234",
+    "state": "NY",
+    "website": "https://yourfirm.com",
+    "isInternal": false,
+    "createdAt": "2025-01-15T08:30:00Z",
+    "updatedAt": "2026-03-01T14:22:00Z"
+  },
+  "meta": {
+    "requestId": "req_abc123def456",
+    "timestamp": "2026-03-31T12:00:00Z"
+  }
+}
+```
+
+<Tip>
+If you get a `401` with `"code": "invalid_api_key"`, double-check your key is correct and hasn't been revoked. See [Error Handling](/api-reference/error-handling) for troubleshooting.
+</Tip>
 
 Once that returns your firm data, try these:
 
