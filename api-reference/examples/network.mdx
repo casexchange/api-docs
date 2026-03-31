@@ -1,0 +1,258 @@
+---
+title: "Network"
+description: "Manage the firm's private referral network relationships"
+---
+
+## Network Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+---
+
+### GET /network/outbound/{firmId}
+
+Returns detailed information about a firm in your outbound network -- a firm you send referrals to. Includes the firm's profile, jurisdictions, case types, and the relationship settings you have configured for them.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/network/outbound/c3d4e5f6-7890-1abc-def2-34567890abcd" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "firmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+    "firmName": "Rivera Injury Law",
+    "jurisdictions": ["CA", "NV"],
+    "caseTypes": ["Personal Injury", "Product Liability"],
+    "inNetwork": true,
+    "generalReferralInstructions": "Email intake@riverainjury.example.com with case summary and client contact info.",
+    "relationship": {
+      "description": "Primary PI partner for Southern California referrals",
+      "sendingPercentage": 33.5,
+      "daysForUnderEvaluation": 14,
+      "daysForInvestigating": 30,
+      "referralInstructions": "Include police report number when available"
+    }
+  },
+  "meta": {
+    "requestId": "req_7f3a1b2c4d5e6f78",
+    "timestamp": "2026-03-31T16:00:00.000Z"
+  }
+}
+```
+
+---
+
+### GET /network/inbound/{firmId}
+
+Returns detailed information about a firm in your inbound network -- a firm that sends referrals to you. Includes the firm's profile and the relationship settings configured for cases they refer your way.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/network/inbound/d4e5f6a7-8901-2bcd-ef34-567890abcde0" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "firmId": "d4e5f6a7-8901-2bcd-ef34-567890abcde0",
+    "firmName": "Hawkins & Pratt LLP",
+    "jurisdictions": ["NY", "NJ", "CT"],
+    "caseTypes": ["Medical Malpractice", "Nursing Home Abuse"],
+    "inNetwork": true,
+    "generalReferralInstructions": "Submit all referrals through the CaseXchange portal with full medical records attached.",
+    "relationship": {
+      "description": "Receives med-mal overflow from Hawkins & Pratt",
+      "sendingPercentage": null,
+      "daysForUnderEvaluation": 10,
+      "daysForInvestigating": 45,
+      "referralInstructions": "Send cases via API"
+    }
+  },
+  "meta": {
+    "requestId": "req_8a4b2c3d5e6f7890",
+    "timestamp": "2026-03-31T16:00:05.000Z"
+  }
+}
+```
+
+---
+
+### GET /network/pending
+
+Returns all pending network relationship requests for your firm, including both inbound requests (firms asking to send you referrals) and outbound requests (firms you have requested to join your network that have not yet accepted).
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/network/pending" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": [
+    {
+      "firmId": "e5f6a7b8-9012-3cde-f456-7890abcdef01",
+      "firmName": "Whitfield Trial Attorneys",
+      "requestedDate": "2026-03-28T11:15:00.000Z",
+      "direction": "inbound"
+    },
+    {
+      "firmId": "f6a7b8c9-0123-4def-5678-90abcdef0123",
+      "firmName": "Nakamura & Chen Immigration Law",
+      "requestedDate": "2026-03-25T09:42:00.000Z",
+      "direction": "outbound"
+    }
+  ],
+  "meta": {
+    "requestId": "req_9b5c3d4e6f789012",
+    "timestamp": "2026-03-31T16:00:10.000Z"
+  }
+}
+```
+
+---
+
+### POST /network/outbound/{firmId}
+
+Creates a new outbound network relationship with the specified firm, or updates it if one already exists. Use this to request adding a firm to your referral network. The request body is optional -- omit it to create a relationship with default settings, or include fields to configure the relationship up front.
+
+**Tier:** `standard`
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/network/outbound/c3d4e5f6-7890-1abc-def2-34567890abcd" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Strategic referral partner for CA personal injury",
+    "sendingPercentage": 33.5,
+    "daysForUnderEvaluation": 14,
+    "daysForInvestigating": 30
+  }'
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "firmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+    "firmName": "Rivera Injury Law",
+    "jurisdictions": ["CA", "NV"],
+    "caseTypes": ["Personal Injury", "Product Liability"],
+    "inNetwork": true,
+    "generalReferralInstructions": "Email intake@riverainjury.example.com with case summary and client contact info.",
+    "relationship": {
+      "description": "Strategic referral partner for CA personal injury",
+      "sendingPercentage": 33.5,
+      "daysForUnderEvaluation": 14,
+      "daysForInvestigating": 30,
+      "referralInstructions": null
+    }
+  },
+  "meta": {
+    "requestId": "req_0c6d4e5f7a890123",
+    "timestamp": "2026-03-31T16:00:15.000Z"
+  }
+}
+```
+
+---
+
+### PUT /network/outbound/{firmId}
+
+Partially updates an existing outbound network relationship with the specified firm. Only the fields you include in the request body are changed; omitted fields remain as-is. Returns 404 if no relationship exists with the target firm.
+
+**Tier:** `standard`
+
+```bash
+curl -X PUT "https://api.casexchange.com/api/public/v1/network/outbound/c3d4e5f6-7890-1abc-def2-34567890abcd" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sendingPercentage": 50,
+    "referralInstructions": "Include police report and medical records when available"
+  }'
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "firmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+    "firmName": "Rivera Injury Law",
+    "jurisdictions": ["CA", "NV"],
+    "caseTypes": ["Personal Injury", "Product Liability"],
+    "inNetwork": true,
+    "generalReferralInstructions": "Email intake@riverainjury.example.com with case summary and client contact info.",
+    "relationship": {
+      "description": "Strategic referral partner for CA personal injury",
+      "sendingPercentage": 50,
+      "daysForUnderEvaluation": 14,
+      "daysForInvestigating": 30,
+      "referralInstructions": "Include police report and medical records when available"
+    }
+  },
+  "meta": {
+    "requestId": "req_1d7e5f6a8b901234",
+    "timestamp": "2026-03-31T16:00:20.000Z"
+  }
+}
+```
+
+---
+
+### PUT /network/inbound/{firmId}
+
+Partially updates an existing inbound network relationship from the specified firm. Can be used to accept or reject a pending relationship request by setting the `status` field, or to update referral instructions. Returns 404 if no relationship exists from the specified firm.
+
+**Tier:** `standard`
+
+```bash
+curl -X PUT "https://api.casexchange.com/api/public/v1/network/inbound/e5f6a7b8-9012-3cde-f456-7890abcdef01" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "active",
+    "referralInstructions": "Send cases via API with full intake details and signed retainer"
+  }'
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "firmId": "e5f6a7b8-9012-3cde-f456-7890abcdef01",
+    "firmName": "Whitfield Trial Attorneys",
+    "jurisdictions": ["TX", "OK"],
+    "caseTypes": ["Personal Injury", "Wrongful Death"],
+    "inNetwork": true,
+    "generalReferralInstructions": null,
+    "relationship": {
+      "description": null,
+      "sendingPercentage": null,
+      "daysForUnderEvaluation": null,
+      "daysForInvestigating": null,
+      "referralInstructions": "Send cases via API with full intake details and signed retainer"
+    }
+  },
+  "meta": {
+    "requestId": "req_2e8f6a7b9c012345",
+    "timestamp": "2026-03-31T16:00:25.000Z"
+  }
+}
+```

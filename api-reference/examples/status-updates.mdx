@@ -1,0 +1,143 @@
+---
+title: "Status Updates"
+description: "Query status updates across cases and referrals"
+---
+
+## Status Updates Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+---
+
+### GET /status-updates/lookup
+
+Returns all status updates and messages for a case or referral identified by a flexible identifier. The `id` query parameter accepts a referral UUID, a reference number (e.g. `CX-A1BC001-X2Y`), or a CMS ID from any connected system (DearLegal, Neos, Clio, SmartAdvocate, Salesforce, Case Status). When the identifier resolves to a base case, status updates across all accessible referrals are returned.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/status-updates/lookup?id=CX-A1BC001-X2Y" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": [
+    {
+      "id": "b7e24a19-3c85-4f6d-91a2-d0e8f347c562",
+      "referralId": "a1d930f4-82bb-4e1c-b6f0-5c9a3de71284",
+      "referenceNumber": "CX-A1BC001-X2Y",
+      "status": "under_evaluation",
+      "message": "Referral received and currently under medical review.",
+      "isMessage": false,
+      "source": "manual",
+      "createdAt": "2026-03-18T09:15:00.000Z",
+      "createdByName": "Jessica Thompson"
+    },
+    {
+      "id": "c8f35b2a-4d96-5a7e-02b3-e1f9a458d673",
+      "referralId": "a1d930f4-82bb-4e1c-b6f0-5c9a3de71284",
+      "referenceNumber": "CX-A1BC001-X2Y",
+      "status": "under_evaluation",
+      "message": "Please send over the accident report when available.",
+      "isMessage": true,
+      "source": "manual",
+      "createdAt": "2026-03-19T14:42:00.000Z",
+      "createdByName": "Jessica Thompson"
+    },
+    {
+      "id": "d9a46c3b-5e07-6b8f-13c4-f20ab569e784",
+      "referralId": "a1d930f4-82bb-4e1c-b6f0-5c9a3de71284",
+      "referenceNumber": "CX-A1BC001-X2Y",
+      "status": "signed",
+      "message": "Retainer signed. Case accepted for litigation.",
+      "isMessage": false,
+      "source": "case_status",
+      "createdAt": "2026-03-25T11:30:00.000Z",
+      "createdByName": null
+    }
+  ],
+  "meta": {
+    "requestId": "req_8d2e4f6a0b1c3579",
+    "timestamp": "2026-03-31T16:00:00.000Z"
+  }
+}
+```
+
+---
+
+### GET /status-updates
+
+Returns all status updates across all cases and referrals the firm has access to, sorted by most recent first. Results are paginated.
+
+Optional query parameters:
+
+| Parameter  | Type     | Description                                                  |
+|------------|----------|--------------------------------------------------------------|
+| `page`     | integer  | Page number, 1-indexed (default `1`)                         |
+| `limit`    | integer  | Results per page, 1-100 (default `20`)                       |
+| `status`   | string   | Filter by status value (e.g. `signed`, `in_litigation`)      |
+| `dateFrom` | ISO 8601 | Only status updates created on or after this date            |
+| `dateTo`   | ISO 8601 | Only status updates created on or before this date           |
+| `source`   | string   | Filter by source (`manual`, `case_status`, `salesforce`, `system`, `dearlegal`, `api`) |
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/status-updates?page=1&limit=20&dateFrom=2026-03-01T00:00:00.000Z&dateTo=2026-03-31T23:59:59.000Z" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": [
+    {
+      "id": "d9a46c3b-5e07-6b8f-13c4-f20ab569e784",
+      "referralId": "a1d930f4-82bb-4e1c-b6f0-5c9a3de71284",
+      "referenceNumber": "CX-A1BC001-X2Y",
+      "status": "signed",
+      "message": "Retainer signed. Case accepted for litigation.",
+      "isMessage": false,
+      "source": "case_status",
+      "createdAt": "2026-03-25T11:30:00.000Z",
+      "createdByName": null
+    },
+    {
+      "id": "ea5b7d4c-6f18-7c9a-24d5-031bc67af895",
+      "referralId": "f2e841a5-93cc-4f2d-c7a1-6dab4ef82395",
+      "referenceNumber": "CX-D4EF002-Z8W",
+      "status": "investigating",
+      "message": "Liability investigation underway with adjuster.",
+      "isMessage": false,
+      "source": "salesforce",
+      "createdAt": "2026-03-22T08:45:00.000Z",
+      "createdByName": "Marcus Reeves"
+    },
+    {
+      "id": "fb6c8e5d-7a29-8d0b-35e6-142cd78ba906",
+      "referralId": "b3f952b6-a4dd-5a3e-d8b2-7ebc5fa93406",
+      "referenceNumber": "CX-G7HI003-V5Q",
+      "status": "rejected",
+      "message": "Outside practice area. Recommending redirect to partner firm.",
+      "isMessage": false,
+      "source": "manual",
+      "createdAt": "2026-03-20T16:10:00.000Z",
+      "createdByName": "Sarah Chen"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 47,
+    "totalPages": 3
+  },
+  "meta": {
+    "requestId": "req_9e3f5a7b1c2d4680",
+    "timestamp": "2026-03-31T16:00:00.000Z"
+  }
+}
+```

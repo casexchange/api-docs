@@ -1,0 +1,225 @@
+---
+title: "Analytics"
+description: "Dashboard and case analytics"
+---
+
+## Analytics Endpoints
+
+Base URL: `https://api.casexchange.com/api/public/v1`
+
+---
+
+### GET /analytics/dashboard
+
+Returns high-level referral analytics for the caller's firm. Use this endpoint to power dashboard widgets and summary views without fetching individual case records.
+
+**Tier:** `read_only`
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/analytics/dashboard" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "totalCases": 284,
+    "sentCount": 147,
+    "receivedCount": 137,
+    "statusBreakdown": {
+      "pending": 32,
+      "accepted": 98,
+      "rejected": 19,
+      "inProgress": 112,
+      "closed": 23
+    },
+    "averageResponseTimeHours": 4.7,
+    "topCaseTypes": [
+      {
+        "caseType": "Personal Injury",
+        "count": 103
+      },
+      {
+        "caseType": "Medical Malpractice",
+        "count": 61
+      },
+      {
+        "caseType": "Product Liability",
+        "count": 44
+      }
+    ],
+    "topPartnerFirms": [
+      {
+        "firmId": "c3d4e5f6-7890-1abc-def2-34567890abcd",
+        "firmName": "Rivera Injury Law",
+        "referralCount": 38
+      },
+      {
+        "firmId": "d4e5f6a7-8901-2bcd-ef34-567890abcde0",
+        "firmName": "Hawkins & Pratt LLP",
+        "referralCount": 25
+      }
+    ],
+    "periodStart": "2025-01-01T00:00:00.000Z",
+    "periodEnd": "2025-12-31T23:59:59.999Z"
+  },
+  "meta": {
+    "requestId": "req_4e8f2a1b6c3d7590",
+    "timestamp": "2026-03-31T16:05:00.000Z"
+  }
+}
+```
+
+---
+
+### GET /analytics/cases
+
+Returns case-level analytics with optional date range filtering. Both query parameters are optional; omitting them returns analytics across all time.
+
+**Tier:** `read_only`
+
+**Query parameters:**
+
+| Parameter  | Type   | Default | Description                          |
+|------------|--------|---------|--------------------------------------|
+| `dateFrom` | string | —       | Start date filter (`YYYY-MM-DD`).    |
+| `dateTo`   | string | —       | End date filter (`YYYY-MM-DD`).      |
+
+```bash
+curl -X GET "https://api.casexchange.com/api/public/v1/analytics/cases?dateFrom=2025-01-01&dateTo=2025-12-31" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "dateFrom": "2025-01-01",
+    "dateTo": "2025-12-31",
+    "totalCases": 284,
+    "sentCount": 147,
+    "receivedCount": 137,
+    "statusBreakdown": {
+      "pending": 32,
+      "accepted": 98,
+      "rejected": 19,
+      "inProgress": 112,
+      "closed": 23
+    },
+    "monthlySummary": [
+      {
+        "month": "2025-01",
+        "sent": 10,
+        "received": 8,
+        "total": 18
+      },
+      {
+        "month": "2025-02",
+        "sent": 12,
+        "received": 11,
+        "total": 23
+      },
+      {
+        "month": "2025-03",
+        "sent": 14,
+        "received": 9,
+        "total": 23
+      },
+      {
+        "month": "2025-04",
+        "sent": 11,
+        "received": 13,
+        "total": 24
+      },
+      {
+        "month": "2025-05",
+        "sent": 13,
+        "received": 12,
+        "total": 25
+      },
+      {
+        "month": "2025-06",
+        "sent": 15,
+        "received": 10,
+        "total": 25
+      },
+      {
+        "month": "2025-07",
+        "sent": 9,
+        "received": 14,
+        "total": 23
+      },
+      {
+        "month": "2025-08",
+        "sent": 12,
+        "received": 11,
+        "total": 23
+      },
+      {
+        "month": "2025-09",
+        "sent": 14,
+        "received": 13,
+        "total": 27
+      },
+      {
+        "month": "2025-10",
+        "sent": 13,
+        "received": 12,
+        "total": 25
+      },
+      {
+        "month": "2025-11",
+        "sent": 11,
+        "received": 14,
+        "total": 25
+      },
+      {
+        "month": "2025-12",
+        "sent": 13,
+        "received": 10,
+        "total": 23
+      }
+    ],
+    "caseTypeBreakdown": [
+      {
+        "caseType": "Personal Injury",
+        "sent": 54,
+        "received": 49,
+        "total": 103
+      },
+      {
+        "caseType": "Medical Malpractice",
+        "sent": 30,
+        "received": 31,
+        "total": 61
+      },
+      {
+        "caseType": "Product Liability",
+        "sent": 25,
+        "received": 19,
+        "total": 44
+      },
+      {
+        "caseType": "Workers' Compensation",
+        "sent": 18,
+        "received": 16,
+        "total": 34
+      },
+      {
+        "caseType": "Nursing Home Abuse",
+        "sent": 20,
+        "received": 22,
+        "total": 42
+      }
+    ],
+    "averageResponseTimeHours": 4.7
+  },
+  "meta": {
+    "requestId": "req_5f9a3b2c7d4e8601",
+    "timestamp": "2026-03-31T16:05:05.000Z"
+  }
+}
+```

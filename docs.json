@@ -41,10 +41,29 @@
             "group": "Integration Guides",
             "pages": [
               "api-reference/index",
-              "api-reference/examples",
               "api-reference/response-format",
               "api-reference/error-handling",
               "api-reference/workflows"
+            ]
+          },
+          {
+            "group": "Endpoint Examples",
+            "pages": [
+              "api-reference/examples/reference-data",
+              "api-reference/examples/firms",
+              "api-reference/examples/sent-cases",
+              "api-reference/examples/received-referrals",
+              "api-reference/examples/referrals",
+              "api-reference/examples/documents",
+              "api-reference/examples/users",
+              "api-reference/examples/routing",
+              "api-reference/examples/analytics",
+              "api-reference/examples/notifications",
+              "api-reference/examples/medical-referrals",
+              "api-reference/examples/bulk-import",
+              "api-reference/examples/status-updates",
+              "api-reference/examples/messages",
+              "api-reference/examples/network"
             ]
           }
         ]
