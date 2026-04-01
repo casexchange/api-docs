@@ -22,7 +22,7 @@ The fastest way to explore and test the API is with the pre-built Postman collec
 
 ### What is covered
 
-- The Public API (`/api/public/v1`) provides endpoints for sent cases, received referrals, firms, documents, medical referrals, routing rules, notifications, analytics, users, and bulk import — all authenticated via `X-API-Key`.
+- The Public API (`/api/public/v1`) provides endpoints for sent cases, received referrals, firms, documents, routing rules, analytics, and network management — all authenticated via `X-API-Key`.
 - The Internal API (`/api/v1`) covers authentication, session management, and API key administration — authenticated via JWT bearer tokens.
 - Shared request/response schemas and standardized error envelopes across both API layers.
 
@@ -48,7 +48,7 @@ X-API-Key: cxp_std_your_key_here
 3. `POST /api/v1/auth/refresh-session` (when the access token expires)
 4. Continue requests with `Authorization: Bearer <accessToken>`
 
-See the [JWT Guide](/auth/jwt) and [OAuth Guide](/auth/oauth) for full details.
+See the [JWT Guide](/auth/jwt) for full details.
 
 ### Response conventions
 

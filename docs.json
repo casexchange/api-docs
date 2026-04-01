@@ -24,8 +24,7 @@
           {
             "group": "Authentication",
             "pages": [
-              "auth/jwt",
-              "auth/oauth"
+              "auth/jwt"
             ]
           },
           {
@@ -60,12 +59,8 @@
           {
             "group": "Extended Examples",
             "pages": [
-              "api-reference/examples/users",
               "api-reference/examples/routing",
               "api-reference/examples/analytics",
-              "api-reference/examples/notifications",
-              "api-reference/examples/medical-referrals",
-              "api-reference/examples/bulk-import",
               "api-reference/examples/status-updates",
               "api-reference/examples/messages",
               "api-reference/examples/network"

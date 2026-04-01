@@ -139,61 +139,20 @@ See [Documents examples](/api-reference/examples/documents) and [Messages exampl
 
 ---
 
-### 5. Bulk import
+### 5. Routing rules
 
-Import or update cases in bulk using CSV files.
-
-1. Prepare a CSV file with the required columns (case type, jurisdiction, claimant name, etc.).
-2. `POST /import/cases` to upload and import the CSV. The API creates or upserts cases row by row.
-3. Review the per-row results in the response to identify and reconcile any errors.
-4. `POST /import/cases/update` to apply bulk updates to existing cases.
-
-```bash
-# Import cases from CSV
-curl -X POST "https://api.casexchange.com/api/public/v1/import/cases" \
-  -H "X-API-Key: cxp_full_your_key_here" \
-  -F "file=@cases.csv"
-
-# Bulk update existing cases
-curl -X POST "https://api.casexchange.com/api/public/v1/import/cases/update" \
-  -H "X-API-Key: cxp_full_your_key_here" \
-  -F "file=@case-updates.csv"
-```
-
-Implementation tips:
-
-- Maximum CSV file size is 20 MB.
-- Surface row-level validation errors to end users to reduce support volume.
-- The response includes counts for `created`, `updated`, `skipped`, and `failed` rows alongside per-row detail.
-
-See [Bulk Import examples](/api-reference/examples/bulk-import).
-
----
-
-### 6. Routing rules
-
-Configure automatic referral routing based on case type and jurisdiction.
+View routing rules and evaluate routing for a given case profile.
 
 1. `GET /routing/rules` to view the routing rules configured for your firm.
-2. `POST /routing/rules` to create a new rule, specifying `caseTypeIds`, `jurisdictionCodes`, and `assignments` (the firms that should receive matching referrals).
-3. `GET /routing/evaluate` to test which firm a referral would route to for a given case type and jurisdiction combination, without actually creating a referral.
+2. `GET /routing/evaluate` to test which firm a referral would route to for a given case type and jurisdiction combination, without actually creating a referral.
 
 ```bash
-# Create a routing rule
-curl -X POST "https://api.casexchange.com/api/public/v1/routing/rules" \
-  -H "X-API-Key: cxp_full_your_key_here" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "NY Personal Injury Auto-Route",
-    "caseTypeIds": ["a1b2c3d4-5678-9abc-def0-1234567890ab"],
-    "jurisdictionCodes": ["NY"],
-    "assignments": [
-      { "firmId": "b2c3d4e5-6789-0abc-def1-234567890abc", "weight": 100 }
-    ]
-  }'
+# View routing rules
+curl -X GET "https://api.casexchange.com/api/public/v1/routing/rules" \
+  -H "X-API-Key: cxp_ro_your_key_here"
 
 # Test routing evaluation
-curl -X GET "https://api.casexchange.com/api/public/v1/routing/evaluate?caseTypeId=a1b2c3d4-5678-9abc-def0-1234567890ab&jurisdictionCode=NY" \
+curl -X GET "https://api.casexchange.com/api/public/v1/routing/evaluate?caseType=Personal%20Injury&jurisdiction=NY" \
   -H "X-API-Key: cxp_ro_your_key_here"
 ```
 
@@ -201,6 +160,5 @@ Implementation tips:
 
 - Use `GET /routing/evaluate` in dry-run or preview UIs before sending referrals.
 - Rules can overlap -- the API evaluates them in priority order and returns the first match.
-- Routing rules require the `full` tier for creation but only `read_only` for viewing and evaluation.
 
 See [Routing examples](/api-reference/examples/routing).

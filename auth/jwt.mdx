@@ -10,13 +10,12 @@ CaseXchange exposes two distinct API surfaces, each with its own authentication 
 | API | Auth method | Header | Use case |
 |-----|------------|--------|----------|
 | **Public API** (`/api/public/v1/...`) | API key | `X-API-Key: cxp_std_...` | Third-party integrations, data syncs, automations |
-| **Internal API** (`/api/v1/...`) | JWT Bearer token | `Authorization: Bearer <jwt>` | CaseXchange dashboard, API key management, OAuth client registration |
+| **Internal API** (`/api/v1/...`) | JWT Bearer token | `Authorization: Bearer <jwt>` | CaseXchange dashboard, API key management |
 
 This page documents the **Internal API JWT flow**. It is primarily used for:
 
 - The CaseXchange web dashboard
 - Creating and managing Public API keys via `POST /api/v1/public-api-keys`
-- OAuth client registration via `POST /api/v1/admin/oauth-clients`
 
 <Callout icon="key" color="blue">
 Most third-party integrations should use the **Public API** with API key authentication. See the [Quickstart](/quickstart) to get started. JWT authentication is only needed for CaseXchange dashboard access and API key management.
@@ -24,7 +23,7 @@ Most third-party integrations should use the **Public API** with API key authent
 
 ## Overview
 
-JWT authentication is used by the CaseXchange web dashboard and by server integrations that need to manage API keys or OAuth clients.
+JWT authentication is used by the CaseXchange web dashboard and by server integrations that need to manage API keys.
 
 - `POST /api/v1/auth/login` exchanges credentials for an access token.
 - HttpOnly cookies (`auth_token`, `refresh_token_id`) are also set for browser clients.

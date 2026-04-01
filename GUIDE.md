@@ -5,7 +5,7 @@
 CaseXchange provides two API layers:
 
 1. **Public API** (`/api/public/v1`) — API key authentication with tiered access (READ_ONLY, STANDARD, FULL). Designed for third-party integrations.
-2. **Internal API** (`/api/v1`) — JWT bearer token and OAuth 2.0 authentication. Used by the CaseXchange web application and internal services.
+2. **Internal API** (`/api/v1`) — JWT bearer token authentication. Used by the CaseXchange web application and internal services.
 
 This documentation primarily covers the **Public API**. The internal API is documented in the OpenAPI spec (`api-reference/openapi.yml`).
 
@@ -27,9 +27,9 @@ X-API-Key: cxp_std_your_key_here
 
 Keys are created via the internal API (`POST /api/v1/public-api-keys`) by firm admins. The plaintext key is only returned once at creation time.
 
-### Internal API — JWT / OAuth 2.0
+### Internal API — JWT
 
-See the [JWT Guide](/auth/jwt) and [OAuth Guide](/auth/oauth) in the docs site for details on JWT session and OAuth Authorization Code flows.
+See the [JWT Guide](/auth/jwt) in the docs site for details on JWT session authentication.
 
 ## Base URLs
 
