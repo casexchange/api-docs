@@ -15,7 +15,7 @@ info:
     |------|-------------|
     | `read_only` | GET endpoints — read data without mutation |
     | `standard` | read_only + create/update case referrals |
-    | `full` | standard + close, firm mutation, advanced operations |
+    | `full` | standard + delete, close, routing rules, bulk import, firm mutation |
 
     ## Rate Limiting
     Rate limits are enforced per API key. Exceeded limits return `429 Too Many Requests`.
@@ -43,10 +43,18 @@ tags:
     description: Referrals received by your firm (receiver perspective) — flexible ID resolution (UUID, reference number, CMS ID)
   - name: Documents
     description: Document upload, download, and management
+  - name: Users
+    description: User management within the caller's firm
   - name: Routing
     description: Referral routing rules
   - name: Analytics
     description: Dashboard and case analytics
+  - name: Notifications
+    description: Notification preferences and email management
+  - name: Medical Referrals
+    description: Medical provider referrals linked to cases
+  - name: Import
+    description: Bulk case import/update via CSV
   - name: Referrals
     description: Referral sub-resources linked to a BaseCase — lifecycle actions and sub-resource management
   - name: Status Updates
@@ -113,6 +121,89 @@ components:
           type: string
           nullable: true
           description: Human-readable explanation of the case type (mapped from internal description)
+    CustomFieldValue:
+      type: object
+      properties:
+        fieldId:
+          type: string
+          format: uuid
+          description: Unique identifier of the field definition
+        fieldName:
+          type: string
+          description: Machine-readable slug (e.g. "num_people_involved")
+        displayName:
+          type: string
+          description: Human-readable label (e.g. "Number of People Involved")
+        fieldType:
+          type: string
+          enum: [TEXT, NUMBER, DECIMAL, ENUM, DATE, BOOLEAN]
+        value:
+          type: string
+          nullable: true
+          description: The stored value (all types stored as text)
+      required:
+        - fieldId
+        - fieldName
+        - displayName
+        - fieldType
+    CaseTypeFieldDefinition:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: Machine-readable slug
+        displayName:
+          type: string
+        fieldType:
+          type: string
+          enum: [TEXT, NUMBER, DECIMAL, ENUM, DATE, BOOLEAN]
+        displayOrder:
+          type: integer
+        isRequired:
+          type: boolean
+        enumOptions:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              label:
+                type: string
+              value:
+                type: string
+        validationRule:
+          type: object
+          nullable: true
+          properties:
+            min:
+              type: number
+            max:
+              type: number
+            maxLength:
+              type: integer
+      required:
+        - id
+        - name
+        - displayName
+        - fieldType
+        - displayOrder
+        - isRequired
+    CustomFieldUpdateInput:
+      type: object
+      properties:
+        fieldId:
+          type: string
+          format: uuid
+        value:
+          type: string
+          nullable: true
+          maxLength: 10000
+      required:
+        - fieldId
+        - value
     AvailableFirm:
       type: object
       properties:
@@ -143,61 +234,6 @@ components:
           type: string
           enum: [private_network, public_directory, both]
           description: How the firm is available to the requesting firm
-    Case:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        referenceNumber:
-          type: string
-          example: ABC-0001
-        title:
-          type: string
-        description:
-          type: string
-          nullable: true
-        status:
-          type: string
-          description: CaseStatus enum value
-        caseType:
-          type: string
-        jurisdiction:
-          type: string
-        county:
-          type: string
-          nullable: true
-        clientFirstName:
-          type: string
-        clientLastName:
-          type: string
-        clientEmail:
-          type: string
-          format: email
-          nullable: true
-        clientPhone:
-          type: string
-          nullable: true
-        incidentDate:
-          type: string
-          format: date
-          nullable: true
-        notes:
-          type: string
-          nullable: true
-        sendingFirmId:
-          type: string
-          format: uuid
-        receivingFirmId:
-          type: string
-          format: uuid
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
     Document:
       type: object
       properties:
@@ -215,6 +251,30 @@ components:
           type: integer
         uploadedBy:
           type: string
+        createdAt:
+          type: string
+          format: date-time
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+          description: UserRole enum value
+        isActive:
+          type: boolean
+        firmId:
+          type: string
+          format: uuid
         createdAt:
           type: string
           format: date-time
@@ -246,13 +306,38 @@ components:
         updatedAt:
           type: string
           format: date-time
-    Referral:
+    MedicalReferral:
       type: object
       properties:
         id:
           type: string
           format: uuid
-        baseCaseId:
+        caseId:
+          type: string
+          format: uuid
+        providerName:
+          type: string
+        referralType:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        appointmentDate:
+          type: string
+          format: date
+          nullable: true
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Referral:
+      type: object
+      properties:
+        id:
           type: string
           format: uuid
         referenceNumber:
@@ -668,6 +753,11 @@ components:
         updatedAt:
           type: string
           format: date-time
+        customFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldValue"
+          description: Custom field values for this case type
     PatchReceivedReferralBody:
       type: object
       description: At least one field must be provided
@@ -718,6 +808,11 @@ components:
           type: string
           maxLength: 10000
           nullable: true
+        customFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldUpdateInput"
+          description: Custom field values to update (receiving firm, SIGNED+ only)
     AvailableStatusesResponse:
       type: object
       properties:
@@ -877,6 +972,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SentCaseReferralSummary"
+        customFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldValue"
+          description: Custom field values for this case type
     SentCaseReferralSummary:
       type: object
       properties:
@@ -1104,6 +1204,39 @@ paths:
                   - meta
         "401": *ref_4
         "403": *ref_5
+  /reference/case-types/{caseTypeId}/fields:
+    get:
+      operationId: listCaseTypeFields
+      summary: List custom field definitions for a case type
+      description: Returns all active custom field definitions for a given case type, including metadata needed to render forms and validate input.
+      tags:
+        - Reference Data
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - name: caseTypeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The case type ID (from List Case Types endpoint)
+      responses:
+        "200":
+          description: List of field definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CaseTypeFieldDefinition"
+                required:
+                  - data
+        "401": *ref_4
+        "403": *ref_5
   /firms/directory:
     get:
       operationId: listFirmDirectory
@@ -1310,448 +1443,6 @@ paths:
                   - meta
         "401": *ref_4
         "403": *ref_5
-  /cases:
-    get:
-      operationId: listCases
-      summary: List cases
-      description: >-
-        Returns a paginated list of cases accessible to the caller. Supports filtering by status, date range, and
-        keyword search.
-      tags:
-        - Sent Cases
-      security: *ref_3
-      x-access-tier: read_only
-      parameters:
-        - &ref_9
-          in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-            minimum: 1
-          description: Page number (1-indexed)
-        - &ref_10
-          in: query
-          name: limit
-          schema:
-            type: integer
-            default: 20
-            minimum: 1
-            maximum: 100
-          description: Results per page (max 100)
-        - in: query
-          name: status
-          schema:
-            type: string
-          description: Filter by CaseStatus enum value
-        - in: query
-          name: search
-          schema:
-            type: string
-          description: Keyword search across title, reference number, client name
-        - in: query
-          name: dateFrom
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: dateTo
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: view
-          schema:
-            type: string
-            enum:
-              - sent
-              - received
-              - all
-          description: "Perspective filter (default: all)"
-        - in: query
-          name: sort
-          schema:
-            type: string
-        - in: query
-          name: order
-          schema:
-            type: string
-            enum:
-              - asc
-              - desc
-      responses:
-        "200":
-          description: Paginated list of cases
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      items:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/Case"
-                      total:
-                        type: integer
-                      page:
-                        type: integer
-                      limit:
-                        type: integer
-                  meta: *ref_0
-                required:
-                  - data
-                  - meta
-        "401": *ref_4
-        "403": *ref_5
-    post:
-      operationId: createCase
-      summary: Create a case
-      description: Creates a new case referral. Requires STANDARD tier.
-      tags:
-        - Sent Cases
-      security: *ref_3
-      x-access-tier: standard
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - title
-                - caseType
-                - jurisdiction
-                - clientFirstName
-                - clientLastName
-              properties:
-                title:
-                  type: string
-                  minLength: 1
-                description:
-                  type: string
-                caseType:
-                  type: string
-                  minLength: 1
-                jurisdiction:
-                  type: string
-                  minLength: 1
-                county:
-                  type: string
-                  nullable: true
-                clientFirstName:
-                  type: string
-                  minLength: 1
-                clientLastName:
-                  type: string
-                  minLength: 1
-                clientEmail:
-                  type: string
-                  format: email
-                clientPhone:
-                  type: string
-                clientDateOfBirth:
-                  type: string
-                  format: date
-                incidentDate:
-                  type: string
-                  format: date
-                referentFirmId:
-                  type: string
-                  format: uuid
-                notes:
-                  type: string
-                source:
-                  type: string
-                sentExpirationHours:
-                  type: integer
-                  minimum: 1
-                  nullable: true
-                isRetainerSigned:
-                  type: boolean
-                  default: false
-      responses:
-        "201":
-          description: Created case
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/Case"
-                  meta: *ref_0
-                required:
-                  - data
-                  - meta
-        "400": *ref_6
-        "401": *ref_4
-        "403": *ref_5
-  /cases/{id}:
-    get:
-      operationId: getCaseById
-      summary: Get case by ID
-      description: Returns a single case by UUID.
-      tags:
-        - Sent Cases
-      security: *ref_3
-      x-access-tier: read_only
-      parameters:
-        - *ref_7
-      responses:
-        "200":
-          description: Case record
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/Case"
-                  meta: *ref_0
-                required:
-                  - data
-                  - meta
-        "401": *ref_4
-        "403": *ref_5
-        "404": *ref_8
-    put:
-      operationId: updateCase
-      summary: Update a case
-      description: Updates editable fields on a case. Requires STANDARD tier.
-      tags:
-        - Sent Cases
-      security: *ref_3
-      x-access-tier: standard
-      parameters:
-        - *ref_7
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                title:
-                  type: string
-                description:
-                  type: string
-                  nullable: true
-                caseType:
-                  type: string
-                jurisdiction:
-                  type: string
-                clientFirstName:
-                  type: string
-                clientLastName:
-                  type: string
-                clientEmail:
-                  type: string
-                  format: email
-                  nullable: true
-                clientPhone:
-                  type: string
-                  nullable: true
-                notes:
-                  type: string
-                  nullable: true
-                source:
-                  type: string
-                phase:
-                  type: string
-                  nullable: true
-      responses:
-        "200":
-          description: Updated case
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/Case"
-                  meta: *ref_0
-                required:
-                  - data
-                  - meta
-        "400": *ref_6
-        "401": *ref_4
-        "403": *ref_5
-        "404": *ref_8
-  /cases/{id}/status-history:
-    get:
-      operationId: getCaseStatusHistory
-      summary: Get case status history
-      description: Returns all historical status transitions for a case.
-      tags:
-        - Sent Cases
-      security: *ref_3
-      x-access-tier: read_only
-      parameters:
-        - *ref_7
-      responses:
-        "200":
-          description: Status history
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        status:
-                          type: string
-                        notes:
-                          type: string
-                          nullable: true
-                        createdAt:
-                          type: string
-                          format: date-time
-                        createdBy:
-                          type: string
-                  meta: *ref_0
-                required:
-                  - data
-                  - meta
-        "401": *ref_4
-        "403": *ref_5
-        "404": *ref_8
-  /cases/{id}/acknowledge:
-    post:
-      operationId: acknowledgeCase
-      summary: Acknowledge a case
-      description: Marks a SENT case as acknowledged by the receiving firm, transitioning it to RECEIVED. Requires STANDARD tier.
-      tags:
-        - Sent Cases
-      security: *ref_3
-      x-access-tier: standard
-      parameters:
-        - *ref_7
-      responses:
-        "200":
-          description: Acknowledged case
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/Case"
-                  meta: *ref_0
-                required:
-                  - data
-                  - meta
-        "401": *ref_4
-        "403": *ref_5
-        "404": *ref_8
-  /cases/{id}/status:
-    post:
-      operationId: updateCaseStatus
-      summary: Update case status
-      description: Transitions a case to a new status. Invalid transitions are rejected. Requires STANDARD tier.
-      tags:
-        - Sent Cases
-      security: *ref_3
-      x-access-tier: standard
-      parameters:
-        - *ref_7
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - status
-              properties:
-                status:
-                  type: string
-                  description: Target CaseStatus enum value
-                notes:
-                  type: string
-                closingStatus:
-                  type: string
-                  description: Required when transitioning to CLOSED
-      responses:
-        "200":
-          description: Case after status transition
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/Case"
-                  meta: *ref_0
-                required:
-                  - data
-                  - meta
-        "400": *ref_6
-        "401": *ref_4
-        "403": *ref_5
-        "404": *ref_8
-  /cases/{id}/close:
-    post:
-      operationId: closeCase
-      summary: Close a case
-      description: Initiates the closing workflow for a case. Requires FULL tier.
-      tags:
-        - Sent Cases
-      security: *ref_3
-      x-access-tier: full
-      parameters:
-        - *ref_7
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - closingStatus
-              properties:
-                closingStatus:
-                  type: string
-                closingNotes:
-                  type: string
-                settlementAmount:
-                  type: number
-                  minimum: 0
-                clientFeeAgreementPercentage:
-                  type: number
-                  minimum: 0
-                  maximum: 1
-                attorneyFees:
-                  type: number
-                  minimum: 0
-                closureReason:
-                  type: string
-      responses:
-        "200":
-          description: Closed case
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/Case"
-                  meta: *ref_0
-                required:
-                  - data
-                  - meta
-        "400": *ref_6
-        "401": *ref_4
-        "403": *ref_5
-        "404": *ref_8
   /cases/{caseId}/documents:
     get:
       operationId: listDocuments
@@ -1914,6 +1605,167 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
+  /users:
+    get:
+      operationId: listUsers
+      summary: List the caller's firm users
+      description: Returns all users belonging to the API key's own firm.
+      tags:
+        - Users
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number (1-indexed)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Items per page (max 100)
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/User"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+    post:
+      operationId: inviteUser
+      summary: Invite a user
+      description: Invites a new user to the caller's firm. Requires FULL tier.
+      tags:
+        - Users
+      security: *ref_3
+      x-access-tier: full
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - firstName
+                - lastName
+                - role
+              properties:
+                email:
+                  type: string
+                  format: email
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                role:
+                  type: string
+                  description: UserRole enum value
+      responses:
+        "201":
+          description: Invited user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/User"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+  /users/{id}:
+    put:
+      operationId: updateUser
+      summary: Update a user
+      description: Updates a user in the caller's firm. Requires FULL tier.
+      tags:
+        - Users
+      security: *ref_3
+      x-access-tier: full
+      parameters:
+        - *ref_7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName:
+                  type: string
+                  maxLength: 100
+                lastName:
+                  type: string
+                  maxLength: 100
+                email:
+                  type: string
+                  format: email
+                  description: Must be unique across all users. Lowercased automatically.
+                role:
+                  type: string
+                isActive:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/User"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+        "409":
+          description: Email already in use
+          content: *ref_2
+    delete:
+      operationId: deactivateUser
+      summary: Deactivate a user
+      description: >-
+        Deactivates a user in the caller's firm. Sets the user to inactive, clears
+        security tokens, and revokes all active sessions. Requires FULL tier.
+      tags:
+        - Users
+      security: *ref_3
+      x-access-tier: full
+      parameters:
+        - *ref_7
+      responses:
+        "204":
+          description: User deactivated (no content)
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
   /routing/rules:
     get:
       operationId: listRoutingRules
@@ -1941,7 +1793,107 @@ paths:
                   - meta
         "401": *ref_4
         "403": *ref_5
+    post:
+      operationId: createRoutingRule
+      summary: Create a routing rule
+      description: Creates a new referral routing rule for the firm. Requires FULL tier.
+      tags:
+        - Routing
+      security: *ref_3
+      x-access-tier: full
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - conditions
+                - targetFirmId
+              properties:
+                name:
+                  type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                targetFirmId:
+                  type: string
+                  format: uuid
+                priority:
+                  type: integer
+                  minimum: 0
+                isActive:
+                  type: boolean
+                  default: true
+      responses:
+        "201":
+          description: Created routing rule
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/RoutingRule"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
   /routing/rules/{id}:
+    put:
+      operationId: updateRoutingRule
+      summary: Update a routing rule
+      description: Updates an existing routing rule. Requires FULL tier.
+      tags:
+        - Routing
+      security: *ref_3
+      x-access-tier: full
+      parameters:
+        - *ref_7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                targetFirmId:
+                  type: string
+                  format: uuid
+                priority:
+                  type: integer
+                  minimum: 0
+                isActive:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated routing rule
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/RoutingRule"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
     delete:
       operationId: deleteRoutingRule
       summary: Delete a routing rule
@@ -2362,15 +2314,51 @@ paths:
       x-access-tier: read_only
       parameters:
         - in: query
-          name: dateFrom
+          name: referralStartDate
+          required: false
           schema:
             type: string
             format: date
+          description: Filter by referral date (start)
         - in: query
-          name: dateTo
+          name: referralEndDate
+          required: false
           schema:
             type: string
             format: date
+          description: Filter by referral date (end)
+        - in: query
+          name: signedStartDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by signed date (start)
+        - in: query
+          name: signedEndDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by signed date (end)
+        - in: query
+          name: tz
+          required: false
+          schema:
+            type: string
+          description: "IANA timezone, defaults to UTC"
+        - in: query
+          name: caseType
+          required: false
+          schema:
+            type: string
+          description: Filter by case type slug
+        - in: query
+          name: jurisdiction
+          required: false
+          schema:
+            type: string
+          description: Filter by jurisdiction
       responses:
         "200":
           description: Case analytics
@@ -2388,25 +2376,830 @@ paths:
                   - meta
         "401": *ref_4
         "403": *ref_5
-  /cases/{baseCaseId}/referrals:
+  /analytics/homepage:
+    get:
+      operationId: getHomepageAnalytics
+      summary: Homepage period analytics
+      description: >-
+        Returns period counts (today/week/month) with previous-period comparisons
+        for the caller's firm.
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - in: query
+          name: tz
+          schema:
+            type: string
+          description: "IANA timezone, defaults to UTC"
+          required: false
+      responses:
+        "200":
+          description: Homepage period analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: Period analytics with previous-period comparisons
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+  /analytics/cases-by-status:
+    get:
+      operationId: getCasesByStatus
+      summary: Cases by status drill-down
+      description: Returns cases filtered by a given status and context (sent or received).
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - in: query
+          name: status
+          required: true
+          schema:
+            type: string
+          description: Case status to filter by
+        - in: query
+          name: context
+          required: true
+          schema:
+            type: string
+            enum: [sent, received]
+          description: Whether to show sent or received cases
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 50
+          description: Maximum number of results to return
+      responses:
+        "200":
+          description: Cases matching the given status and context
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        title:
+                          type: string
+                        firmName:
+                          type: string
+                        referredOn:
+                          type: string
+                          format: date-time
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+  /analytics/received:
+    get:
+      operationId: getReceivedAnalytics
+      summary: Received tracking analytics
+      description: Returns analytics for referrals received by the caller's firm.
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters: &analytics_extended_params
+        - in: query
+          name: referralStartDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by referral date (start)
+        - in: query
+          name: referralEndDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by referral date (end)
+        - in: query
+          name: firstReferralStartDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by first referral date (start)
+        - in: query
+          name: firstReferralEndDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by first referral date (end)
+        - in: query
+          name: signedStartDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by signed date (start)
+        - in: query
+          name: signedEndDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by signed date (end)
+        - in: query
+          name: tz
+          required: false
+          schema:
+            type: string
+          description: "IANA timezone, defaults to UTC"
+        - in: query
+          name: caseType
+          required: false
+          schema:
+            type: string
+          description: Filter by case type slug
+        - in: query
+          name: jurisdiction
+          required: false
+          schema:
+            type: string
+          description: Filter by jurisdiction
+      responses:
+        "200":
+          description: Received analytics data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: Received analytics metrics
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+  /analytics/sent:
+    get:
+      operationId: getSentAnalytics
+      summary: Sent tracking analytics
+      description: Returns analytics for referrals sent by the caller's firm.
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters: *analytics_extended_params
+      responses:
+        "200":
+          description: Sent analytics data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: Sent analytics metrics
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+  /analytics/revenue-received:
+    get:
+      operationId: getRevenueReceivedAnalytics
+      summary: Revenue received analytics
+      description: Returns revenue analytics for referrals received by the caller's firm.
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters: *analytics_extended_params
+      responses:
+        "200":
+          description: Revenue received analytics data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: Revenue received analytics metrics
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+  /analytics/revenue-sent:
+    get:
+      operationId: getRevenueSentAnalytics
+      summary: Revenue sent analytics
+      description: Returns revenue analytics for referrals sent by the caller's firm.
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters: *analytics_extended_params
+      responses:
+        "200":
+          description: Revenue sent analytics data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: Revenue sent analytics metrics
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+  /analytics/referrals:
+    get:
+      operationId: getReferralsAnalytics
+      summary: Referrals analytics
+      description: Returns referral-level analytics for the caller's firm.
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters: *analytics_extended_params
+      responses:
+        "200":
+          description: Referrals analytics data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: Referrals analytics metrics
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+  /analytics/export:
+    get:
+      operationId: exportAllAnalytics
+      summary: Export bundled analytics report
+      description: Downloads a bundled analytics report as an Excel spreadsheet.
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters: *analytics_extended_params
+      responses:
+        "200":
+          description: Bundled analytics report (Excel)
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: "attachment; filename=\"analytics-export.xlsx\""
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "401": *ref_4
+        "403": *ref_5
+        "429":
+          description: Export rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the rate limit window resets
+          content: *ref_2
+  /analytics/{category}/export:
+    get:
+      operationId: exportAnalyticsCategory
+      summary: Export single analytics category
+      description: Downloads a single analytics category as an Excel spreadsheet.
+      tags:
+        - Analytics
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - in: path
+          name: category
+          required: true
+          schema:
+            type: string
+            enum:
+              - dashboard
+              - cases
+              - homepage
+              - received
+              - sent
+              - revenue-received
+              - revenue-sent
+              - referrals
+          description: Analytics category to export
+        - in: query
+          name: referralStartDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by referral date (start)
+        - in: query
+          name: referralEndDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by referral date (end)
+        - in: query
+          name: firstReferralStartDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by first referral date (start)
+        - in: query
+          name: firstReferralEndDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by first referral date (end)
+        - in: query
+          name: signedStartDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by signed date (start)
+        - in: query
+          name: signedEndDate
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by signed date (end)
+        - in: query
+          name: tz
+          required: false
+          schema:
+            type: string
+          description: "IANA timezone, defaults to UTC"
+        - in: query
+          name: caseType
+          required: false
+          schema:
+            type: string
+          description: Filter by case type slug
+        - in: query
+          name: jurisdiction
+          required: false
+          schema:
+            type: string
+          description: Filter by jurisdiction
+      responses:
+        "200":
+          description: Analytics category report (Excel)
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: "attachment; filename=\"{category}-export.xlsx\""
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "429":
+          description: Export rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the rate limit window resets
+          content: *ref_2
+  /notifications/preferences:
+    get:
+      operationId: getNotificationPreferences
+      summary: Get notification preferences
+      description: Returns the notification preferences for the caller's firm.
+      tags:
+        - Notifications
+      security: *ref_3
+      x-access-tier: read_only
+      responses:
+        "200":
+          description: Notification preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: Notification preferences object
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+    put:
+      operationId: updateNotificationPreferences
+      summary: Update notification preferences
+      description: Updates the notification preferences for the caller's firm. Requires FULL tier.
+      tags:
+        - Notifications
+      security: *ref_3
+      x-access-tier: full
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Notification preference fields to update
+      responses:
+        "200":
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+  /notifications/emails:
+    get:
+      operationId: listNotificationEmails
+      summary: List notification email addresses
+      description: Returns all notification email addresses configured for the caller's firm.
+      tags:
+        - Notifications
+      security: *ref_3
+      x-access-tier: read_only
+      responses:
+        "200":
+          description: Email list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email:
+                          type: string
+                          format: email
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+    post:
+      operationId: addNotificationEmail
+      summary: Add a notification email address
+      description: Adds an email address to the firm's notification list. Requires FULL tier.
+      tags:
+        - Notifications
+      security: *ref_3
+      x-access-tier: full
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "201":
+          description: Added email
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      email:
+                        type: string
+                        format: email
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+  /medical-referrals:
+    get:
+      operationId: listMedicalReferrals
+      summary: List medical referrals
+      description: Returns all medical referrals linked to the caller's cases.
+      tags:
+        - Medical Referrals
+      security: *ref_3
+      x-access-tier: read_only
+      responses:
+        "200":
+          description: Medical referral list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MedicalReferral"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+    post:
+      operationId: createMedicalReferral
+      summary: Create a medical referral
+      description: Creates a new medical referral linked to a case. Requires STANDARD tier.
+      tags:
+        - Medical Referrals
+      security: *ref_3
+      x-access-tier: standard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - caseId
+                - providerName
+                - referralType
+              properties:
+                caseId:
+                  type: string
+                  format: uuid
+                providerName:
+                  type: string
+                referralType:
+                  type: string
+                notes:
+                  type: string
+                appointmentDate:
+                  type: string
+                  format: date
+      responses:
+        "201":
+          description: Created medical referral
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedicalReferral"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+  /medical-referrals/{id}:
+    get:
+      operationId: getMedicalReferralById
+      summary: Get medical referral by ID
+      description: Returns a single medical referral by UUID.
+      tags:
+        - Medical Referrals
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - *ref_7
+      responses:
+        "200":
+          description: Medical referral record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedicalReferral"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+    put:
+      operationId: updateMedicalReferral
+      summary: Update a medical referral
+      description: Updates an existing medical referral. Requires STANDARD tier.
+      tags:
+        - Medical Referrals
+      security: *ref_3
+      x-access-tier: standard
+      parameters:
+        - *ref_7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                providerName:
+                  type: string
+                referralType:
+                  type: string
+                notes:
+                  type: string
+                appointmentDate:
+                  type: string
+                  format: date
+                status:
+                  type: string
+      responses:
+        "200":
+          description: Updated medical referral
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedicalReferral"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+  /import/cases:
+    post:
+      operationId: importCases
+      summary: Bulk import cases via CSV
+      description: Creates or upserts cases from a CSV file upload. Requires FULL tier. Maximum file size 20 MB.
+      tags:
+        - Import
+      security: *ref_3
+      x-access-tier: full
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV file (max 20 MB)
+      responses:
+        "200":
+          description: Import result summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      created:
+                        type: integer
+                      updated:
+                        type: integer
+                      skipped:
+                        type: integer
+                      errors:
+                        type: array
+                        items:
+                          type: object
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+  /import/cases/update:
+
+    post:
+      operationId: importCasesUpdate
+      summary: Bulk update cases via CSV
+      description: >-
+        Updates existing cases from a CSV file. Only existing cases are affected — no new records created. Requires FULL
+        tier. Note: the 'notes' field has field-level RBAC — only the receiving (referent) firm can update it. The
+        referring firm's requests to update 'notes' will be rejected per-row.
+      tags:
+        - Import
+      security: *ref_3
+      x-access-tier: full
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV file (max 20 MB)
+      responses:
+        "200":
+          description: Update result summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      updated:
+                        type: integer
+                      skipped:
+                        type: integer
+                      errors:
+                        type: array
+                        items:
+                          type: object
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+  /referrals:
     get:
       operationId: listReferrals
-      summary: List referrals for a base case
+      summary: List referrals
       description: >-
-        Returns all referrals associated with the given base case. Both the referring firm and the referent firm
-        may list referrals for cases they are party to. Tier: READ_ONLY.
+        Returns all referrals where your firm is either the referring or referent party. Supports pagination,
+        status filtering, and is scoped to your API key's firm. Tier: READ_ONLY.
       tags:
         - Referrals
       security: *ref_3
       x-access-tier: read_only
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: query
           name: page
           schema:
@@ -2457,7 +3250,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}:
+  /referrals/{id}:
     get:
       operationId: getReferral
       summary: Get a referral
@@ -2468,13 +3261,6 @@ paths:
       security: *ref_3
       x-access-tier: read_only
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2510,13 +3296,6 @@ paths:
       security: *ref_3
       x-access-tier: standard
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2598,13 +3377,6 @@ paths:
       x-access-tier: full
       parameters:
         - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
-        - in: path
           name: id
           required: true
           schema:
@@ -2617,7 +3389,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/send:
+  /referrals/{id}/send:
     post:
       operationId: sendReferral
       summary: Send a referral
@@ -2629,13 +3401,6 @@ paths:
       security: *ref_3
       x-access-tier: standard
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2674,7 +3439,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/acknowledge:
+  /referrals/{id}/acknowledge:
     post:
       operationId: acknowledgeReferral
       summary: Acknowledge a referral
@@ -2686,13 +3451,6 @@ paths:
       security: *ref_3
       x-access-tier: standard
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2717,7 +3475,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/begin-investigating:
+  /referrals/{id}/begin-investigating:
     post:
       operationId: beginInvestigatingReferral
       summary: Begin investigating a referral
@@ -2729,13 +3487,6 @@ paths:
       security: *ref_3
       x-access-tier: standard
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2760,7 +3511,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/sign:
+  /referrals/{id}/sign:
     post:
       operationId: signReferral
       summary: Sign a referral
@@ -2772,13 +3523,6 @@ paths:
       security: *ref_3
       x-access-tier: standard
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2803,7 +3547,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/start-litigation:
+  /referrals/{id}/start-litigation:
     post:
       operationId: startLitigationReferral
       summary: Start litigation on a referral
@@ -2815,13 +3559,6 @@ paths:
       security: *ref_3
       x-access-tier: standard
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2846,7 +3583,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/close:
+  /referrals/{id}/close:
     post:
       operationId: closeReferral
       summary: Close a referral
@@ -2858,13 +3595,6 @@ paths:
       security: *ref_3
       x-access-tier: full
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2927,7 +3657,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/reject:
+  /referrals/{id}/reject:
     post:
       operationId: rejectReferral
       summary: Reject a referral
@@ -2939,13 +3669,6 @@ paths:
       security: *ref_3
       x-access-tier: standard
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -2980,7 +3703,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/withdraw:
+  /referrals/{id}/withdraw:
     post:
       operationId: withdrawReferral
       summary: Withdraw a referral
@@ -2991,13 +3714,6 @@ paths:
       security: *ref_3
       x-access-tier: standard
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true
@@ -3032,7 +3748,7 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /cases/{baseCaseId}/referrals/{id}/status-history:
+  /referrals/{id}/status-history:
     get:
       operationId: getReferralStatusHistory
       summary: Get referral status history
@@ -3044,13 +3760,6 @@ paths:
       security: *ref_3
       x-access-tier: read_only
       parameters:
-        - in: path
-          name: baseCaseId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: BaseCase UUID
         - in: path
           name: id
           required: true

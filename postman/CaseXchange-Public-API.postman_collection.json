@@ -277,6 +277,47 @@
 							}
 						}
 					]
+				},
+				{
+					"name": "List Case Type Fields",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/reference/case-types/{{case_type_id}}/fields",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"reference",
+								"case-types",
+								"{{case_type_id}}",
+								"fields"
+							]
+						},
+						"description": "Returns all active custom field definitions for a given case type, including field type, display order, required flag, enum options, and validation rules.\n\nUse case type IDs from the List Case Types endpoint.\n\nTier: READ_ONLY"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns fields array', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
 				}
 			]
 		},
@@ -708,7 +749,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"isRetainerSigned\": false\n}"
+							"raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"isRetainerSigned\": false,\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
 						},
 						"url": {
 							"raw": "{{public_api_url}}/sent-cases",
@@ -719,7 +760,7 @@
 								"sent-cases"
 							]
 						},
-						"description": "Creates a new case. Required fields: title, caseType, jurisdiction, clientFirstName, clientLastName.\n\nIf referentFirmId is included, the case is sent immediately (SENT status). Otherwise, it starts as DRAFT.\n\nTier: STANDARD"
+						"description": "Creates a new case. Required fields: title, caseType, jurisdiction, clientFirstName, clientLastName.\n\nIf referentFirmId is included, the case is sent immediately (SENT status). Otherwise, it starts as DRAFT.\n\nOptionally include customFields to set case-type-specific custom field values at creation time.\n\nTier: STANDARD"
 					},
 					"event": [
 						{
@@ -803,7 +844,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"tier\": 4,\n  \"source\": \"Website Lead\"\n}"
+							"raw": "{\n  \"source\": \"Website Lead\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Updated value\"\n    }\n  ]\n}"
 						},
 						"url": {
 							"raw": "{{public_api_url}}/sent-cases/{{sent_case_id}}",
@@ -815,7 +856,7 @@
 								"{{sent_case_id}}"
 							]
 						},
-						"description": "Updates sender-editable fields on a sent case. Only tier and source can be updated.\n\nAccepts UUID, reference number, or Salesforce record ID.\n\nTier: STANDARD"
+						"description": "Updates sender-editable fields on a sent case. Supports title, description, caseType, jurisdiction, client info, notes, source, resolution fields, and customFields.\n\nAccepts UUID, reference number, or Salesforce record ID.\n\nTier: STANDARD"
 					},
 					"event": [
 						{
@@ -1032,7 +1073,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"leadAttorneyName\": \"Jane Smith\",\n  \"phase\": \"Discovery\",\n  \"notes\": \"Initial review completed\"\n}"
+							"raw": "{\n  \"leadAttorneyName\": \"Jane Smith\",\n  \"phase\": \"Discovery\",\n  \"notes\": \"Initial review completed\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
 						},
 						"url": {
 							"raw": "{{public_api_url}}/received-referrals/{{received_referral_id}}",
@@ -1044,7 +1085,7 @@
 								"{{received_referral_id}}"
 							]
 						},
-						"description": "Partially updates a received referral. Only specified fields are updated; omitted fields remain unchanged.\n\nAccepts UUID, reference number, or CMS ID as the identifier.\n\nUpdatable fields: leadAttorneyName, phase, notes, statuteOfLimitationsExpiration, clientFeeAgreementPercentage, attorneyFees, estimatedDateOfResolution, estimatedDistributionDate, projectedSettlementAmount, sendingFirmPercentage, settlementAmount, isRetainerSigned.\n\nTier: STANDARD"
+						"description": "Partially updates a received referral. Only specified fields are updated; omitted fields remain unchanged.\n\nAccepts UUID, reference number, or CMS ID as the identifier.\n\nUpdatable fields: leadAttorneyName, phase, notes, statuteOfLimitationsExpiration, clientFeeAgreementPercentage, attorneyFees, estimatedDateOfResolution, estimatedDistributionDate, projectedSettlementAmount, sendingFirmPercentage, settlementAmount, isRetainerSigned, customFields.\n\nTier: STANDARD"
 					},
 					"event": [
 						{
@@ -1671,7 +1712,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/analytics/cases?dateFrom=2025-01-01&dateTo=2025-12-31",
+							"raw": "{{public_api_url}}/analytics/cases?referralStartDate=2025-01-01&referralEndDate=2025-12-31",
 							"host": [
 								"{{public_api_url}}"
 							],
@@ -1681,14 +1722,14 @@
 							],
 							"query": [
 								{
-									"key": "dateFrom",
+									"key": "referralStartDate",
 									"value": "2025-01-01",
-									"description": "Filter from date (YYYY-MM-DD)"
+									"description": "Filter by referral date (start, YYYY-MM-DD)"
 								},
 								{
-									"key": "dateTo",
+									"key": "referralEndDate",
 									"value": "2025-12-31",
-									"description": "Filter to date (YYYY-MM-DD)"
+									"description": "Filter by referral date (end, YYYY-MM-DD)"
 								}
 							]
 						},
@@ -1705,6 +1746,412 @@
 									"  pm.expect(json).to.be.an('object');",
 									"  pm.expect(json.data).to.be.an('object');",
 									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Homepage Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/homepage",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"homepage"
+							]
+						},
+						"description": "Returns homepage analytics for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns analytics data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Cases By Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/cases-by-status?status=SENT&context=sent",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"cases-by-status"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "SENT",
+									"description": "Case status to filter by"
+								},
+								{
+									"key": "context",
+									"value": "sent",
+									"description": "Context: sent or received"
+								}
+							]
+						},
+						"description": "Returns analytics grouped by case status for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns analytics data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Received Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/received",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"received"
+							]
+						},
+						"description": "Returns analytics for cases received by the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns analytics data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Sent Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/sent",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"sent"
+							]
+						},
+						"description": "Returns analytics for cases sent by the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns analytics data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Revenue Received",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/revenue-received",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"revenue-received"
+							]
+						},
+						"description": "Returns revenue analytics for cases received by the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns analytics data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Revenue Sent",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/revenue-sent",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"revenue-sent"
+							]
+						},
+						"description": "Returns revenue analytics for cases sent by the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns analytics data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Referrals Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/referrals",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"referrals"
+							]
+						},
+						"description": "Returns referral analytics for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns analytics data', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json).to.be.an('object');",
+									"  pm.expect(json.data).to.be.an('object');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Export",
+			"description": "Export analytics and case data.",
+			"item": [
+				{
+					"name": "Export All Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/export",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"export"
+							]
+						},
+						"description": "Exports all analytics data for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Export Analytics Category",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/analytics/received/export",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"analytics",
+								"received",
+								"export"
+							]
+						},
+						"description": "Exports analytics data for a specific category (e.g. received) for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Export Case Data (XLSX)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"url": {
+							"raw": "{{public_api_url}}/cases/export?view=sent&format=xlsx",
+							"host": [
+								"{{public_api_url}}"
+							],
+							"path": [
+								"cases",
+								"export"
+							],
+							"query": [
+								{
+									"key": "view",
+									"value": "sent",
+									"description": "View context: sent or received"
+								},
+								{
+									"key": "format",
+									"value": "xlsx",
+									"description": "Export format (xlsx)"
+								}
+							]
+						},
+						"description": "Exports case data as an XLSX file for the caller's firm. Tier: READ_ONLY."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));"
 								],
 								"type": "text/javascript"
 							}
@@ -2340,7 +2787,7 @@
 		},
 		{
 			"name": "Referrals",
-			"description": "Referral sub-resources linked to a BaseCase. All endpoints are scoped to /cases/:baseCaseId/referrals. Set base_case_id before running these requests.",
+			"description": "Referral CRUD and lifecycle actions. All endpoints use the referral UUID directly at /referrals/:id.",
 			"item": [
 				{
 					"name": "List Referrals",
@@ -2353,13 +2800,11 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals",
+							"raw": "{{public_api_url}}/referrals",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals"
 							],
 							"query": [
@@ -2417,13 +2862,11 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}"
 							]
@@ -2463,21 +2906,19 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"notes\": \"Updated via API\",\n  \"phase\": \"investigation\"\n}"
+							"raw": "{\n  \"notes\": \"Updated via API\",\n  \"phase\": \"investigation\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
 						},
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}"
 							]
 						},
-						"description": "Updates mutable fields on a referral (notes, phase, financial estimates, etc.). Tier: STANDARD. Note: only the referent firm can update notes."
+						"description": "Updates mutable fields on a referral (notes, phase, financial estimates, customFields, etc.). Tier: STANDARD. Note: only the referent firm can update notes."
 					},
 					"event": [
 						{
@@ -2515,13 +2956,11 @@
 							"raw": "{\n  \"referentFirmId\": \"<receiving-firm-uuid \u2014 replace with the target firm ID from GET /firms/directory>\"\n}"
 						},
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/send",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/send",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"send"
@@ -2557,13 +2996,11 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/acknowledge",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/acknowledge",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"acknowledge"
@@ -2599,13 +3036,11 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/begin-investigating",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/begin-investigating",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"begin-investigating"
@@ -2641,13 +3076,11 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/sign",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/sign",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"sign"
@@ -2683,13 +3116,11 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/start-litigation",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/start-litigation",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"start-litigation"
@@ -2733,13 +3164,11 @@
 							"raw": "{\n  \"closingStatus\": \"won_settled\",\n  \"closureReason\": \"Settlement reached\",\n  \"settlementAmount\": 75000,\n  \"attorneyFees\": 25000\n}"
 						},
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/close",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/close",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"close"
@@ -2783,13 +3212,11 @@
 							"raw": "{\n  \"reason\": \"Not a good fit for our practice\"\n}"
 						},
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/reject",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/reject",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"reject"
@@ -2833,13 +3260,11 @@
 							"raw": "{\n  \"reason\": \"Client no longer pursuing\"\n}"
 						},
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/withdraw",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/withdraw",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"withdraw"
@@ -2875,13 +3300,11 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}"
 							]
@@ -2911,13 +3334,11 @@
 							}
 						],
 						"url": {
-							"raw": "{{public_api_url}}/cases/{{base_case_id}}/referrals/{{referral_id}}/status-history",
+							"raw": "{{public_api_url}}/referrals/{{referral_id}}/status-history",
 							"host": [
 								"{{public_api_url}}"
 							],
 							"path": [
-								"cases",
-								"{{base_case_id}}",
 								"referrals",
 								"{{referral_id}}",
 								"status-history"
@@ -3509,6 +3930,188 @@
 									"  pm.expect(json).to.be.an('object');",
 									"  pm.expect(json.data).to.be.an('object');",
 									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Salesforce Tokens",
+			"description": "Manage Salesforce integration tokens for simplified authentication. These endpoints use JWT Bearer auth (from the Login step), not the public API key.",
+			"item": [
+				{
+					"name": "Generate Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Production SF Package\",\n  \"salesforceConnectionId\": \"{{salesforce_connection_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{internal_api_url}}/integrations/salesforce/tokens",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"integrations",
+								"salesforce",
+								"tokens"
+							]
+						},
+						"description": "Creates a new Salesforce integration token. The plaintext token (cxsf_...) is only returned once — store it securely.\n\nRequired fields: name\nOptional: salesforceConnectionId (UUID of an existing Salesforce connection)"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201 - Token created', () => pm.response.to.have.status(201));",
+									"pm.test('Returns token with plainToken', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.success).to.equal(true);",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data.plainToken).to.be.a('string');",
+									"  pm.expect(json.data.id).to.be.a('string');",
+									"  pm.environment.set('sf_token_id', json.data.id);",
+									"  pm.environment.set('sf_token', json.data.plainToken);",
+									"  console.log('Saved sf_token_id: ' + json.data.id);",
+									"  console.log('Saved sf_token prefix: ' + json.data.plainToken.substring(0, 12) + '...');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "List Tokens",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{internal_api_url}}/integrations/salesforce/tokens",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"integrations",
+								"salesforce",
+								"tokens"
+							]
+						},
+						"description": "Returns all Salesforce integration tokens for the authenticated user's firm. Token values are not included — only metadata (prefix, name, status, etc.)."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200', () => pm.response.to.have.status(200));",
+									"pm.test('Returns token list', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.success).to.equal(true);",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data.tokens).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Rotate Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{internal_api_url}}/integrations/salesforce/tokens/{{sf_token_id}}/rotate",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"integrations",
+								"salesforce",
+								"tokens",
+								"{{sf_token_id}}",
+								"rotate"
+							]
+						},
+						"description": "Revokes the current token value and generates a new one. The old token is immediately invalidated. The new plaintext token is returned — store it securely."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 200 - Token rotated', () => pm.response.to.have.status(200));",
+									"pm.test('Returns new plainToken', () => {",
+									"  const json = pm.response.json();",
+									"  pm.expect(json.success).to.equal(true);",
+									"  pm.expect(json.data).to.be.an('object');",
+									"  pm.expect(json.data.plainToken).to.be.a('string');",
+									"  pm.environment.set('sf_token', json.data.plainToken);",
+									"  console.log('Updated sf_token with rotated value: ' + json.data.plainToken.substring(0, 12) + '...');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Delete Token",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{internal_api_url}}/integrations/salesforce/tokens/{{sf_token_id}}",
+							"host": [
+								"{{internal_api_url}}"
+							],
+							"path": [
+								"integrations",
+								"salesforce",
+								"tokens",
+								"{{sf_token_id}}"
+							]
+						},
+						"description": "Permanently deletes (revokes) a Salesforce integration token. The token is immediately invalidated and cannot be recovered. Returns 204 No Content on success."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 204 - Token deleted', () => pm.response.to.have.status(204));"
 								],
 								"type": "text/javascript"
 							}
