@@ -1,7 +1,7 @@
 {
 	"info": {
 		"name": "CaseXchange Public API",
-		"description": "The CaseXchange Public API enables law firms to integrate referral management directly into their own systems.\n\n## Authentication\n- Public endpoints require `X-API-Key` with a public API key (tiered format: `cxp_ro_...`, `cxp_std_...`, `cxp_full_...`).\n- Key Management endpoints (`/api/v1/public-api-keys`) use internal auth. In Postman, run Login first and rely on session cookies.\n\n## Access Tiers\n- `READ_ONLY` \u2014 GET endpoints only\n- `STANDARD` \u2014 READ_ONLY + create/update operations\n- `FULL` \u2014 STANDARD + destructive and admin-grade operations\n\n## Quick Start\n1. Set `base_url` in the active environment (local: `http://localhost:3001`, production: `https://api.casexchange.com`).\n2. Run **Login** to establish an authenticated internal session.\n3. Run **Create Public API Key** to generate and auto-save `api_key`.\n4. Use public endpoints under `{{public_api_url}}`.\n\n## Response Format\nPublic API responses use envelope:\n- Success: `{ data, meta, pagination? }`\n- Error: `{ error, meta }`",
+		"description": "The CaseXchange Public API enables law firms to integrate referral management directly into their own systems.\n\n## Authentication\n- Public endpoints require `X-API-Key` with a public API key (tiered format: `cxp_ro_...`, `cxp_std_...`, `cxp_full_...`).\n- Key Management endpoints (`/api/v1/public-api-keys`) use internal auth. In Postman, run Login first and rely on session cookies.\n\n## Access Tiers\n- `READ_ONLY` — GET endpoints only\n- `STANDARD` — READ_ONLY + create/update operations\n- `FULL` — STANDARD + destructive and admin-grade operations\n\n## Quick Start\n1. Set `base_url` in the active environment (local: `http://localhost:3001`, production: `https://api.casexchange.com`).\n2. Run **Login** to establish an authenticated internal session.\n3. Run **Create Public API Key** to generate and auto-save `api_key`.\n4. Use public endpoints under `{{public_api_url}}`.\n\n## Response Format\nPublic API responses use envelope:\n- Success: `{ data, meta, pagination? }`\n- Error: `{ error, meta }`",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -87,7 +87,7 @@
 								"public-api-keys"
 							]
 						},
-						"description": "Creates a new public API key for the authenticated user's firm. The plaintext key is only returned once \u2014 the test script saves it to `api_key` automatically.\n\nTier options: `READ_ONLY`, `STANDARD`, `FULL`"
+						"description": "Creates a new public API key for the authenticated user's firm. The plaintext key is only returned once — the test script saves it to `api_key` automatically.\n\nTier options: `READ_ONLY`, `STANDARD`, `FULL`"
 					},
 					"event": [
 						{
@@ -116,7 +116,7 @@
 		},
 		{
 			"name": "Health",
-			"description": "API health check \u2014 no authentication required.",
+			"description": "API health check — no authentication required.",
 			"item": [
 				{
 					"name": "Health Check",
@@ -627,7 +627,7 @@
 								}
 							]
 						},
-						"description": "Returns a paginated list of cases owned by your firm (sender perspective). Lean response: id, referenceNumber, cmsId, receivingFirmName, receivingFirmId, status, closingStatus, updatedAt.\n\nSupports flexible ID lookup (UUID, reference number, or Salesforce record ID).\n\nTier: READ_ONLY"
+						"description": "Returns a paginated list of cases owned by your firm (sender perspective). Lean response: id, referenceNumber, salesforceId, receivingFirmName, receivingFirmId, status, closingStatus, updatedAt.\n\nSupports flexible ID lookup (UUID, reference number, or Salesforce record ID).\n\nTier: READ_ONLY"
 					},
 					"event": [
 						{
@@ -749,7 +749,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"isRetainerSigned\": false,\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
+							"raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"isRetainerSigned\": false,\n  \"salesforceId\": \"006xxxxxxxxxxxx\",\n  \"salesforceObjectType\": \"Opportunity\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
 						},
 						"url": {
 							"raw": "{{public_api_url}}/sent-cases",
@@ -844,7 +844,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"source\": \"Website Lead\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Updated value\"\n    }\n  ]\n}"
+							"raw": "{\n  \"source\": \"Website Lead\",\n  \"salesforceId\": \"006xxxxxxxxxxxx\",\n  \"salesforceObjectType\": \"Opportunity\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Updated value\"\n    }\n  ]\n}"
 						},
 						"url": {
 							"raw": "{{public_api_url}}/sent-cases/{{sent_case_id}}",
@@ -867,236 +867,6 @@
 									"pm.test('Returns updated case', () => {",
 									"  const json = pm.response.json();",
 									"  pm.expect(json.data).to.be.an('object');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					]
-				}
-			]
-		},
-		{
-			"name": "Received Referrals",
-			"description": "Referrals received by your firm (receiver perspective). These endpoints provide a receiver-centric view of referrals sent to your firm, with flexible ID resolution (UUID, reference number, or CMS ID).",
-			"item": [
-				{
-					"name": "List Received Referrals",
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "X-API-Key",
-								"value": "{{api_key}}"
-							}
-						],
-						"url": {
-							"raw": "{{public_api_url}}/received-referrals?page=1&limit=20",
-							"host": [
-								"{{public_api_url}}"
-							],
-							"path": [
-								"received-referrals"
-							],
-							"query": [
-								{
-									"key": "page",
-									"value": "1",
-									"description": "Page number (default: 1)"
-								},
-								{
-									"key": "limit",
-									"value": "20",
-									"description": "Items per page (default: 20, max: 100)"
-								},
-								{
-									"key": "status",
-									"value": "",
-									"description": "Filter by status (e.g., under_evaluation, investigating, signed)",
-									"disabled": true
-								},
-								{
-									"key": "search",
-									"value": "",
-									"description": "Search by reference number or sending firm name",
-									"disabled": true
-								},
-								{
-									"key": "sort",
-									"value": "",
-									"description": "Sort field: updatedAt (default), status, referenceNumber",
-									"disabled": true
-								},
-								{
-									"key": "order",
-									"value": "desc",
-									"description": "Sort order: asc or desc (default)",
-									"disabled": true
-								}
-							]
-						},
-						"description": "Returns a paginated list of referrals received by your firm. Lean response shape includes: id, referenceNumber, cmsId, sendingFirmName, sendingFirmId, status, closingStatus, updatedAt.\n\nTier: READ_ONLY"
-					},
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Status 200', () => pm.response.to.have.status(200));",
-									"pm.test('Returns paginated data', () => {",
-									"  const json = pm.response.json();",
-									"  pm.expect(json.data).to.be.an('array');",
-									"  pm.expect(json.pagination).to.be.an('object');",
-									"  pm.expect(json.pagination).to.have.property('total');",
-									"  if (json.data.length > 0) {",
-									"    const item = json.data[0];",
-									"    pm.expect(item).to.have.property('id');",
-									"    pm.expect(item).to.have.property('sendingFirmName');",
-									"    pm.expect(item).to.have.property('status');",
-									"    // Save first referral ID for subsequent requests",
-									"    pm.environment.set('received_referral_id', item.id);",
-									"  }",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					]
-				},
-				{
-					"name": "Get Received Referral",
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "X-API-Key",
-								"value": "{{api_key}}"
-							}
-						],
-						"url": {
-							"raw": "{{public_api_url}}/received-referrals/{{received_referral_id}}",
-							"host": [
-								"{{public_api_url}}"
-							],
-							"path": [
-								"received-referrals",
-								"{{received_referral_id}}"
-							]
-						},
-						"description": "Returns full detail for a received referral. Accepts UUID, reference number, or CMS ID as the identifier.\n\nPII masking: When the referral is in SENT status, client PII (first/last name, email, phone, date of birth) and description are masked (returned as null).\n\nTier: READ_ONLY"
-					},
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Status 200', () => pm.response.to.have.status(200));",
-									"pm.test('Returns referral detail', () => {",
-									"  const json = pm.response.json();",
-									"  pm.expect(json.data).to.be.an('object');",
-									"  pm.expect(json.data).to.have.property('id');",
-									"  pm.expect(json.data).to.have.property('sendingFirmName');",
-									"  pm.expect(json.data).to.have.property('status');",
-									"  pm.expect(json.data).to.have.property('title');",
-									"  // SENT-status referrals should have PII masked",
-									"  if (json.data.status === 'sent') {",
-									"    pm.expect(json.data.clientFirstName).to.be.null;",
-									"    pm.expect(json.data.clientLastName).to.be.null;",
-									"    pm.expect(json.data.clientEmail).to.be.null;",
-									"    pm.expect(json.data.description).to.be.null;",
-									"  }",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					]
-				},
-				{
-					"name": "Get Available Statuses",
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "X-API-Key",
-								"value": "{{api_key}}"
-							}
-						],
-						"url": {
-							"raw": "{{public_api_url}}/received-referrals/{{received_referral_id}}/available-statuses",
-							"host": [
-								"{{public_api_url}}"
-							],
-							"path": [
-								"received-referrals",
-								"{{received_referral_id}}",
-								"available-statuses"
-							]
-						},
-						"description": "Returns the available next status transitions for a received referral, from the receiver perspective.\n\nAccepts UUID, reference number, or CMS ID as the identifier.\n\nExample response:\n```json\n{\n  \"data\": {\n    \"currentStatus\": \"under_evaluation\",\n    \"availableTransitions\": [\n      { \"status\": \"investigating\", \"label\": \"Begin Investigating\" },\n      { \"status\": \"signed\", \"label\": \"Mark as Signed\" },\n      { \"status\": \"rejected\", \"label\": \"Reject Case\", \"requiresReason\": true }\n    ]\n  }\n}\n```\n\nTier: READ_ONLY"
-					},
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Status 200', () => pm.response.to.have.status(200));",
-									"pm.test('Returns available transitions', () => {",
-									"  const json = pm.response.json();",
-									"  pm.expect(json.data).to.be.an('object');",
-									"  pm.expect(json.data).to.have.property('currentStatus');",
-									"  pm.expect(json.data.availableTransitions).to.be.an('array');",
-									"  if (json.data.availableTransitions.length > 0) {",
-									"    pm.expect(json.data.availableTransitions[0]).to.have.property('status');",
-									"    pm.expect(json.data.availableTransitions[0]).to.have.property('label');",
-									"  }",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					]
-				},
-				{
-					"name": "Update Received Referral",
-					"request": {
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "X-API-Key",
-								"value": "{{api_key}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"leadAttorneyName\": \"Jane Smith\",\n  \"phase\": \"Discovery\",\n  \"notes\": \"Initial review completed\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
-						},
-						"url": {
-							"raw": "{{public_api_url}}/received-referrals/{{received_referral_id}}",
-							"host": [
-								"{{public_api_url}}"
-							],
-							"path": [
-								"received-referrals",
-								"{{received_referral_id}}"
-							]
-						},
-						"description": "Partially updates a received referral. Only specified fields are updated; omitted fields remain unchanged.\n\nAccepts UUID, reference number, or CMS ID as the identifier.\n\nUpdatable fields: leadAttorneyName, phase, notes, statuteOfLimitationsExpiration, clientFeeAgreementPercentage, attorneyFees, estimatedDateOfResolution, estimatedDistributionDate, projectedSettlementAmount, sendingFirmPercentage, settlementAmount, isRetainerSigned, customFields.\n\nTier: STANDARD"
-					},
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Status 200', () => pm.response.to.have.status(200));",
-									"pm.test('Returns updated referral', () => {",
-									"  const json = pm.response.json();",
-									"  pm.expect(json.data).to.be.an('object');",
-									"  pm.expect(json.data).to.have.property('id');",
 									"});"
 								],
 								"type": "text/javascript"
@@ -2592,7 +2362,7 @@
 									"key": "file",
 									"type": "file",
 									"src": "",
-									"description": "CSV file with updates (max 20 MB). Only existing cases are affected \u2014 no new records created."
+									"description": "CSV file with updates (max 20 MB). Only existing cases are affected — no new records created."
 								}
 							]
 						},
@@ -2607,7 +2377,7 @@
 								"update"
 							]
 						},
-						"description": "Updates existing cases from a CSV file. Only existing cases are affected \u2014 no new records are created. Max file size 20 MB. Tier: FULL.\n\nNote: The 'notes' field has field-level RBAC \u2014 only the receiving (referent) firm can update it. The referring firm's requests to update 'notes' will be rejected per-row."
+						"description": "Updates existing cases from a CSV file. Only existing cases are affected — no new records are created. Max file size 20 MB. Tier: FULL.\n\nNote: The 'notes' field has field-level RBAC — only the receiving (referent) firm can update it. The referring firm's requests to update 'notes' will be rejected per-row."
 					},
 					"event": [
 						{
@@ -2693,7 +2463,7 @@
 								"public-api-keys"
 							]
 						},
-						"description": "Creates a new public API key. The plaintext key (`plainKey`) is only returned in this response \u2014 store it securely. Valid tiers: READ_ONLY, STANDARD, FULL."
+						"description": "Creates a new public API key. The plaintext key (`plainKey`) is only returned in this response — store it securely. Valid tiers: READ_ONLY, STANDARD, FULL."
 					},
 					"event": [
 						{
@@ -2953,7 +2723,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"referentFirmId\": \"<receiving-firm-uuid \u2014 replace with the target firm ID from GET /firms/directory>\"\n}"
+							"raw": "{\n  \"referentFirmId\": \"<receiving-firm-uuid — replace with the target firm ID from GET /firms/directory>\"\n}"
 						},
 						"url": {
 							"raw": "{{public_api_url}}/referrals/{{referral_id}}/send",
@@ -3669,7 +3439,7 @@
 		},
 		{
 			"name": "Network",
-			"description": "Manage the firm's private referral network \u2014 outbound and inbound relationships with partner firms.",
+			"description": "Manage the firm's private referral network — outbound and inbound relationships with partner firms.",
 			"item": [
 				{
 					"name": "Get Outbound Network Detail",
@@ -3917,7 +3687,7 @@
 								"{{target_firm_id}}"
 							]
 						},
-						"description": "Partially updates the inbound network relationship from the specified target firm \u2014 e.g., accepting a pending request or updating referral instructions. Tier: STANDARD."
+						"description": "Partially updates the inbound network relationship from the specified target firm — e.g., accepting a pending request or updating referral instructions. Tier: STANDARD."
 					},
 					"event": [
 						{
