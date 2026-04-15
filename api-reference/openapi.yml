@@ -26,6 +26,12 @@ info:
     ## Response Format
     Successful responses are wrapped in `{ data: T, meta: { requestId, timestamp } }`.
     Errors are wrapped in `{ error: { code, message }, meta: { requestId, timestamp } }`.
+
+    ## Breaking Changes
+
+    **2026-04-14:** Response field `cmsId` renamed to `salesforceId` across all sent-case
+    and received-referral endpoints. The `/received-referrals` endpoints have been removed
+    from the spec — use `/referrals` instead.
   contact:
     name: CaseXchange API Support
     url: https://casexchange.com
@@ -39,8 +45,6 @@ tags:
     description: Firm directory and profile management
   - name: Sent Cases
     description: Cases created and sent by your firm (sender perspective)
-  - name: Received Referrals
-    description: Referrals received by your firm (receiver perspective) — flexible ID resolution (UUID, reference number, CMS ID)
   - name: Documents
     description: Document upload, download, and management
   - name: Users
@@ -601,218 +605,6 @@ components:
           type: integer
         totalPages:
           type: integer
-    ReceivedReferralListItem:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        referenceNumber:
-          type: string
-          nullable: true
-        cmsId:
-          type: string
-          nullable: true
-          description: First non-null CMS ID (Dear Legal, Neos, Clio, SmartAdvocate, Salesforce)
-        sendingFirmName:
-          type: string
-          nullable: true
-        sendingFirmId:
-          type: string
-          format: uuid
-        status:
-          type: string
-          enum: [draft, sent, under_evaluation, investigating, signed, in_litigation, closing, rejected, withdrawn, closed]
-        closingStatus:
-          type: string
-          nullable: true
-          enum: [won_settled, lost, no_longer_pursuing]
-        updatedAt:
-          type: string
-          format: date-time
-    ReceivedReferralDetail:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        baseCaseId:
-          type: string
-          format: uuid
-        referenceNumber:
-          type: string
-          nullable: true
-        cmsId:
-          type: string
-          nullable: true
-        sequenceNumber:
-          type: integer
-        status:
-          type: string
-        closingStatus:
-          type: string
-          nullable: true
-        closureReason:
-          type: string
-          nullable: true
-        sendingFirmId:
-          type: string
-          format: uuid
-        sendingFirmName:
-          type: string
-          nullable: true
-        receivingFirmId:
-          type: string
-          format: uuid
-          nullable: true
-        title:
-          type: string
-          nullable: true
-        description:
-          type: string
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        caseType:
-          type: string
-          nullable: true
-        jurisdiction:
-          type: string
-          nullable: true
-        county:
-          type: string
-          nullable: true
-        clientFirstName:
-          type: string
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        clientLastName:
-          type: string
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        clientEmail:
-          type: string
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        clientPhone:
-          type: string
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        clientDateOfBirth:
-          type: string
-          format: date-time
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        incidentDate:
-          type: string
-          format: date-time
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        notes:
-          type: string
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        settlementAmount:
-          type: number
-          nullable: true
-        attorneyFees:
-          type: number
-          nullable: true
-        leadAttorneyName:
-          type: string
-          nullable: true
-          description: Masked (null) when referral status is SENT
-        clientFeeAgreementPercentage:
-          type: number
-          nullable: true
-        sendingFirmPercentage:
-          type: number
-          nullable: true
-        projectedSettlementAmount:
-          type: number
-          nullable: true
-        estimatedDateOfResolution:
-          type: string
-          format: date-time
-          nullable: true
-        estimatedDistributionDate:
-          type: string
-          format: date-time
-          nullable: true
-        statuteOfLimitationsExpiration:
-          type: string
-          format: date-time
-          nullable: true
-        phase:
-          type: string
-          nullable: true
-        isRetainerSigned:
-          type: boolean
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        customFields:
-          type: array
-          items:
-            $ref: "#/components/schemas/CustomFieldValue"
-          description: Custom field values for this case type
-    PatchReceivedReferralBody:
-      type: object
-      description: At least one field must be provided
-      properties:
-        leadAttorneyName:
-          type: string
-          maxLength: 500
-          nullable: true
-        statuteOfLimitationsExpiration:
-          type: string
-          format: date-time
-          nullable: true
-        clientFeeAgreementPercentage:
-          type: number
-          minimum: 0
-          maximum: 1
-          nullable: true
-        attorneyFees:
-          type: number
-          minimum: 0
-          nullable: true
-        estimatedDateOfResolution:
-          type: string
-          format: date-time
-          nullable: true
-        estimatedDistributionDate:
-          type: string
-          format: date-time
-          nullable: true
-        projectedSettlementAmount:
-          type: number
-          minimum: 0
-          nullable: true
-        phase:
-          type: string
-          maxLength: 200
-          nullable: true
-        sendingFirmPercentage:
-          type: number
-          minimum: 0
-          maximum: 100
-          nullable: true
-        settlementAmount:
-          type: number
-          minimum: 0
-          nullable: true
-        notes:
-          type: string
-          maxLength: 10000
-          nullable: true
-        customFields:
-          type: array
-          items:
-            $ref: "#/components/schemas/CustomFieldUpdateInput"
-          description: Custom field values to update (receiving firm, SIGNED+ only)
     AvailableStatusesResponse:
       type: object
       properties:
@@ -840,9 +632,10 @@ components:
         referenceNumber:
           type: string
           nullable: true
-        cmsId:
+        salesforceId:
           type: string
           nullable: true
+          description: Salesforce record ID associated with this case
         receivingFirmName:
           type: string
           nullable: true
@@ -867,9 +660,14 @@ components:
         referenceNumber:
           type: string
           nullable: true
-        cmsId:
+        salesforceId:
           type: string
           nullable: true
+          description: Salesforce record ID associated with this case
+        salesforceObjectType:
+          type: string
+          nullable: true
+          description: Salesforce object type (e.g., Lead, Opportunity, Case)
         title:
           type: string
           nullable: true
@@ -1068,6 +866,15 @@ components:
         isRetainerSigned:
           type: boolean
           default: false
+        salesforceId:
+          type: string
+          description: >-
+            Salesforce record ID to associate with this case. If your firm already has an
+            active case with this ID, the request returns 409 (duplicate_sf_referral). Cases
+            in rejected, withdrawn, or closed status do not block creation.
+        salesforceObjectType:
+          type: string
+          description: Salesforce object type (e.g., Lead, Opportunity, Case)
     ReferSentCaseBody:
       type: object
       required:
@@ -1093,6 +900,14 @@ components:
         source:
           type: string
           nullable: true
+        salesforceId:
+          type: string
+          nullable: true
+          description: Salesforce record ID. Set to null to clear.
+        salesforceObjectType:
+          type: string
+          nullable: true
+          description: Salesforce object type. Set to null to clear.
 paths:
   /case-types:
     get:
@@ -3949,7 +3764,7 @@ paths:
       summary: List sent cases
       description: |
         Returns a paginated list of cases sent by the API key's firm (sender perspective).
-        Lean response shape: id, referenceNumber, cmsId, receivingFirmName, receivingFirmId, status, closingStatus, updatedAt.
+        Lean response shape: id, referenceNumber, salesforceId, receivingFirmName, receivingFirmId, status, closingStatus, updatedAt.
       operationId: listSentCases
       x-access-tier: read_only
       security: *ref_3
@@ -4040,6 +3855,10 @@ paths:
         "400": *ref_6
         "401": *ref_4
         "403": *ref_5
+        "409":
+          description: >-
+            A case with this salesforceId already exists for your firm. Only active cases
+            (non-rejected, non-withdrawn, non-closed) block creation. Error code: duplicate_sf_referral.
   /sent-cases/{id}:
     get:
       tags:
@@ -4078,9 +3897,9 @@ paths:
         - Sent Cases
       summary: Update sent case
       description: |
-        Partially updates sender-owned fields on a sent case. Only specified fields are updated;
-        omitted fields remain unchanged. Accepts UUID, reference number, or Salesforce record ID.
-        At least one field (tier or source) must be provided.
+        Partially updates sender-editable fields on a sent case. At least one field must be provided.
+        Accepted fields: tier, source, salesforceId, salesforceObjectType.
+        Accepts UUID, reference number, or Salesforce record ID.
       operationId: patchSentCase
       x-access-tier: standard
       security: *ref_3
@@ -4190,174 +4009,3 @@ paths:
         "403": *ref_5
         "404":
           description: Case not found or not accessible
-  # ─── Received Referrals ───────────────────────────────────────────────
-  /received-referrals:
-    get:
-      tags:
-        - Received Referrals
-      summary: List received referrals
-      description: |
-        Returns a paginated list of referrals received by the API key's firm (receiver perspective).
-        Lean response shape: id, referenceNumber, cmsId, sendingFirmName, sendingFirmId, status, closingStatus, updatedAt.
-      operationId: listReceivedReferrals
-      x-access-tier: read_only
-      security: *ref_3
-      parameters:
-        - name: page
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            default: 1
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 20
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [draft, sent, under_evaluation, investigating, signed, in_litigation, closing, rejected, withdrawn, closed]
-        - name: search
-          in: query
-          description: Search by reference number or sending firm name
-          schema:
-            type: string
-        - name: sort
-          in: query
-          description: "Sort field: updatedAt (default), status, referenceNumber"
-          schema:
-            type: string
-            enum: [updatedAt, status, referenceNumber]
-        - name: order
-          in: query
-          schema:
-            type: string
-            enum: [asc, desc]
-            default: desc
-      responses:
-        "200":
-          description: Paginated list of received referrals
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ReceivedReferralListItem"
-                  pagination:
-                    $ref: "#/components/schemas/Pagination"
-                  meta: *ref_0
-        "401": *ref_4
-        "403": *ref_5
-  /received-referrals/{id}:
-    get:
-      tags:
-        - Received Referrals
-      summary: Get received referral
-      description: |
-        Returns full detail for a received referral. Accepts UUID, reference number, or CMS ID.
-        PII masking: SENT-status referrals mask client PII (first/last name, email, phone, DOB) and description.
-      operationId: getReceivedReferral
-      x-access-tier: read_only
-      security: *ref_3
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: UUID, reference number, or CMS ID
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Received referral detail
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/ReceivedReferralDetail"
-                  meta: *ref_0
-        "401": *ref_4
-        "403": *ref_5
-        "404":
-          description: Referral not found or not accessible
-    patch:
-      tags:
-        - Received Referrals
-      summary: Update received referral
-      description: |
-        Partially updates fields on a received referral. Only specified fields are updated; omitted fields remain unchanged.
-        Accepts UUID, reference number, or CMS ID.
-      operationId: patchReceivedReferral
-      x-access-tier: standard
-      security: *ref_3
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: UUID, reference number, or CMS ID
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PatchReceivedReferralBody"
-      responses:
-        "200":
-          description: Updated referral detail
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/ReceivedReferralDetail"
-                  meta: *ref_0
-        "400":
-          description: Validation error — at least one field must be provided
-        "401": *ref_4
-        "403": *ref_5
-        "404":
-          description: Referral not found or not accessible
-  /received-referrals/{id}/available-statuses:
-    get:
-      tags:
-        - Received Referrals
-      summary: Get available statuses
-      description: |
-        Returns the available next status transitions for a received referral, from the receiver perspective.
-        Accepts UUID, reference number, or CMS ID.
-      operationId: getReceivedReferralAvailableStatuses
-      x-access-tier: read_only
-      security: *ref_3
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: UUID, reference number, or CMS ID
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Available status transitions
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: "#/components/schemas/AvailableStatusesResponse"
-                  meta: *ref_0
-        "401": *ref_4
-        "403": *ref_5
-        "404":
-          description: Referral not found or not accessible
