@@ -7,8 +7,22 @@ info:
     directly into their own systems.
 
     ## Authentication
-    All requests must include an `X-API-Key` header containing a valid API key
-    (format: `cxp_<hex>`). Keys are scoped to a firm and an access tier.
+    The Public API accepts **two** authentication schemes. Every request must
+    present exactly one (if both are sent, `X-API-Key` takes precedence):
+
+    1. **`X-API-Key: cxp_<tier>_<body>`** — Tiered public API keys. The tier
+       segment (`ro`, `std`, or `full`) maps to the `read_only`, `standard`,
+       and `full` access tiers described below. Keys are scoped to a single
+       firm.
+    2. **`Authorization: Bearer cxsf_<body>`** — Salesforce integration
+       tokens. Issued via `POST /api/v1/integrations/salesforce/tokens`.
+       Always map to the `full` access tier and are scoped to the issuing
+       firm. Rotated or revoked via the same integrations endpoints.
+
+    The firm must have `public_api` listed in `allowedIntegrations` for any
+    public API call to succeed. For Salesforce tokens this entitlement is
+    granted automatically when a token is minted or rotated; for `cxp_` keys
+    it must be enabled by an administrator.
 
     ## Access Tiers
     | Tier | Description |
@@ -16,6 +30,8 @@ info:
     | `read_only` | GET endpoints — read data without mutation |
     | `standard` | read_only + create/update case referrals |
     | `full` | standard + delete, close, routing rules, bulk import, firm mutation |
+
+    Salesforce Bearer tokens (`cxsf_...`) always resolve to the `full` tier.
 
     ## Rate Limiting
     Rate limits are enforced per API key. Exceeded limits return `429 Too Many Requests`.
@@ -73,7 +89,19 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-      description: Public API key (starts with cxp_). Required on every request.
+      description: >-
+        Public API key (format `cxp_<tier>_<body>`, tier = `ro`|`std`|`full`).
+        Scoped to a single firm. The firm must have `public_api` in
+        allowedIntegrations.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: cxsf_*
+      description: |
+        Salesforce integration token (format `cxsf_<64 hex chars>`). Issued via
+        POST /api/v1/integrations/salesforce/tokens. Granted FULL tier access to
+        the public API. Requires the firm to have `public_api` in
+        allowedIntegrations (granted automatically when a token is minted).
   schemas:
     Firm:
       type: object
@@ -347,8 +375,6 @@ components:
         referenceNumber:
           type: string
           example: ABC-0001-R1
-        sequenceNumber:
-          type: integer
         status:
           type: string
           description: CaseStatus enum value
@@ -485,30 +511,63 @@ components:
           nullable: true
     RoutingEvaluationAssignment:
       type: object
+      description: >-
+        A firm that would receive the referral based on the matched routing rule.
+        Referral instructions are resolved in priority order: (1) relationship-specific
+        instructions from the active FirmRelationship between the caller's firm and
+        the assigned firm, then (2) the assigned firm's general referral instructions.
+        Returns null if neither exists.
       properties:
         firmId:
           type: string
           format: uuid
+          nullable: true
+          description: The assigned firm's ID, or null if the assignment is not linked to a CaseXchange firm
         firmName:
           type: string
+          nullable: true
+          description: The assigned firm's display name, or null if the assignment is not linked to a CaseXchange firm
         referralInstructions:
           type: string
           nullable: true
+          description: >-
+            Instructions for referring cases to this firm. Resolved from the active
+            firm relationship first, falling back to the firm's general referral
+            instructions. Null if neither is configured.
     RoutingEvaluationResult:
       type: object
+      description: >-
+        The result of evaluating routing rules against a case profile. Contains the
+        single highest-priority rule that matched and an ordered array of all firm
+        assignments configured on that rule. The first assignment is the highest-priority
+        target firm. If no rule matches the given case profile, the entire `data` field
+        is null (not an empty result object).
       properties:
         rule:
           type: object
+          description: The routing rule that matched the case profile
           properties:
             id:
               type: string
               format: uuid
+              description: Routing rule ID
             name:
               type: string
+              description: Human-readable routing rule name
+          required:
+            - id
+            - name
         assignments:
           type: array
+          description: >-
+            Ordered list of firm assignments from the matched rule, sorted by
+            configured priority (index 0 = highest priority). A rule may have
+            one or many assignments. The array is never empty when a rule matches.
           items:
             $ref: "#/components/schemas/RoutingEvaluationAssignment"
+      required:
+        - rule
+        - assignments
     NetworkRelationship:
       type: object
       properties:
@@ -574,6 +633,22 @@ components:
           properties:
             code:
               type: string
+              description: |
+                Machine-readable error code. Common codes include:
+
+                Authentication (401):
+                  * `invalid_api_key` — X-API-Key is missing, malformed, unknown, or revoked.
+                  * `invalid_sf_token` — Authorization Bearer `cxsf_` token is malformed, unknown, expired, or revoked.
+
+                Authorization (403):
+                  * `insufficient_tier` — API key's access tier does not permit the requested action.
+                  * `public_api_not_enabled` — the caller's firm does not have `public_api` in allowedIntegrations.
+                  * `no_firm_admin` — the caller's firm has no active FIRM_ADMIN or ACCOUNT_MANAGER to act on the request's behalf.
+
+                Request errors (400): `validation_error`, and endpoint-specific codes (e.g. `duplicate_sf_referral`).
+
+                Rate limiting (429): `rate_limit_exceeded`.
+              example: invalid_sf_token
             message:
               type: string
           required:
@@ -918,6 +993,7 @@ paths:
         - Reference Data
       security: &ref_3
         - apiKeyAuth: []
+        - bearerAuth: []
       x-access-tier: read_only
       responses:
         "200":
@@ -936,12 +1012,20 @@ paths:
                   - data
                   - meta
         "401": &ref_4
-          description: Invalid or missing API key
+          description: >-
+            Invalid or missing credentials. Error codes: `invalid_api_key`
+            (bad/missing X-API-Key) or `invalid_sf_token` (bad/revoked/expired
+            `cxsf_` Bearer token).
           content: &ref_2
             application/json:
               schema: *ref_1
         "403": &ref_5
-          description: API key tier does not permit this action
+          description: >-
+            Authenticated but not permitted. Error codes: `insufficient_tier`
+            (API key tier does not permit this action), `public_api_not_enabled`
+            (firm lacks the `public_api` integration entitlement), or
+            `no_firm_admin` (firm has no active FIRM_ADMIN / ACCOUNT_MANAGER to
+            serve as the request actor).
           content: *ref_2
   /jurisdictions:
     get:
@@ -1730,8 +1814,19 @@ paths:
       operationId: evaluateRoutingRules
       summary: Evaluate routing rules for a case profile
       description: >-
-        Returns the matching routing rule and its firm assignments for a hypothetical case profile.
-        Useful for previewing which firms would receive a referral before it is created.
+        Evaluates the caller's routing rules against a hypothetical case profile and returns
+        the highest-priority matching rule along with its ordered list of firm assignments.
+        Each assignment includes the target firm's ID, name, and any referral instructions
+        (resolved from the firm relationship or the firm's general instructions).
+
+
+        Returns `data: null` when no rule matches the given profile. When a rule does match,
+        `assignments` is an ordered array (index 0 = highest priority) — a rule can map to
+        one or many firms. This endpoint is read-only and does not create a referral.
+
+
+        Use the `attempt` parameter to simulate re-referral routing logic when rules have
+        attempt-based conditions (e.g., different firm assignments for attempt 2 vs attempt 1).
       tags:
         - Routing
       security: *ref_3
@@ -1772,7 +1867,8 @@ paths:
           description: Routing attempt number (default 1)
       responses:
         "200":
-          description: Routing evaluation result or null if no rule matches
+          description: >-
+            Matched routing rule with ordered firm assignments, or `data: null` if no rule matches
           content:
             application/json:
               schema:
@@ -1786,6 +1882,29 @@ paths:
                 required:
                   - data
                   - meta
+              examples:
+                match:
+                  summary: Rule matched — multiple firm assignments
+                  value:
+                    data:
+                      rule:
+                        id: "a1b2c3d4-5678-9012-abcd-ef0123456789"
+                        name: "PI Auto Tort — California"
+                      assignments:
+                        - firmId: "f1a2b3c4-0000-1111-2222-333344445555"
+                          firmName: "Smith & Associates"
+                          referralInstructions: "Email intake@smithlaw.com with the signed retainer before referring."
+                        - firmId: "f2b3c4d5-1111-2222-3333-444455556666"
+                          firmName: "Johnson Trial Group"
+                          referralInstructions: null
+                    meta:
+                      timestamp: "2026-04-22T12:00:00.000Z"
+                noMatch:
+                  summary: No rule matched the case profile
+                  value:
+                    data: null
+                    meta:
+                      timestamp: "2026-04-22T12:00:00.000Z"
         "400": *ref_6
         "401": *ref_4
         "403":
@@ -1796,8 +1915,26 @@ paths:
       operationId: evaluateReReferralRouting
       summary: Evaluate re-referral routing for an existing case
       description: >-
-        Returns the routing rule and firm assignments that would be used if the specified case
-        were re-referred. Uses the case profile to match routing rules.
+        Evaluates routing rules for an existing case as if it were being re-referred.
+        Extracts the case profile (case type, jurisdiction, county, tier, category) from the
+        existing case record and matches it against the caller's routing rules.
+
+
+        Key differences from `/routing/evaluate`:
+
+        - **Automatic firm exclusion**: Firms that already received a referral for this case
+          from the caller are excluded from the returned assignments.
+
+        - **Automatic attempt counting**: The `referralAttempt` is set to the number of
+          previous referrals + 1, so attempt-based routing conditions are applied correctly.
+
+        - **Flexible case identifier**: The `caseId` parameter accepts a case UUID, referral
+          UUID, reference number (e.g., `ABC-0001`), or external CMS ID.
+
+
+        Returns `data: null` when no rule matches after exclusions are applied. The response
+        shape is identical to `/routing/evaluate` — an ordered array of firm assignments
+        with referral instructions.
       tags:
         - Routing
       security: *ref_3
@@ -1808,7 +1945,9 @@ paths:
           required: true
           schema:
             type: string
-          description: UUID, reference number, or CMS ID of the case to evaluate re-referral routing for
+          description: >-
+            Flexible case identifier — accepts a base case UUID, referral UUID,
+            reference number (e.g., ABC-0001), or external CMS ID
         - in: query
           name: tier
           schema:
@@ -1816,7 +1955,9 @@ paths:
           description: Routing tier to evaluate (optional)
       responses:
         "200":
-          description: Re-referral routing evaluation result or null if no rule matches
+          description: >-
+            Matched routing rule with ordered firm assignments (excluding previously referred firms),
+            or `data: null` if no rule matches
           content:
             application/json:
               schema:
@@ -3210,7 +3351,7 @@ paths:
       summary: Send a referral
       description: >-
         Transitions a DRAFT referral to SENT, dispatching it to the specified receiving firm. Only the referring
-        firm may send. Tier: STANDARD.
+        firm may send. An optional `reason` and `notes` may be provided. Tier: STANDARD.
       tags:
         - Referrals
       security: *ref_3
@@ -3236,6 +3377,16 @@ paths:
                   type: string
                   format: uuid
                   description: UUID of the receiving (referent) firm
+                notes:
+                  type: string
+                  maxLength: 10000
+                  description: Optional internal notes for this referral.
+                reason:
+                  type: string
+                  maxLength: 5000
+                  description: >-
+                    Optional reason for sending. When provided, it is appended to the status-update
+                    message and captured in the audit log. CR/LF characters are stripped server-side.
       responses:
         "200":
           description: Referral sent
@@ -3260,7 +3411,7 @@ paths:
       summary: Acknowledge a referral
       description: >-
         Transitions a SENT referral to RECEIVED, acknowledging it on behalf of the receiving firm. Only the
-        referent firm may acknowledge. Tier: STANDARD.
+        referent firm may acknowledge. An optional `reason` may be provided. Tier: STANDARD.
       tags:
         - Referrals
       security: *ref_3
@@ -3273,6 +3424,20 @@ paths:
             type: string
             format: uuid
           description: Referral UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 5000
+                  description: >-
+                    Optional reason for this transition. When provided, it is appended to the
+                    status-update message and captured in the audit log. CR/LF characters are
+                    stripped server-side.
       responses:
         "200":
           description: Referral acknowledged
@@ -3296,7 +3461,7 @@ paths:
       summary: Begin investigating a referral
       description: >-
         Transitions a RECEIVED referral to INVESTIGATING. Only the referent firm may call this action.
-        Tier: STANDARD.
+        An optional `reason` may be provided. Tier: STANDARD.
       tags:
         - Referrals
       security: *ref_3
@@ -3309,6 +3474,20 @@ paths:
             type: string
             format: uuid
           description: Referral UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 5000
+                  description: >-
+                    Optional reason for this transition. When provided, it is appended to the
+                    status-update message and captured in the audit log. CR/LF characters are
+                    stripped server-side.
       responses:
         "200":
           description: Referral now under investigation
@@ -3332,7 +3511,7 @@ paths:
       summary: Sign a referral
       description: >-
         Marks a referral as signed by the client, transitioning it to SIGNED. Only the referent firm may call
-        this action. Tier: STANDARD.
+        this action. An optional `reason` may be provided. Tier: STANDARD.
       tags:
         - Referrals
       security: *ref_3
@@ -3345,6 +3524,20 @@ paths:
             type: string
             format: uuid
           description: Referral UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 5000
+                  description: >-
+                    Optional reason for this transition. When provided, it is appended to the
+                    status-update message and captured in the audit log. CR/LF characters are
+                    stripped server-side.
       responses:
         "200":
           description: Referral signed
@@ -3368,7 +3561,7 @@ paths:
       summary: Start litigation on a referral
       description: >-
         Transitions a SIGNED referral to IN_LITIGATION. Only the referent firm may call this action.
-        Tier: STANDARD.
+        An optional `reason` may be provided. Tier: STANDARD.
       tags:
         - Referrals
       security: *ref_3
@@ -3381,6 +3574,20 @@ paths:
             type: string
             format: uuid
           description: Referral UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 5000
+                  description: >-
+                    Optional reason for this transition. When provided, it is appended to the
+                    status-update message and captured in the audit log. CR/LF characters are
+                    stripped server-side.
       responses:
         "200":
           description: Referral in litigation
@@ -3398,13 +3605,85 @@ paths:
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
-  /referrals/{id}/close:
-    post:
-      operationId: closeReferral
-      summary: Close a referral
+  /referrals/{id}/available-statuses:
+    get:
+      operationId: getReferralAvailableStatuses
+      summary: Get allowed next status transitions for a referral
       description: >-
-        Closes a referral with an outcome status. `closingStatus` is required; settlement financials are
-        optional but recommended. Only the referent firm may close. Tier: FULL.
+        Returns the allowed next status transitions for this referral, scoped to the calling firm's
+        party (sender or receiver). The party is auto-detected from the calling firm — there is no
+        need for the caller to specify it. Tier: READ_ONLY.
+      tags:
+        - Referrals
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Referral UUID
+      responses:
+        "200":
+          description: Available status transitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - currentStatus
+                      - party
+                      - availableTransitions
+                    properties:
+                      currentStatus:
+                        type: string
+                        description: The referral's current status, normalized (RECEIVED is returned as under_evaluation).
+                        example: signed
+                      party:
+                        type: string
+                        enum: [sender, receiver]
+                        description: The calling firm's role relative to this referral.
+                      availableTransitions:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - status
+                            - label
+                          properties:
+                            status:
+                              type: string
+                              description: Target status the referral can transition to.
+                            label:
+                              type: string
+                              description: Human-readable label for the transition action.
+                            requiresReason:
+                              type: boolean
+                              description: True when the transition requires a reason body field.
+                            requiresClosingStatus:
+                              type: boolean
+                              description: True when the transition requires a closingStatus body field.
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+  /referrals/{id}/begin-closing:
+    post:
+      operationId: beginClosingReferral
+      summary: Begin closing workflow for a referral
+      description: >-
+        First step of the two-step close workflow. Transitions a referral from SIGNED or IN_LITIGATION
+        to CLOSING. `closingStatus` and `reason` are required; settlement financials are optional but
+        recommended. Only the referent firm may call this endpoint. The second step — finalization — is
+        `POST /referrals/{id}/close`, which transitions CLOSING → CLOSED. Tier: FULL.
       tags:
         - Referrals
       security: *ref_3
@@ -3425,18 +3704,24 @@ paths:
               type: object
               required:
                 - closingStatus
+                - reason
               properties:
                 closingStatus:
                   type: string
                   description: ClosingStatus enum value (e.g. won_settled, lost, dismissed)
                   example: won_settled
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 5000
+                  description: >-
+                    Human-readable reason for initiating the closing workflow. Required, non-empty.
+                    CR/LF characters are stripped server-side.
+                  example: Settlement reached and client approved disbursement.
                 closingNotes:
                   type: string
                   nullable: true
                   description: Optional notes about the closing outcome
-                closureReason:
-                  type: string
-                  nullable: true
                 settlementAmount:
                   type: number
                   format: float
@@ -3454,6 +3739,62 @@ paths:
                   format: float
                   nullable: true
                   description: Attorney fees in USD
+      responses:
+        "200":
+          description: Referral transitioned to CLOSING
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Referral"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+  /referrals/{id}/close:
+    post:
+      operationId: closeReferral
+      summary: Finalize closing — transition CLOSING to CLOSED
+      description: >-
+        Second step of the two-step close workflow. Transitions a referral from CLOSING to CLOSED.
+        An optional `reason` may be provided (e.g. "Settlement check disbursed"). When omitted,
+        the reason set during `begin-closing` is preserved. Only the referent firm may call this
+        endpoint. Returns 400 `invalid_state` if the referral is not currently in CLOSING status.
+        Tier: FULL.
+      tags:
+        - Referrals
+      security: *ref_3
+      x-access-tier: full
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Referral UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 5000
+                  description: >-
+                    Optional final closing reason. When omitted, preserves the reason set by
+                    begin-closing. When provided, must be non-empty. CR/LF characters are
+                    stripped server-side.
+                  example: Settlement disbursed to client.
       responses:
         "200":
           description: Referral closed
@@ -3478,7 +3819,7 @@ paths:
       summary: Reject a referral
       description: >-
         Rejects an incoming referral. Can be called on SENT or RECEIVED referrals. Only the referent firm may
-        reject. Tier: STANDARD.
+        reject. A `reason` explaining the rejection is required. Tier: STANDARD.
       tags:
         - Referrals
       security: *ref_3
@@ -3492,15 +3833,21 @@ paths:
             format: uuid
           description: Referral UUID
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - reason
               properties:
                 reason:
                   type: string
-                  nullable: true
+                  minLength: 1
+                  maxLength: 5000
+                  description: >-
+                    Required reason for rejecting the referral. Must be non-empty.
+                    CR/LF characters are stripped server-side.
       responses:
         "200":
           description: Referral rejected
@@ -3523,7 +3870,8 @@ paths:
       operationId: withdrawReferral
       summary: Withdraw a referral
       description: >-
-        Withdraws a SENT referral back to DRAFT status. Only the referring firm may withdraw. Tier: STANDARD.
+        Withdraws a SENT referral back to DRAFT status. Only the referring firm may withdraw. A `reason`
+        explaining the withdrawal is required. Tier: STANDARD.
       tags:
         - Referrals
       security: *ref_3
@@ -3537,15 +3885,21 @@ paths:
             format: uuid
           description: Referral UUID
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - reason
               properties:
                 reason:
                   type: string
-                  nullable: true
+                  minLength: 1
+                  maxLength: 5000
+                  description: >-
+                    Required reason for withdrawing the referral. Must be non-empty.
+                    CR/LF characters are stripped server-side.
       responses:
         "200":
           description: Referral withdrawn
