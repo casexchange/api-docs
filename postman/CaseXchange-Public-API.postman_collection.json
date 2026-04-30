@@ -2972,7 +2972,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"closingStatus\": \"won_settled\",\n  \"reason\": \"Settlement reached and client approved disbursement.\",\n  \"settlementAmount\": 75000,\n  \"attorneyFees\": 25000\n}",
+              "raw": "{\n  \"closingStatus\": \"won_settled\",\n  \"reason\": \"Settlement reached and client approved disbursement.\",\n  \"closureReason\": \"Mediated settlement; both parties signed release.\",\n  \"settlementAmount\": 75000,\n  \"attorneyFees\": 25000\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2990,7 +2990,7 @@
                 "begin-closing"
               ]
             },
-            "description": "First step of the two-step close workflow. Transitions a referral from SIGNED or IN_LITIGATION to CLOSING. Requires closingStatus; settlement financials are optional. Tier: FULL. Only the referent firm may call this action.\n\n`closingStatus` and `reason` are required. `reason` must be non-empty (max 5,000 chars, CR/LF stripped). The legacy `closureReason` field has been removed \u2014 use `reason` instead."
+            "description": "First step of the two-step close workflow. Transitions a referral from SIGNED or IN_LITIGATION to CLOSING. Only `closingStatus` is required. Tier: FULL. Only the referent firm may call this action.\n\n`reason` (optional, max 5,000 chars, CR/LF stripped) is written to the status_updates row's message. `closureReason` (optional, max 5,000 chars, CR/LF stripped) is written to the case record's closureReason column and is required at the service layer when `closingStatus` is `no_longer_pursuing`."
           },
           "event": [
             {
@@ -3025,7 +3025,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Settlement disbursed to client.\"\n}",
+              "raw": "{\n  \"closureReason\": \"Settlement disbursed and matter closed in case management system.\",\n  \"reason\": \"Final wire received.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3043,7 +3043,7 @@
                 "close"
               ]
             },
-            "description": "Finalize the closing workflow (CLOSING \u2192 CLOSED). Requires `reason`. Must already be in CLOSING status. Tier: FULL.\n\n`reason` is now optional (max 5,000 chars, CR/LF stripped, min length 1 when provided). When omitted, the reason set during begin-closing is preserved. Body may be omitted entirely."
+            "description": "Finalize the closing workflow (CLOSING \u2192 CLOSED). Tier: FULL. Only the referent firm may call this action.\n\n`closureReason` is required (min 1, max 5,000 chars, CR/LF stripped) and is written to the case record's closureReason column. `reason` is optional (min 1, max 5,000 chars, CR/LF stripped) and is written to the status_updates row's message; when omitted, the message defaults to using closureReason."
           },
           "event": [
             {
