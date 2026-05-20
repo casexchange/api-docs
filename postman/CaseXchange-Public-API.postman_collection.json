@@ -2109,11 +2109,11 @@
       ]
     },
     {
-      "name": "Medical Referrals",
-      "description": "Medical provider referrals linked to cases.",
+      "name": "Med Cases",
+      "description": "Med Xchange cases and their nested referrals to medical providers.",
       "item": [
         {
-          "name": "List Medical Referrals",
+          "name": "List Med Cases",
           "request": {
             "method": "GET",
             "header": [
@@ -2123,15 +2123,15 @@
               }
             ],
             "url": {
-              "raw": "{{public_api_url}}/medical-referrals",
+              "raw": "{{public_api_url}}/med-cases",
               "host": [
                 "{{public_api_url}}"
               ],
               "path": [
-                "medical-referrals"
+                "med-cases"
               ]
             },
-            "description": "Returns all medical referrals linked to the caller's cases. Tier: READ_ONLY."
+            "description": "Returns all Med Xchange cases visible to the caller's firm. Tier: READ_ONLY."
           },
           "event": [
             {
@@ -2139,13 +2139,13 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Returns medical referrals array', () => {",
+                  "pm.test('Returns med cases array', () => {",
                   "  const json = pm.response.json();",
                   "  pm.expect(json).to.be.an('object');",
                   "  pm.expect(json.data).to.be.an('array');",
                   "  if (json.data.length > 0) {",
-                  "    pm.environment.set('medical_referral_id', json.data[0].id);",
-                  "    console.log('Saved first medical referral ID: ' + json.data[0].id);",
+                  "    pm.environment.set('med_case_id', json.data[0].id);",
+                  "    console.log('Saved first med case ID: ' + json.data[0].id);",
                   "  }",
                   "});"
                 ],
@@ -2155,46 +2155,7 @@
           ]
         },
         {
-          "name": "Get Medical Referral",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-API-Key",
-                "value": "{{api_key}}"
-              }
-            ],
-            "url": {
-              "raw": "{{public_api_url}}/medical-referrals/{{medical_referral_id}}",
-              "host": [
-                "{{public_api_url}}"
-              ],
-              "path": [
-                "medical-referrals",
-                "{{medical_referral_id}}"
-              ]
-            },
-            "description": "Returns a single medical referral by UUID. Set `medical_referral_id` in the environment or run List Medical Referrals first. Tier: READ_ONLY."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Returns medical referral object', () => {",
-                  "  const json = pm.response.json();",
-                  "  pm.expect(json).to.be.an('object');",
-                  "  pm.expect(json.data.id).to.equal(pm.environment.get('medical_referral_id'));",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ]
-        },
-        {
-          "name": "Create Medical Referral",
+          "name": "Create Med Case",
           "request": {
             "method": "POST",
             "header": [
@@ -2209,31 +2170,31 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"baseCaseId\": \"{{case_id}}\",\n  \"clientFirstName\": \"Jane\",\n  \"clientLastName\": \"Doe\",\n  \"clientEmail\": \"jane.doe@example.com\",\n  \"clientPhone\": \"555-123-4567\",\n  \"providerId\": \"{{firm_id}}\",\n  \"notes\": \"Medical referral created via API\",\n  \"dateOfInjury\": \"2026-01-15\",\n  \"injuryDescription\": \"Knee injury from auto accident\"\n}"
+              "raw": "{\n  \"patientFirstName\": \"Jordan\",\n  \"patientLastName\": \"Smith\"\n}"
             },
             "url": {
-              "raw": "{{public_api_url}}/medical-referrals",
+              "raw": "{{public_api_url}}/med-cases",
               "host": [
                 "{{public_api_url}}"
               ],
               "path": [
-                "medical-referrals"
+                "med-cases"
               ]
             },
-            "description": "Creates a new medical referral. Required fields: clientFirstName, clientLastName. Note: this model is evolving. Tier: STANDARD."
+            "description": "Creates a new Med Xchange case. All fields optional. Tier: STANDARD."
           },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 201 - Medical referral created', () => pm.response.to.have.status(201));",
-                  "pm.test('Returns created medical referral', () => {",
+                  "pm.test('Status 201 - Med case created', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns created med case', () => {",
                   "  const json = pm.response.json();",
                   "  pm.expect(json).to.be.an('object');",
                   "  pm.expect(json.data.id).to.be.a('string');",
-                  "  pm.environment.set('medical_referral_id', json.data.id);",
-                  "  console.log('Saved medical referral ID: ' + json.data.id);",
+                  "  pm.environment.set('med_case_id', json.data.id);",
+                  "  console.log('Saved med case ID: ' + json.data.id);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -2242,7 +2203,46 @@
           ]
         },
         {
-          "name": "Update Medical Referral",
+          "name": "Get Med Case by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}"
+              ]
+            },
+            "description": "Returns a single med case by UUID. Set `med_case_id` in the environment or run List Med Cases first. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns med case object', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.equal(pm.environment.get('med_case_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Med Case",
           "request": {
             "method": "PUT",
             "header": [
@@ -2257,19 +2257,19 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"clientPhone\": \"555-999-8888\",\n  \"notes\": \"Updated evaluation notes\",\n  \"injuryDescription\": \"Knee and shoulder injury from auto accident\"\n}"
+              "raw": "{\n  \"patientEmail\": \"jordan.smith@example.com\",\n  \"description\": \"Updated case description\"\n}"
             },
             "url": {
-              "raw": "{{public_api_url}}/medical-referrals/{{medical_referral_id}}",
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}",
               "host": [
                 "{{public_api_url}}"
               ],
               "path": [
-                "medical-referrals",
-                "{{medical_referral_id}}"
+                "med-cases",
+                "{{med_case_id}}"
               ]
             },
-            "description": "Updates an existing medical referral. All body fields are optional. Tier: STANDARD."
+            "description": "Updates an existing med case. All body fields are optional. Tier: STANDARD."
           },
           "event": [
             {
@@ -2277,10 +2277,233 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Returns updated medical referral', () => {",
+                  "pm.test('Returns updated med case', () => {",
                   "  const json = pm.response.json();",
                   "  pm.expect(json).to.be.an('object');",
-                  "  pm.expect(json.data.id).to.equal(pm.environment.get('medical_referral_id'));",
+                  "  pm.expect(json.data.id).to.equal(pm.environment.get('med_case_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Med Case (returns 405)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}"
+              ]
+            },
+            "description": "Intentionally returns 405. Deleting med cases is not supported. Set isArchived to true via PUT instead. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 405 - Delete not supported', () => pm.response.to.have.status(405));",
+                  "pm.test('Returns error message', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.error).to.be.an('object');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Referrals on Med Case",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals"
+              ]
+            },
+            "description": "Returns all referrals attached to the specified med case. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns med referrals array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "  if (json.data.length > 0) {",
+                  "    pm.environment.set('med_referral_id', json.data[0].id);",
+                  "    console.log('Saved first med referral ID: ' + json.data[0].id);",
+                  "  }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Referral on Med Case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"providerId\": \"00000000-0000-0000-0000-000000000001\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals"
+              ]
+            },
+            "description": "Creates a new referral on the specified med case. `providerId` is required. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 - Med referral created', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns created med referral', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.be.a('string');",
+                  "  pm.environment.set('med_referral_id', json.data.id);",
+                  "  console.log('Saved med referral ID: ' + json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Referral by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}"
+              ]
+            },
+            "description": "Returns a single referral by UUID on the specified med case. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns med referral object', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.equal(pm.environment.get('med_referral_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Referral",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Updated referral notes\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}"
+              ]
+            },
+            "description": "Updates an existing referral on the specified med case. All body fields are optional. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns updated med referral', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.equal(pm.environment.get('med_referral_id'));",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -4032,6 +4255,475 @@
               "script": {
                 "exec": [
                   "pm.test('Status 204 - Token deleted', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "description": "Webhook subscription management for real-time event delivery. Providers can subscribe to 35 event types across 10 categories (case, referral, appointment, prescription, insurance, injury, note, diagnosis, billing, document). Each delivery is signed with HMAC-SHA256; verify the X-CaseXchange-Signature header using your subscription secret.\n\n**Supported event types:**\n- case.created, case.updated, case.archived\n- referral.sent, referral.accepted, referral.rejected, referral.withdrawn, referral.in_treatment, referral.treatment_complete\n- appointment.created, appointment.updated, appointment.deleted\n- prescription.created, prescription.updated, prescription.deleted\n- insurance.created, insurance.updated, insurance.deleted\n- injury.created, injury.updated, injury.deleted\n- note.created, note.updated, note.deleted\n- diagnosis.created, diagnosis.updated, diagnosis.deleted\n- billing.created, billing.updated, billing.deleted\n- document.uploaded, document.deleted\n- webhook.test\n\n**Example payloads by category:**\n\ncase.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440000\",\"eventType\":\"case.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"referenceNumber\":\"MED-0042\",\"patientFirstName\":\"John\",\"patientLastName\":\"Doe\",\"patientEmail\":\"john.doe@example.com\",\"patientPhone\":\"312-555-0100\",\"patientDateOfBirth\":\"1985-06-15\",\"patientZipCode\":\"60601\",\"description\":\"Auto accident on I-90\",\"incidentDate\":\"2026-04-01\",\"caseType\":\"PI\",\"jurisdiction\":\"IL\",\"handlingFirmId\":\"c3d4e5f6-a7b8-9012-cdef-123456789012\"}}\n```\n\ncase.updated (includes changedFields):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440001\",\"eventType\":\"case.updated\",\"timestamp\":\"2026-05-19T13:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"referenceNumber\":\"MED-0042\",\"patientFirstName\":\"John\",\"patientLastName\":\"Doe\",\"description\":\"Auto accident on I-90 \u2014 updated notes\",\"incidentDate\":\"2026-04-01\",\"caseType\":\"PI\",\"jurisdiction\":\"IL\",\"handlingFirmId\":\"c3d4e5f6-a7b8-9012-cdef-123456789012\",\"changedFields\":[\"description\"]}}\n```\n\ncase.archived (tombstone \u2014 minimal payload):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440002\",\"eventType\":\"case.archived\",\"timestamp\":\"2026-05-19T14:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"referenceNumber\":\"MED-0042\"}}\n```\n\nreferral.sent:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440010\",\"eventType\":\"referral.sent\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"referralId\":\"d4e5f6a7-b8c9-0123-defa-234567890123\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\nreferral.accepted (lifecycle event \u2014 includes fromStatuses + toStatus):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440011\",\"eventType\":\"referral.accepted\",\"timestamp\":\"2026-05-19T12:30:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"referralId\":\"d4e5f6a7-b8c9-0123-defa-234567890123\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"fromStatuses\":[\"sent\"],\"toStatus\":\"accepted\"}}\n```\n\ninsurance.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440020\",\"eventType\":\"insurance.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"e5f6a7b8-c9d0-1234-efab-345678901234\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"insuranceCarrier\":\"State Farm\",\"policyNumber\":\"SF-12345\",\"claimNumber\":\"CLM-2026-001\",\"insuranceType\":\"AUTO\",\"isPrimary\":true,\"adjusterName\":\"Jane Smith\",\"adjusterPhone\":\"800-555-0200\",\"adjusterEmail\":\"jsmith@statefarm.example.com\",\"insuranceAddress\":\"123 Insurance Blvd, Bloomington IL 61701\",\"insurancePhone\":\"800-555-0199\"}}\n```\n\ninsurance.deleted (tombstone):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440021\",\"eventType\":\"insurance.deleted\",\"timestamp\":\"2026-05-19T15:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"e5f6a7b8-c9d0-1234-efab-345678901234\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\ninjury.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440030\",\"eventType\":\"injury.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"f6a7b8c9-d0e1-2345-fabc-456789012345\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"natureOfInjury\":\"FRACTURE\",\"description\":\"Fracture of left radius \u2014 distal end\",\"severity\":\"MODERATE\",\"isAccepted\":true,\"treatingProviderId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"}}\n```\n\nnote.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440040\",\"eventType\":\"note.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"a7b8c9d0-e1f2-3456-abcd-567890123456\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"appointmentId\":\"b8c9d0e1-f2a3-4567-bcde-678901234567\",\"authorId\":\"c9d0e1f2-a3b4-5678-cdef-789012345678\",\"body\":\"Patient reports reduced pain in wrist. Range of motion improving.\",\"createdAt\":\"2026-05-19T12:00:00.000Z\"}}\n```\n\ndiagnosis.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440050\",\"eventType\":\"diagnosis.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"d0e1f2a3-b4c5-6789-defa-890123456789\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"appointmentId\":\"b8c9d0e1-f2a3-4567-bcde-678901234567\",\"icd10Code\":\"S52.501A\",\"description\":\"Fracture of lower end of radius, initial encounter\",\"isPrimary\":true,\"createdAt\":\"2026-05-19T12:00:00.000Z\"}}\n```\n\nbilling.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440060\",\"eventType\":\"billing.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"e1f2a3b4-c5d6-7890-efab-901234567890\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"kind\":\"VISIT_FEE\"}}\n```\n\nbilling.deleted (tombstone):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440061\",\"eventType\":\"billing.deleted\",\"timestamp\":\"2026-05-19T15:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"e1f2a3b4-c5d6-7890-efab-901234567890\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"kind\":\"VISIT_FEE\"}}\n```\n\nappointment.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440070\",\"eventType\":\"appointment.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"appointmentId\":\"b8c9d0e1-f2a3-4567-bcde-678901234567\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\nprescription.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440080\",\"eventType\":\"prescription.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"prescriptionId\":\"f2a3b4c5-d6e7-8901-fabc-012345678901\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\ndocument.uploaded:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440090\",\"eventType\":\"document.uploaded\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"a3b4c5d6-e7f8-9012-abcd-123456789012\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\nwebhook.test:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440099\",\"eventType\":\"webhook.test\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"message\":\"This is a test delivery from CaseXchange.\"}}\n```\n\n**Signature verification (Node.js example):**\n```js\nconst crypto = require('crypto');\nfunction verifySignature(rawBody, secret, signatureHeader) {\n  // Header format: t=<timestamp>,v1=<hmac_hex>\n  const parts = Object.fromEntries(\n    signatureHeader.split(',').map(p => p.split('=', 2))\n  );\n  const timestamp = parts.t;\n  const expected = crypto.createHmac('sha256', secret)\n    .update(timestamp + '.' + rawBody)\n    .digest('hex');\n  if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1))) {\n    throw new Error('Invalid signature');\n  }\n  // Reject replays older than 5 minutes\n  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {\n    throw new Error('Timestamp too old');\n  }\n}\n```",
+      "item": [
+        {
+          "name": "Create Webhook Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://your-server.example.com/webhooks/casexchange\",\n  \"description\": \"Production webhook \\u2014 all events\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/webhooks",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks"
+              ]
+            },
+            "description": "Creates a new webhook subscription for the authenticated provider. Returns the subscription record including the plaintext secret \u2014 store it securely, it is never shown again. Tier: STANDARD.\n\nCreates a new webhook subscription. All active subscriptions receive every event for the provider \u2014 event-type filtering is a planned future feature."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 - Subscription created', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns subscription with plainSecret', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.data).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.be.a('string');",
+                  "  pm.expect(json.data.plainSecret).to.be.a('string');",
+                  "  pm.environment.set('webhook_id', json.data.id);",
+                  "  pm.environment.set('webhook_secret', json.data.plainSecret);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Webhook Subscriptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks"
+              ]
+            },
+            "description": "Lists all webhook subscriptions for the authenticated provider. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array of subscriptions', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Webhook Subscription",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}"
+              ]
+            },
+            "description": "Returns a single webhook subscription by ID. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns subscription object', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.data.id).to.equal(pm.environment.get('webhook_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Webhook Subscription",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}"
+              ]
+            },
+            "description": "Updates a webhook subscription. All fields are optional \u2014 only provided fields are changed. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns updated subscription', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.data).to.be.an('object');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rotate Webhook Secret",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}/rotate-secret",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}",
+                "rotate-secret"
+              ]
+            },
+            "description": "Generates a new HMAC signing secret for this subscription. The previous secret remains valid for a grace period (typically 24 h) so you can update your verification logic without downtime. Returns the new plaintext secret \u2014 store it securely. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns new plainSecret', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.data.plainSecret).to.be.a('string');",
+                  "  pm.environment.set('webhook_secret', json.data.plainSecret);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send Test Delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}/test",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}",
+                "test"
+              ]
+            },
+            "description": "Sends a `webhook.test` event to the subscription URL immediately. Use this to verify your endpoint is reachable and that signature verification is working before enabling live traffic. Tier: STANDARD.\n\nExample test payload delivered to your endpoint:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440099\",\"eventType\":\"webhook.test\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"message\":\"This is a test delivery from CaseXchange.\"}}\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns delivery result', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Webhook Deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}/deliveries?limit=20",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}",
+                "deliveries"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Returns recent delivery attempts for this subscription, including response status codes and any error messages. Useful for debugging delivery failures. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns deliveries array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enable Echo Mode",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}/echo/enable",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}",
+                "echo",
+                "enable"
+              ]
+            },
+            "description": "Switches the subscription to Echo Mode: instead of delivering to your URL, CaseXchange captures payloads server-side so you can inspect them without running your own server. Returns an `echoUrl` you can use as a temporary receiver. Tier: STANDARD.\n\nDisable echo mode (and restore delivery to your configured URL) with `POST /webhooks/:id/echo/disable`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns echo URL', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.data.echoUrl).to.be.a('string');",
+                  "  pm.environment.set('echo_url', json.data.echoUrl);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Disable Echo Mode",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}/echo/disable",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}",
+                "echo",
+                "disable"
+              ]
+            },
+            "description": "Restores normal delivery to the subscription's configured URL, discarding any pending echo captures. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Echo mode disabled', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Echo Captures",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}/echo/captures?limit=20",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}",
+                "echo",
+                "captures"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Returns the most recent payloads captured in Echo Mode. Use this to inspect what CaseXchange would have delivered to your endpoint. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns captures array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Webhook Subscription",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/webhooks/{{webhook_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}"
+              ]
+            },
+            "description": "Soft-deletes a webhook subscription. Pending deliveries are abandoned. Returns 204 No Content. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 - Subscription deleted', () => pm.response.to.have.status(204));"
                 ],
                 "type": "text/javascript"
               }
