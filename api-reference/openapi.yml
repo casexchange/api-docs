@@ -92,6 +92,10 @@ tags:
     description: Send messages to partner firms on referrals
   - name: Network
     description: Manage the firm's private referral network relationships
+  - name: External Links
+    description: >-
+      Manage links between CaseXchange referrals and records in external systems
+      (e.g. CloudLex). Used by the Chrome extension for background sync.
 components:
   securitySchemes:
     apiKeyAuth:
@@ -1023,6 +1027,38 @@ components:
           type: integer
         totalPages:
           type: integer
+    ExternalLink:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        referralId: {type: string, format: uuid}
+        externalSystem: {type: string}
+        externalId: {type: string}
+        externalUrl: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time}
+      required: [id, referralId, externalSystem, externalId, createdAt]
+    ExternalLinkLookup:
+      allOf:
+        - $ref: '#/components/schemas/ExternalLink'
+        - type: object
+          properties:
+            referral:
+              type: object
+              properties:
+                id: {type: string, format: uuid}
+                referenceNumber: {type: string, nullable: true}
+                currentStatus: {type: string}
+                validNextStatuses:
+                  type: array
+                  items: {type: string}
+                canBeginClosing: {type: boolean}
+                canClose: {type: boolean}
+                settlementAmount: {type: number, nullable: true}
+                clientFeeAgreementPercentage: {type: number, nullable: true}
+                attorneyFees: {type: number, nullable: true}
+                closingStatus: {type: string, nullable: true}
+              required: [id, currentStatus, validNextStatuses, canBeginClosing, canClose]
+          required: [referral]
     AvailableStatusesResponse:
       type: object
       properties:
@@ -5324,3 +5360,174 @@ paths:
         '403': *ref_5
         '404':
           description: Case not found or not accessible
+
+  # ── External Links ──────────────────────────────────────────────────────────
+
+  /external-links:
+    get:
+      operationId: lookupExternalLink
+      summary: Look up an external link by system + externalId
+      tags: [External Links]
+      security: [{apiKeyAuth: []}, {bearerAuth: []}]
+      parameters:
+        - name: system
+          in: query
+          required: true
+          schema: {type: string, enum: [cloudlex, morgan_morgan]}
+          description: External system identifier
+        - name: externalId
+          in: query
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 255}
+          description: Record ID in the external system
+      responses:
+        '200':
+          description: Link found
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ExternalLinkLookup'
+                  - type: object
+                    properties:
+                      meta: *ref_0
+        '400': *ref_6
+        '401': *ref_4
+        '404':
+          description: Link not found for the given system + externalId
+    post:
+      operationId: createExternalLink
+      summary: Create a link between a referral and an external system record
+      tags: [External Links]
+      security: [{apiKeyAuth: []}, {bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [referralId, externalSystem, externalId]
+              properties:
+                referralId: {type: string, format: uuid}
+                externalSystem: {type: string, enum: [cloudlex, morgan_morgan]}
+                externalId: {type: string, minLength: 1, maxLength: 255}
+                externalUrl: {type: string, format: uri, maxLength: 2048}
+      responses:
+        '201':
+          description: Link created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ExternalLink'
+                  - type: object
+                    properties:
+                      meta: *ref_0
+        '400': *ref_6
+        '401': *ref_4
+        '403': *ref_5
+        '409':
+          description: A link already exists for this referral + system
+
+  /external-links/list:
+    get:
+      operationId: listExternalLinks
+      summary: List all external links for the authenticated firm
+      description: >-
+        Returns a paginated list of all active external links filtered by
+        external system. Each link includes referral metadata (current status,
+        valid transitions). Uses INNER JOIN so orphaned links (referral deleted)
+        are excluded from results and pagination counts.
+      tags: [External Links]
+      security: [{apiKeyAuth: []}, {bearerAuth: []}]
+      parameters:
+        - name: system
+          in: query
+          required: true
+          schema: {type: string, enum: [cloudlex, morgan_morgan]}
+          description: External system filter
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+          description: Page number (1-indexed)
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+          description: Results per page
+      responses:
+        '200':
+          description: Paginated list of external links
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExternalLinkLookup'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+                  meta: *ref_0
+                required: [data, pagination, meta]
+        '400': *ref_6
+        '401': *ref_4
+
+  /external-links/{id}/replace:
+    post:
+      operationId: replaceExternalLink
+      summary: Replace an external link (soft-delete old, create new)
+      tags: [External Links]
+      security: [{apiKeyAuth: []}, {bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [referralId, externalSystem, externalId]
+              properties:
+                referralId: {type: string, format: uuid}
+                externalSystem: {type: string, enum: [cloudlex, morgan_morgan]}
+                externalId: {type: string, minLength: 1, maxLength: 255}
+                externalUrl: {type: string, format: uri, maxLength: 2048}
+      responses:
+        '200':
+          description: New link created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ExternalLink'
+                  - type: object
+                    properties:
+                      meta: *ref_0
+        '400': *ref_6
+        '401': *ref_4
+        '403': *ref_5
+        '404':
+          description: Existing link not found
+
+  /external-links/{id}:
+    delete:
+      operationId: deleteExternalLink
+      summary: Soft-delete an external link
+      tags: [External Links]
+      security: [{apiKeyAuth: []}, {bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '204':
+          description: Link deleted
+        '401': *ref_4
+        '403': *ref_5
+        '404':
+          description: Link not found
