@@ -4731,6 +4731,254 @@
           ]
         }
       ]
+    },
+    {
+      "name": "External Links",
+      "description": "Manage links between CaseXchange referrals and records in external systems (e.g. CloudLex). Lookup requires READ_ONLY tier; create/replace/delete require STANDARD.",
+      "item": [
+        {
+          "name": "Lookup External Link",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/external-links?system=cloudlex&externalId=1640",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "external-links"
+              ],
+              "query": [
+                {
+                  "key": "system",
+                  "value": "cloudlex",
+                  "description": "External system identifier (cloudlex, morgan_morgan)"
+                },
+                {
+                  "key": "externalId",
+                  "value": "1640",
+                  "description": "The record ID in the external system"
+                }
+              ]
+            },
+            "description": "Look up a single external link by system and external ID. Returns the link with referral metadata including current status and valid next transitions. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns link with referral', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.externalSystem).to.equal('cloudlex');",
+                  "  pm.expect(json.referral).to.be.an('object');",
+                  "  pm.expect(json.referral.currentStatus).to.be.a('string');",
+                  "  pm.expect(json.referral.validNextStatuses).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List External Links",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/external-links/list?system=cloudlex&page=1&limit=20",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "external-links",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "system",
+                  "value": "cloudlex",
+                  "description": "External system filter (required): cloudlex, morgan_morgan"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page (default: 20, max: 100)"
+                }
+              ]
+            },
+            "description": "Returns a paginated list of all active external links for the authenticated firm, filtered by external system. Each link includes referral metadata (current status, valid transitions). Designed for background sync by the Chrome extension. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns paginated data array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "  pm.expect(json.pagination).to.be.an('object');",
+                  "  pm.expect(json.pagination.page).to.be.a('number');",
+                  "  pm.expect(json.pagination.total).to.be.a('number');",
+                  "});",
+                  "pm.test('Returns meta with requestId', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.meta).to.be.an('object');",
+                  "  pm.expect(json.meta.requestId).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create External Link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"referralId\": \"{{referral_id}}\",\n  \"externalSystem\": \"cloudlex\",\n  \"externalId\": \"1640\",\n  \"externalUrl\": \"https://app.cloudlex.net/matters/1640\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/external-links",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "external-links"
+              ]
+            },
+            "description": "Create a link between a CaseXchange referral and an external system record. Returns 409 if a link already exists for the referral+system combination. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns created link', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.id).to.be.a('string');",
+                  "  pm.expect(json.externalSystem).to.equal('cloudlex');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replace External Link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"referralId\": \"{{referral_id}}\",\n  \"externalSystem\": \"cloudlex\",\n  \"externalId\": \"1641\",\n  \"externalUrl\": \"https://app.cloudlex.net/matters/1641\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/external-links/{{link_id}}/replace",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "external-links",
+                "{{link_id}}",
+                "replace"
+              ]
+            },
+            "description": "Atomically soft-delete an existing link and create a new one in a single transaction. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns new link', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.id).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete External Link",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/external-links/{{link_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "external-links",
+                "{{link_id}}"
+              ]
+            },
+            "description": "Soft-delete an external link. Returns 204 on success. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
