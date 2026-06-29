@@ -2514,6 +2514,190 @@
       ]
     },
     {
+      "name": "Insurance",
+      "item": [
+        {
+          "name": "List Insurance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/insurances",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "insurances"
+              ],
+              "query": [
+                {
+                  "key": "medCaseId",
+                  "value": "{{med_case_id}}",
+                  "description": "Filter to one med case (UUID, optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "insuranceType",
+                  "value": "auto",
+                  "description": "Filter by type: health | auto | workers_comp | liability | other (optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "isPrimary",
+                  "value": "true",
+                  "description": "Filter by primary flag (optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default 1)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page, max 100 (default 20)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns all insurance records for cases visible to the caller's firm. Scoped through the parent med case (a firm sees insurance for every case it created or handles). Supports filtering by medCaseId, insuranceType, and isPrimary, plus pagination. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns insurance array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "  if (json.data.length > 0) {",
+                  "    pm.environment.set('insurance_id', json.data[0].id);",
+                  "    console.log('Saved first insurance ID: ' + json.data[0].id);",
+                  "  }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Insurance by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/insurances/{{insurance_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "insurances",
+                "{{insurance_id}}"
+              ]
+            },
+            "description": "Returns a single insurance record by UUID. Returns 404 if the record does not exist or belongs to a case the caller's firm cannot access. Set `insurance_id` in the environment or run List Insurance first. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns an insurance object', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.be.an('object');",
+                  "  pm.expect(json.data).to.have.property('id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Insurance for Med Case",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/insurances",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "insurances"
+              ],
+              "query": [
+                {
+                  "key": "insuranceType",
+                  "value": "auto",
+                  "description": "Filter by type: health | auto | workers_comp | liability | other (optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "isPrimary",
+                  "value": "true",
+                  "description": "Filter by primary flag (optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default 1)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page, max 100 (default 20)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Convenience nested route: returns insurance records for the specified med case (medCaseId bound from the path). Same firm scoping as List Insurance. Set `med_case_id` in the environment or run List Med Cases first. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns insurance array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Read-only access to MedEx insurance records (carrier, policy/claim numbers, adjuster contact, type). All endpoints are firm-scoped through the parent med case and require a READ_ONLY (or higher) tier key."
+    },
+    {
       "name": "Bulk Import",
       "description": "Bulk case import and update via CSV file upload. Both endpoints require FULL tier.",
       "item": [
