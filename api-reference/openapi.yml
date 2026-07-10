@@ -30,8 +30,10 @@ info:
     name: CaseXchange API Support
     url: https://casexchange.com
 servers:
+  - url: https://api.casexchange.com/api/public/v1
+    description: Production Public API base path
   - url: /api/public/v1
-    description: Public API base path
+    description: Relative base path (for proxied docs/local environments)
 tags:
   - name: Reference Data
     description: Case types, jurisdictions, and counties
