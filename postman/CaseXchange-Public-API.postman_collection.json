@@ -749,7 +749,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"isRetainerSigned\": false,\n  \"salesforceId\": \"006xxxxxxxxxxxx\",\n  \"salesforceObjectType\": \"Opportunity\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
+              "raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"referentFirmId\": \"{{firm_id}}\",\n  \"routingRuleId\": \"{{rule_id}}\",\n  \"roundRobinPosition\": 0,\n  \"isRetainerSigned\": false,\n  \"salesforceId\": \"006xxxxxxxxxxxx\",\n  \"salesforceObjectType\": \"Opportunity\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{public_api_url}}/sent-cases",
@@ -760,7 +760,7 @@
                 "sent-cases"
               ]
             },
-            "description": "Creates a new case. Required fields: title, caseType, jurisdiction, clientFirstName, clientLastName.\n\nIf referentFirmId is included, the case is sent immediately (SENT status). Otherwise, it starts as DRAFT.\n\nOptionally include customFields to set case-type-specific custom field values at creation time.\n\nTier: STANDARD"
+            "description": "Creates a new case. Required fields: title, caseType, jurisdiction, clientFirstName, clientLastName.\n\nIf referentFirmId is included, the case is sent immediately (SENT status). Otherwise, it starts as DRAFT.\n\nOptionally include customFields to set case-type-specific custom field values at creation time.\n\nTier: STANDARD\n\nRound-robin routing: pass routingRuleId + roundRobinPosition (from GET /routing/evaluate) to advance the rule's round-robin pointer. A routingRuleId that is not a live rule owned by your firm is ignored (the case is still created and sent)."
           },
           "event": [
             {
@@ -797,7 +797,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"referentFirmId\": \"{{firm_id}}\",\n  \"notes\": \"Priority referral - strong liability\"\n}"
+              "raw": "{\n  \"referentFirmId\": \"{{firm_id}}\",\n  \"notes\": \"Priority referral - strong liability\",\n  \"routingRuleId\": \"{{rule_id}}\",\n  \"roundRobinPosition\": 0\n}"
             },
             "url": {
               "raw": "{{public_api_url}}/sent-cases/{{sent_case_id}}/refer",
@@ -810,7 +810,7 @@
                 "refer"
               ]
             },
-            "description": "Sends a DRAFT case to a receiving firm, or creates a new referral on an existing base case (re-refer).\n\nTier: STANDARD"
+            "description": "Sends a DRAFT case to a receiving firm, or creates a new referral on an existing base case (re-refer).\n\nTier: STANDARD\n\nRound-robin routing: pass routingRuleId + roundRobinPosition (from GET /routing/re-refer) to advance the rule's round-robin pointer. An id not owned by your firm is ignored (the referral still goes through)."
           },
           "event": [
             {
@@ -3921,7 +3921,7 @@
                 }
               ]
             },
-            "description": "Evaluates routing rules for the given case type and jurisdiction, returning the ranked list of firms that would receive the referral. Tier: READ_ONLY."
+            "description": "Evaluates routing rules for the given case type and jurisdiction, returning the ranked list of firms that would receive the referral. Tier: READ_ONLY.\n\nResponse data includes selectedFirmId (the round-robin firm to send to; null for external-contact picks) and roundRobinPosition. Pass rule.id + roundRobinPosition back into POST /sent-cases to advance the pointer. Read-only — evaluating does NOT advance the pointer."
           },
           "event": [
             {
@@ -3973,7 +3973,7 @@
                 }
               ]
             },
-            "description": "Evaluates which firms would receive a re-referral for an existing case, taking into account previous routing attempts. Tier: READ_ONLY."
+            "description": "Evaluates which firms would receive a re-referral for an existing case, taking into account previous routing attempts. Tier: READ_ONLY.\n\nResponse data includes selectedFirmId and roundRobinPosition. Pass rule.id (as routingRuleId) + roundRobinPosition into POST /sent-cases/{id}/refer to advance the pointer."
           },
           "event": [
             {

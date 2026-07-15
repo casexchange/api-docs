@@ -41,6 +41,8 @@ tags:
     description: Firm directory and profile management
   - name: Cases
     description: Case referral lifecycle and actions
+  - name: Sent Cases
+    description: "Sender-side case management: create, track, and refer/route cases you own"
   - name: Documents
     description: Document upload, download, and management
   - name: Users
@@ -239,6 +241,151 @@ components:
         updatedAt:
           type: string
           format: date-time
+    SentCase:
+      type: object
+      description: A case from the sender (owning firm) perspective, with all of its referrals.
+      properties:
+        id:
+          type: string
+          format: uuid
+        referenceNumber:
+          type: string
+          nullable: true
+          example: ABC-0001
+        salesforceId:
+          type: string
+          nullable: true
+        salesforceObjectType:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        caseType:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+        county:
+          type: string
+          nullable: true
+        clientFirstName:
+          type: string
+          nullable: true
+        clientLastName:
+          type: string
+          nullable: true
+        clientEmail:
+          type: string
+          format: email
+          nullable: true
+        clientPhone:
+          type: string
+          nullable: true
+        clientDateOfBirth:
+          type: string
+          format: date
+          nullable: true
+        incidentDate:
+          type: string
+          format: date
+          nullable: true
+        tier:
+          type: integer
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        status:
+          type: string
+          description: CaseStatus enum value
+        closingStatus:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        referrals:
+          type: array
+          description: All referrals on this case, most recent first.
+          items:
+            type: object
+    SentCaseListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        referenceNumber:
+          type: string
+          nullable: true
+        salesforceId:
+          type: string
+          nullable: true
+        receivingFirmName:
+          type: string
+          nullable: true
+        receivingFirmId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          description: CaseStatus enum value
+        closingStatus:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+    RoutingEvaluation:
+      type: object
+      nullable: true
+      description: The routing decision for a case profile, or null when no active rule matches.
+      properties:
+        rule:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        selectedFirmId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            The firm the round-robin pointer currently selects — send here. Null when the pick is an external-contact
+            assignment (no CaseXchange firm).
+        roundRobinPosition:
+          type: integer
+          description: >-
+            Pass this back as roundRobinPosition (with rule.id as routingRuleId) into POST /sent-cases or POST
+            /sent-cases/{id}/refer to advance the rule's round-robin pointer server-side.
+        assignments:
+          type: array
+          description: All active assignments for the matched rule, in tier/order.
+          items:
+            type: object
+            properties:
+              firmId:
+                type: string
+                format: uuid
+                nullable: true
+              firmName:
+                type: string
+                nullable: true
+              referralInstructions:
+                type: string
+                nullable: true
     Pagination:
       type: object
       properties:
@@ -439,14 +586,18 @@ components:
           type: string
           format: uuid
           nullable: true
-        providerLocationId:
-          type: string
-          format: uuid
-          nullable: true
-        doctorId:
-          type: string
-          format: uuid
-          nullable: true
+        doctorIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Doctor roster (user ids) assigned to the referral.
+        locationIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Location roster (provider location ids) assigned to the referral.
         parentReferralId:
           type: string
           format: uuid
@@ -485,32 +636,30 @@ components:
           type: string
           format: uuid
           description: UUID of the provider to refer to (required). Must be in your network.
-        providerLocationId:
-          type: string
-          format: uuid
-          nullable: true
-        doctorId:
-          type: string
-          format: uuid
-          nullable: true
+        doctorIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Doctor roster (user ids) to assign to the referral.
+        locationIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Location roster (provider location ids) to assign to the referral.
         notes:
           type: string
     MedReferralUpdateRequest:
       type: object
-      description: Provide at least one field. Only provided fields are updated.
+      description: >-
+        Provide at least one field. Only provided fields are updated. Doctor/location assignment is not writable via
+        this endpoint.
       minProperties: 1
       properties:
         providerId:
           type: string
           format: uuid
-        providerLocationId:
-          type: string
-          format: uuid
-          nullable: true
-        doctorId:
-          type: string
-          format: uuid
-          nullable: true
         notes:
           type: string
     MedInsurance:
@@ -1578,6 +1727,457 @@ paths:
                   - data
                   - meta
         "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+  /sent-cases:
+    get:
+      operationId: listSentCases
+      summary: List sent cases
+      description: Paginated list of cases owned by the caller's firm, each with its most-recent referral.
+      tags:
+        - Sent Cases
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - *ref_9
+        - *ref_10
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Filter by CaseStatus
+        - name: closingStatus
+          in: query
+          schema:
+            type: string
+          description: Filter by ClosingStatus
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Reference number or receiving firm name
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum:
+              - updatedAt
+              - status
+              - referenceNumber
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+      responses:
+        "200":
+          description: Sent cases list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SentCaseListItem"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+                  meta: *ref_0
+                required:
+                  - data
+                  - pagination
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+    post:
+      operationId: createSentCase
+      summary: Create a sent case
+      description: >-
+        Creates a case owned by the caller's firm. If referentFirmId is provided the case is SENT; otherwise it is
+        created as a DRAFT. Pass routingRuleId + roundRobinPosition (from GET /routing/evaluate) to advance the
+        round-robin pointer. Requires STANDARD tier.
+      tags:
+        - Sent Cases
+      security: *ref_3
+      x-access-tier: standard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - caseType
+                - jurisdiction
+                - clientFirstName
+                - clientLastName
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                description:
+                  type: string
+                caseType:
+                  type: string
+                  minLength: 1
+                jurisdiction:
+                  type: string
+                  minLength: 1
+                county:
+                  type: string
+                  nullable: true
+                clientFirstName:
+                  type: string
+                  minLength: 1
+                clientLastName:
+                  type: string
+                  minLength: 1
+                clientEmail:
+                  type: string
+                  format: email
+                clientPhone:
+                  type: string
+                clientDateOfBirth:
+                  type: string
+                  format: date
+                  nullable: true
+                incidentDate:
+                  type: string
+                  format: date
+                  nullable: true
+                tier:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  nullable: true
+                source:
+                  type: string
+                notes:
+                  type: string
+                referentFirmId:
+                  type: string
+                  format: uuid
+                  description: Receiving firm. Omit to create a DRAFT.
+                routingRuleId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    Optional. Routing rule this send was chosen from (from GET /routing/evaluate). Ignored (with a
+                    server-side warning) if it is not a live rule owned by your firm.
+                roundRobinPosition:
+                  type: integer
+                  minimum: 0
+                  description: >-
+                    Optional. The roundRobinPosition from GET /routing/evaluate. Requires routingRuleId; advances the
+                    rule's round-robin pointer.
+                isRetainerSigned:
+                  type: boolean
+                  default: false
+                salesforceId:
+                  type: string
+                salesforceObjectType:
+                  type: string
+                externalSystem:
+                  type: string
+                  enum:
+                    - cloudlex
+                    - morgan_morgan
+                externalId:
+                  type: string
+      responses:
+        "201":
+          description: Created sent case
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/SentCase"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "409":
+          description: A referral for this Salesforce record already exists
+          content: *ref_2
+  /sent-cases/{id}:
+    get:
+      operationId: getSentCase
+      summary: Get a sent case
+      description: >-
+        Full detail (including all referrals) for a case owned by the caller's firm. Accepts a case id, referral id,
+        reference number, or Salesforce id.
+      tags:
+        - Sent Cases
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - *ref_7
+      responses:
+        "200":
+          description: Sent case detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/SentCase"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+    patch:
+      operationId: updateSentCase
+      summary: Update a sent case
+      description: Updates sender-editable fields (tier, source, Salesforce ids). Requires STANDARD tier.
+      tags:
+        - Sent Cases
+      security: *ref_3
+      x-access-tier: standard
+      parameters:
+        - *ref_7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tier:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  nullable: true
+                source:
+                  type: string
+                  nullable: true
+                salesforceId:
+                  type: string
+                  nullable: true
+                salesforceObjectType:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Updated sent case
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/SentCase"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+  /sent-cases/{id}/available-statuses:
+    get:
+      operationId: getSentCaseAvailableStatuses
+      summary: Get available status transitions (sender)
+      description: Sender-perspective status transitions available on the case's most-recent referral.
+      tags:
+        - Sent Cases
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - *ref_7
+      responses:
+        "200":
+          description: Available transitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      currentStatus:
+                        type: string
+                      party:
+                        type: string
+                        example: sender
+                      availableTransitions:
+                        type: array
+                        items:
+                          type: object
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+  /sent-cases/{id}/refer:
+    post:
+      operationId: referSentCase
+      summary: Refer / re-refer a sent case
+      description: >-
+        Sends a DRAFT case or re-refers an existing case to a receiving firm. Pass routingRuleId + roundRobinPosition
+        (from GET /routing/re-refer) to advance the round-robin pointer. Requires STANDARD tier.
+      tags:
+        - Sent Cases
+      security: *ref_3
+      x-access-tier: standard
+      parameters:
+        - *ref_7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - referentFirmId
+              properties:
+                referentFirmId:
+                  type: string
+                  format: uuid
+                notes:
+                  type: string
+                routingRuleId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    Optional. Routing rule this send was chosen from (from GET /routing/re-refer). Ignored (with a
+                    server-side warning) if it is not a live rule owned by your firm.
+                roundRobinPosition:
+                  type: integer
+                  minimum: 0
+                  description: >-
+                    Optional. The roundRobinPosition from GET /routing/re-refer. Requires routingRuleId; advances the
+                    rule's round-robin pointer.
+      responses:
+        "200":
+          description: Case referred
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/SentCase"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+        "404": *ref_8
+  /routing/evaluate:
+    get:
+      operationId: evaluateRouting
+      summary: Evaluate routing for a case profile
+      description: >-
+        Returns the routing decision for a hypothetical case: the matched rule, the round-robin selectedFirmId to send
+        to, and the roundRobinPosition to pass back into create/refer to advance the pointer. Read-only — evaluating
+        does NOT advance the pointer. Requires the firm to have routing-rule management enabled.
+      tags:
+        - Routing
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - name: caseType
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: jurisdiction
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: tier
+          in: query
+          schema:
+            type: integer
+        - name: county
+          in: query
+          schema:
+            type: string
+        - name: typeCategory
+          in: query
+          schema:
+            type: string
+        - name: attempt
+          in: query
+          schema:
+            type: integer
+          description: Referral attempt number (1 = first send)
+      responses:
+        "200":
+          description: Routing decision (data is null when no rule matches)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/RoutingEvaluation"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
+        "400": *ref_6
+        "401": *ref_4
+        "403": *ref_5
+  /routing/re-refer:
+    get:
+      operationId: evaluateReReferRouting
+      summary: Evaluate routing for an existing case (re-refer)
+      description: >-
+        Like /routing/evaluate but for an existing case: derives the case profile and attempt number, excludes
+        already-referred firms, and returns the next round-robin selectedFirmId + roundRobinPosition. Read-only.
+        Requires the firm to have routing-rule management enabled.
+      tags:
+        - Routing
+      security: *ref_3
+      x-access-tier: read_only
+      parameters:
+        - name: caseId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Case id, referral id, or reference number
+        - name: tier
+          in: query
+          schema:
+            type: integer
+          description: Override the case tier for this evaluation
+      responses:
+        "200":
+          description: Routing decision (data is null when no rule matches)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/RoutingEvaluation"
+                  meta: *ref_0
+                required:
+                  - data
+                  - meta
         "401": *ref_4
         "403": *ref_5
         "404": *ref_8
