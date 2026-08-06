@@ -15,7 +15,7 @@ info:
     |------|-------------|
     | `read_only` | GET endpoints — read data without mutation |
     | `standard` | read_only + create/update case referrals |
-    | `full` | standard + delete, close, routing rules, bulk import, firm mutation |
+    | `full` | standard + delete, routing rules, bulk import, firm mutation |
 
     ## Rate Limiting
     Rate limits are enforced per API key. Exceeded limits return `429 Too Many Requests`.
@@ -55,6 +55,8 @@ tags:
     description: Notification preferences and email management
   - name: Med Cases
     description: Med Xchange cases and their nested referrals to medical providers
+  - name: MedEx Documents
+    description: Med Xchange case document listing and download
   - name: Import
     description: Bulk case import/update via CSV
   - name: Salesforce
@@ -191,6 +193,38 @@ components:
         createdAt:
           type: string
           format: date-time
+    MedCaseDocument:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Document handle (MedCaseDocument junction id)
+        fileName:
+          type: string
+        contentType:
+          type: string
+        fileSize:
+          type: integer
+          description: Raw byte size
+        category:
+          type: string
+        source:
+          type: string
+          enum:
+            - upload
+            - litify_sync
+        uploadedAt:
+          type: string
+          format: date-time
+        pending:
+          type: boolean
+          description: If true, bytes are not yet materialized; first fetch may be slower.
+        sharedWithProviders:
+          type: boolean
+          description: >-
+            Whether providers on the case can currently see this document. Provider-scoped keys never receive hidden
+            documents, so this is always true for them; firm-scoped keys see hidden documents flagged false.
     User:
       type: object
       properties:
@@ -370,19 +404,19 @@ components:
         roundRobinPosition:
           type: integer
           description: >-
-            Opaque echo token — pass this back unchanged as roundRobinPosition (with rule.id as routingRuleId) into
-            POST /sent-cases or POST /sent-cases/{id}/refer to advance the rule's round-robin pointer server-side.
-            It is NOT an index into the assignments array returned here; to find the rotation's pick, use
-            assignments[0] or match selectedFirmId.
+            Opaque echo token — pass this back unchanged as roundRobinPosition (with rule.id as routingRuleId) into POST
+            /sent-cases or POST /sent-cases/{id}/refer to advance the rule's round-robin pointer server-side. It is NOT
+            an index into the assignments array returned here; to find the rotation's pick, use assignments[0] or match
+            selectedFirmId.
         assignments:
           type: array
           description: >-
-            All active assignments for the matched rule, ordered starting at the round-robin selection (then the rest
-            of the configured order, wrapping). assignments[0] is always the rotation's pick — the same firm as
+            All active assignments for the matched rule, ordered starting at the round-robin selection (then the rest of
+            the configured order, wrapping). assignments[0] is always the rotation's pick — the same firm as
             selectedFirmId when the pick is a CaseXchange firm. When the pick is an external-contact assignment,
-            assignments[0].firmId (and selectedFirmId) are null — callers that send to assignments[0] must treat a
-            null firmId as "no auto-routable firm" and fall back to manual selection. The order changes between calls
-            as the pointer advances; do not rely on positional stability except that index 0 is the current pick.
+            assignments[0].firmId (and selectedFirmId) are null — callers that send to assignments[0] must treat a null
+            firmId as "no auto-routable firm" and fall back to manual selection. The order changes between calls as the
+            pointer advances; do not rely on positional stability except that index 0 is the current pick.
           items:
             type: object
             properties:
@@ -1549,11 +1583,11 @@ paths:
     post:
       operationId: closeCase
       summary: Close a case
-      description: Initiates the closing workflow for a case. Requires FULL tier.
+      description: Initiates the closing workflow for a case. Requires STANDARD tier.
       tags:
         - Cases
       security: *ref_4
-      x-access-tier: full
+      x-access-tier: standard
       parameters:
         - *ref_8
       requestBody:
@@ -3164,6 +3198,135 @@ paths:
         "401": *ref_5
         "403": *ref_6
         "404": *ref_9
+  /med-cases/{caseId}/documents:
+    get:
+      operationId: listMedCaseDocuments
+      summary: List MedEx case documents
+      description: Lists documents on a MedEx case visible to the caller (firm or provider scope). Metadata only.
+      tags:
+        - MedEx Documents
+      security: *ref_4
+      x-access-tier: read_only
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: MedCase UUID
+        - *ref_10
+        - *ref_11
+      responses:
+        "200":
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MedCaseDocument"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+                  meta: *ref_1
+                required:
+                  - data
+                  - pagination
+                  - meta
+        "401": *ref_5
+        "403": *ref_6
+        "404": *ref_9
+  /med-cases/{caseId}/documents/{documentId}:
+    get:
+      operationId: getMedCaseDocument
+      summary: Retrieve a MedEx case document
+      description: >-
+        Returns a short-lived presigned S3 URL by default (?format=url), or the document inline as base64
+        (?format=base64, capped at 20 MB raw). Files over the cap must use ?format=url.
+      tags:
+        - MedEx Documents
+      security: *ref_4
+      x-access-tier: read_only
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: MedCase UUID
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Document handle (junction id)
+        - in: query
+          name: format
+          required: false
+          schema:
+            type: string
+            enum:
+              - url
+              - base64
+            default: url
+      responses:
+        "200":
+          description: Presigned URL (default) or base64 document
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    oneOf:
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          fileName:
+                            type: string
+                          contentType:
+                            type: string
+                          fileSize:
+                            type: integer
+                          downloadUrl:
+                            type: string
+                            format: uri
+                          expiresAt:
+                            type: string
+                            format: date-time
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          fileName:
+                            type: string
+                          contentType:
+                            type: string
+                          fileSize:
+                            type: integer
+                          encoding:
+                            type: string
+                            enum:
+                              - base64
+                          data:
+                            type: string
+                  meta: *ref_1
+                required:
+                  - data
+                  - meta
+        "400": *ref_7
+        "401": *ref_5
+        "403": *ref_6
+        "404": *ref_9
+        "413":
+          description: Document too large to inline as base64; use ?format=url.
+          content: *ref_3
   /import/cases:
     post:
       operationId: importCases
