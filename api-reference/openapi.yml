@@ -214,6 +214,7 @@ components:
           enum:
             - upload
             - litify_sync
+            - premier_sync
         uploadedAt:
           type: string
           format: date-time
@@ -1949,8 +1950,12 @@ paths:
             type: string
             enum:
               - updatedAt
+              - createdAt
               - status
               - referenceNumber
+          description: >-
+            Sort field, default updatedAt. createdAt sorts by the most-recent referral's creation time (when the case
+            was sent/re-referred), not the draft-creation date.
         - name: order
           in: query
           schema:
@@ -2128,7 +2133,7 @@ paths:
     patch:
       operationId: updateSentCase
       summary: Update a sent case
-      description: Updates sender-editable fields (tier, source, Salesforce ids). Requires STANDARD tier.
+      description: Updates sender-editable fields (tier, source, Salesforce ids, client info, note). Requires STANDARD tier.
       tags:
         - Sent Cases
       security: *ref_4
@@ -2156,6 +2161,38 @@ paths:
                 salesforceObjectType:
                   type: string
                   nullable: true
+                clientDateOfBirth:
+                  type: string
+                  format: date
+                  nullable: true
+                clientPhone:
+                  type: string
+                  maxLength: 50
+                  nullable: true
+                clientEmail:
+                  type: string
+                  format: email
+                  nullable: true
+                clientAddress1:
+                  type: string
+                  maxLength: 500
+                  nullable: true
+                clientAddress2:
+                  type: string
+                  maxLength: 500
+                  nullable: true
+                clientCity:
+                  type: string
+                  maxLength: 200
+                  nullable: true
+                clientPostalCode:
+                  type: string
+                  maxLength: 20
+                  nullable: true
+                note:
+                  type: string
+                  minLength: 1
+                  maxLength: 10000
       responses:
         "200":
           description: Updated sent case

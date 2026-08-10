@@ -616,7 +616,7 @@
                 {
                   "key": "sort",
                   "value": "",
-                  "description": "Sort field: updatedAt (default), status, referenceNumber",
+                  "description": "Sort field: updatedAt (default), createdAt, status, referenceNumber",
                   "disabled": true
                 },
                 {
