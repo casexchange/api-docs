@@ -333,7 +333,22 @@ components:
           nullable: true
         tier:
           type: integer
+          minimum: 1
+          maximum: 5
           nullable: true
+          description: >-
+            Sender-assigned case rating (1 = highest priority, 5 = lowest). Distinct from the API key access tier. Null
+            when unrated.
+        ratedTier:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: Reserved for a future rating workflow; not currently populated.
+        ratingNotes:
+          type: string
+          nullable: true
+          description: Reserved for a future rating workflow; not currently populated.
         source:
           type: string
           nullable: true
@@ -373,12 +388,30 @@ components:
           type: string
           format: uuid
           nullable: true
+        owningFirmId:
+          type: string
+          format: uuid
+          nullable: true
+        owningFirmName:
+          type: string
+          nullable: true
         status:
           type: string
           description: CaseStatus enum value
         closingStatus:
           type: string
           nullable: true
+        tier:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: >-
+            Sender-assigned case rating (1 = highest priority, 5 = lowest). Distinct from the API key access tier. Null
+            when unrated.
+        createdAt:
+          type: string
+          format: date-time
         updatedAt:
           type: string
           format: date-time
@@ -786,7 +819,11 @@ components:
         matchKey:
           type: object
           nullable: true
-          description: "Discriminated union: {mode:'externalId', fieldName} or {mode:'lookup', lookupField, relatedExternalIdField}."
+          description: >-
+            Discriminated union: {mode:'externalId', fieldName} or {mode:'lookup', lookupField, relatedExternalIdField?,
+            useRecordId?} — a lookup match key requires relatedExternalIdField, useRecordId, or both (matching by the
+            related record's external-ID field, its Salesforce record ID via CX sync links, or falling back from one to
+            the other).
           properties:
             mode:
               type: string
@@ -799,6 +836,12 @@ components:
               type: string
             relatedExternalIdField:
               type: string
+              description: Optional on a lookup match key when useRecordId is set — one of the two bases is required.
+            useRecordId:
+              type: boolean
+              description: >-
+                Match the lookup's related record by its Salesforce record ID (via CX sync links). Optional when
+                relatedExternalIdField is set.
         prefill:
           type: array
           items: &ref_0
@@ -847,12 +890,34 @@ components:
               - editable
               - prefillSfFieldApiName
           description: The full send-field catalog with prefill values resolved where available.
+        resolvers:
+          type: object
+          description: >-
+            Connection-scoped translation tables so the send LWC can resolve prefill values client-side, without a
+            second round trip.
+          properties:
+            valueMaps:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties:
+                  type: string
+              description: SF→CX translation entries, keyed by the EXACT sfFieldApiName served in prefill[].
+            caseTypeMap:
+              type: object
+              additionalProperties:
+                type: string
+              description: CX case-type slug by 15-char-normalized SF record Id (active entries; primary wins).
+          required:
+            - valueMaps
+            - caseTypeMap
       required:
         - profile
         - matchKey
         - prefill
         - writeback
         - sendFields
+        - resolvers
     InteractiveSendResult:
       type: object
       description: >-
@@ -2333,6 +2398,8 @@ paths:
           in: query
           schema:
             type: integer
+            minimum: 1
+            maximum: 5
         - name: county
           in: query
           schema:
@@ -2386,6 +2453,8 @@ paths:
           in: query
           schema:
             type: integer
+            minimum: 1
+            maximum: 5
           description: Override the case tier for this evaluation
       responses:
         "200":
@@ -3471,7 +3540,9 @@ paths:
       description: >-
         Org-facing mapping fetch for the managed package's send LWC: match key, prefill fields, writeback fields, and
         the resolved send-field catalog for the firm's active, activated, interactive-send-enabled v2 sending profile
-        matching the given object and record type. Requires FULL tier.
+        matching the given object and record type. An exact record-type match wins; if no profile matches that record
+        type exactly, a profile configured with no record type ("Any record type") serves as the wildcard fallback.
+        Requires FULL tier.
       tags:
         - Salesforce
       security: *ref_4
@@ -3487,7 +3558,9 @@ paths:
           in: query
           schema:
             type: string
-          description: Optional record type developer name. Omit to match profiles with no record type set.
+          description: >-
+            Optional record type developer name. Falls back to a profile with no record type set ("Any record type");
+            omit to match only that profile.
       responses:
         "200":
           description: Send mapping for the given object/record type
@@ -3532,8 +3605,8 @@ paths:
 
         Error codes (409s carry a per-code `error.details` object — see the 409 response):
 
-        - `400 unsupported_match_key_mode` — the resolved sending profile does not use an external-ID match key (send is
-        not supported).
+        - `400 match_key_missing` — the resolved sending profile has no match key configured at all (send is not
+        supported); an external-ID or lookup match key is required.
 
         - `400 validation_error` — the built create payload failed validation; `error.details.errors` carries the
         field-level issues.
@@ -3542,7 +3615,7 @@ paths:
         is not in a re-referable status, or no prior referral exists); the message is descriptive.
 
         - `404 send_mapping_not_configured` — no active, activated, interactive-send-enabled v2 sending profile matches
-        the given object/record type.
+        the given object/record type (exact record-type match, falling back to the "Any record type" profile).
 
         - `404 source_record_not_found` — sourceRecordId does not exist (or is not visible) in Salesforce.
 
