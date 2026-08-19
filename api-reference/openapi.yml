@@ -167,6 +167,26 @@ components:
           type: string
           format: uuid
           nullable: true
+        warmTransferSuccessful:
+          type: boolean
+          description: Whether the warm transfer to the receiving firm succeeded.
+        warmTransferUnsuccessfulReason:
+          type: string
+          nullable: true
+          description: >-
+            Free-text explanation when the warm transfer was unsuccessful. Only populated when
+            warmTransferUnsuccessfulReasonType is OTHER. Null until the referral is acknowledged (PII masking) when
+            viewed by the receiving firm.
+        warmTransferUnsuccessfulReasonType:
+          type: string
+          nullable: true
+          enum:
+            - FIRM_UNABLE_TO_ANSWER
+            - CLIENT_UNABLE_TO_CONTINUE
+            - OTHER
+          description: >-
+            Reason category for an unsuccessful warm transfer. Null until the referral is acknowledged (PII masking)
+            when viewed by the receiving firm.
         createdAt:
           type: string
           format: date-time
@@ -358,6 +378,25 @@ components:
         closingStatus:
           type: string
           nullable: true
+        warmTransferSuccessful:
+          type: boolean
+          description: >-
+            Whether the sending firm's warm transfer to the receiving firm succeeded. Sourced from the most-recent
+            referral.
+        warmTransferUnsuccessfulReason:
+          type: string
+          nullable: true
+          description: >-
+            Free-text explanation when the warm transfer was unsuccessful. Only populated when
+            warmTransferUnsuccessfulReasonType is OTHER. Unmasked here — this is the sending firm's own data.
+        warmTransferUnsuccessfulReasonType:
+          type: string
+          nullable: true
+          enum:
+            - FIRM_UNABLE_TO_ANSWER
+            - CLIENT_UNABLE_TO_CONTINUE
+            - OTHER
+          description: Reason category for an unsuccessful warm transfer.
         createdAt:
           type: string
           format: date-time
@@ -409,6 +448,25 @@ components:
           description: >-
             Sender-assigned case rating (1 = highest priority, 5 = lowest). Distinct from the API key access tier. Null
             when unrated.
+        warmTransferSuccessful:
+          type: boolean
+          description: >-
+            Whether the sending firm's warm transfer to the receiving firm succeeded. Sourced from the most-recent
+            referral.
+        warmTransferUnsuccessfulReason:
+          type: string
+          nullable: true
+          description: >-
+            Free-text explanation when the warm transfer was unsuccessful. Only populated when
+            warmTransferUnsuccessfulReasonType is OTHER. Unmasked here — this is the sending firm's own data.
+        warmTransferUnsuccessfulReasonType:
+          type: string
+          nullable: true
+          enum:
+            - FIRM_UNABLE_TO_ANSWER
+            - CLIENT_UNABLE_TO_CONTINUE
+            - OTHER
+          description: Reason category for an unsuccessful warm transfer.
         createdAt:
           type: string
           format: date-time
@@ -964,7 +1022,73 @@ components:
       required:
         - attempt
         - sentCase
-    Error: &ref_2
+    WarmTransferAnalytics:
+      type: object
+      description: >-
+        Warm-transfer outcome metrics. A referral counts as an "attempt" when it was marked successful or has an
+        unsuccessful reason recorded (typed or free text); referrals with no warm-transfer outcome recorded are excluded
+        from every aggregate.
+      properties:
+        kpis:
+          type: object
+          properties:
+            attempted:
+              type: integer
+            successful:
+              type: integer
+            successRate: &ref_1
+              type: integer
+              nullable: true
+              description: Rounded percentage (0–100); null when attempted is 0.
+        reasonBreakdown:
+          type: array
+          description: >-
+            Unsuccessful warm transfers grouped by structured reason category (free-text reasons are never aggregated).
+            Untyped rows with free text are bucketed as OTHER.
+          items:
+            type: object
+            properties:
+              reasonType:
+                type: string
+                enum:
+                  - FIRM_UNABLE_TO_ANSWER
+                  - CLIENT_UNABLE_TO_CONTINUE
+                  - OTHER
+              count:
+                type: integer
+        byPartnerFirm:
+          type: array
+          description: Top 10 partner firms by attempts — receiving firms on /analytics/sent, sending firms on /analytics/received.
+          items:
+            type: object
+            properties:
+              firmId:
+                type: string
+                format: uuid
+                nullable: true
+              firmName:
+                type: string
+              attempted:
+                type: integer
+              successful:
+                type: integer
+              successRate: *ref_1
+        trend:
+          type: array
+          description: Monthly buckets (only months with data), ascending, bucketed on sent date.
+          items:
+            type: object
+            properties:
+              month:
+                type: string
+                example: 2026-08
+                description: YYYY-MM in the requested timezone
+              attempted:
+                type: integer
+              successful:
+                type: integer
+              successRate: *ref_1
+    Error: &ref_3
       type: object
       properties:
         error:
@@ -977,7 +1101,7 @@ components:
           required:
             - code
             - message
-        meta: &ref_1
+        meta: &ref_2
           type: object
           properties:
             requestId:
@@ -1000,7 +1124,7 @@ paths:
       description: Returns all active case types available for creating referrals.
       tags:
         - Reference Data
-      security: &ref_4
+      security: &ref_5
         - apiKeyAuth: []
       x-access-tier: read_only
       responses:
@@ -1015,18 +1139,18 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/CaseType"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": &ref_5
+        "401": &ref_6
           description: Invalid or missing API key
-          content: &ref_3
+          content: &ref_4
             application/json:
-              schema: *ref_2
-        "403": &ref_6
+              schema: *ref_3
+        "403": &ref_7
           description: API key tier does not permit this action
-          content: *ref_3
+          content: *ref_4
   /jurisdictions:
     get:
       operationId: listJurisdictions
@@ -1034,7 +1158,7 @@ paths:
       description: Returns all jurisdictions (US states and territories) supported by the platform.
       tags:
         - Reference Data
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       responses:
         "200":
@@ -1055,12 +1179,12 @@ paths:
                         name:
                           type: string
                           example: New York
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
   /counties:
     get:
       operationId: listCounties
@@ -1068,7 +1192,7 @@ paths:
       description: Returns counties, optionally filtered by one or more jurisdiction codes (comma-separated).
       tags:
         - Reference Data
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: query
@@ -1097,12 +1221,12 @@ paths:
                           type: string
                         jurisdictionCode:
                           type: string
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
   /firms/directory:
     get:
       operationId: listFirmDirectory
@@ -1110,7 +1234,7 @@ paths:
       description: Returns a directory of all active firms on the platform.
       tags:
         - Firms
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       responses:
         "200":
@@ -1124,12 +1248,12 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Firm"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
   /firms/me:
     get:
       operationId: getOwnFirm
@@ -1137,7 +1261,7 @@ paths:
       description: Returns the firm associated with the API key making the request.
       tags:
         - Firms
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       responses:
         "200":
@@ -1149,19 +1273,19 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Firm"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
     put:
       operationId: updateOwnFirm
       summary: Update the caller's firm
       description: Updates editable fields on the API key's own firm. Requires FULL tier.
       tags:
         - Firms
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       requestBody:
         required: true
@@ -1195,15 +1319,15 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Firm"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": &ref_7
+        "400": &ref_8
           description: Request validation failed
-          content: *ref_3
-        "401": *ref_5
-        "403": *ref_6
+          content: *ref_4
+        "401": *ref_6
+        "403": *ref_7
   /firms/{id}:
     get:
       operationId: getFirmById
@@ -1211,10 +1335,10 @@ paths:
       description: Returns a single firm by its UUID.
       tags:
         - Firms
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - &ref_8
+        - &ref_9
           in: path
           name: id
           required: true
@@ -1232,15 +1356,15 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Firm"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": &ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": &ref_10
           description: Resource not found
-          content: *ref_3
+          content: *ref_4
   /cases:
     get:
       operationId: listCases
@@ -1250,10 +1374,10 @@ paths:
         keyword search.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - &ref_10
+        - &ref_11
           in: query
           name: page
           schema:
@@ -1261,7 +1385,7 @@ paths:
             default: 1
             minimum: 1
           description: Page number (1-indexed)
-        - &ref_11
+        - &ref_12
           in: query
           name: limit
           schema:
@@ -1331,19 +1455,19 @@ paths:
                         type: integer
                       limit:
                         type: integer
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
     post:
       operationId: createCase
       summary: Create a case
       description: Creates a new case referral. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       requestBody:
         required: true
@@ -1413,13 +1537,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /cases/{id}:
     get:
       operationId: getCaseById
@@ -1427,10 +1551,10 @@ paths:
       description: Returns a single case by UUID.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - *ref_8
+        - *ref_9
       responses:
         "200":
           description: Case record
@@ -1441,23 +1565,23 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     put:
       operationId: updateCase
       summary: Update a case
       description: Updates editable fields on a case. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
-        - *ref_8
+        - *ref_9
       requestBody:
         required: true
         content:
@@ -1503,30 +1627,30 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     delete:
       operationId: deleteCase
       summary: Delete a case
       description: Permanently deletes a DRAFT case. Requires FULL tier.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       parameters:
-        - *ref_8
+        - *ref_9
       responses:
         "204":
           description: Case deleted (no content)
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /cases/{id}/status-history:
     get:
       operationId: getCaseStatusHistory
@@ -1534,10 +1658,10 @@ paths:
       description: Returns all historical status transitions for a case.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - *ref_8
+        - *ref_9
       responses:
         "200":
           description: Status history
@@ -1564,13 +1688,13 @@ paths:
                           format: date-time
                         createdBy:
                           type: string
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /cases/{id}/acknowledge:
     post:
       operationId: acknowledgeCase
@@ -1578,10 +1702,10 @@ paths:
       description: Marks a SENT case as acknowledged by the receiving firm, transitioning it to RECEIVED. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
-        - *ref_8
+        - *ref_9
       responses:
         "200":
           description: Acknowledged case
@@ -1592,13 +1716,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /cases/{id}/status:
     post:
       operationId: updateCaseStatus
@@ -1606,10 +1730,10 @@ paths:
       description: Transitions a case to a new status. Invalid transitions are rejected. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
-        - *ref_8
+        - *ref_9
       requestBody:
         required: true
         content:
@@ -1637,14 +1761,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /cases/{id}/close:
     post:
       operationId: closeCase
@@ -1652,10 +1776,10 @@ paths:
       description: Initiates the closing workflow for a case. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
-        - *ref_8
+        - *ref_9
       requestBody:
         required: true
         content:
@@ -1691,14 +1815,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /cases/{caseId}/documents:
     get:
       operationId: listDocuments
@@ -1706,7 +1830,7 @@ paths:
       description: Returns all documents attached to the specified case.
       tags:
         - Documents
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -1728,13 +1852,13 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Document"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     post:
       operationId: uploadDocument
       summary: Upload a document
@@ -1743,7 +1867,7 @@ paths:
         size 50 MB.
       tags:
         - Documents
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
         - in: path
@@ -1776,13 +1900,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Document"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /cases/{caseId}/documents/{docId}/download:
     get:
       operationId: getDocumentDownloadUrl
@@ -1790,7 +1914,7 @@ paths:
       description: Returns a short-lived pre-signed S3 URL for downloading the specified document.
       tags:
         - Documents
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -1824,13 +1948,13 @@ paths:
                       expiresAt:
                         type: string
                         format: date-time
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /cases/{caseId}/documents/{docId}:
     delete:
       operationId: deleteDocument
@@ -1838,7 +1962,7 @@ paths:
       description: Permanently deletes the specified document from the case and S3. Requires FULL tier.
       tags:
         - Documents
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       parameters:
         - in: path
@@ -1858,9 +1982,9 @@ paths:
       responses:
         "204":
           description: Document deleted (no content)
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /users:
     get:
       operationId: listUsers
@@ -1868,11 +1992,11 @@ paths:
       description: Returns all users belonging to the API key's own firm.
       tags:
         - Users
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - *ref_10
         - *ref_11
+        - *ref_12
       responses:
         "200":
           description: User list
@@ -1885,19 +2009,19 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/User"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
     post:
       operationId: inviteUser
       summary: Invite a user
       description: Invites a new user to the caller's firm. Requires FULL tier.
       tags:
         - Users
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       requestBody:
         required: true
@@ -1931,13 +2055,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/User"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /users/{id}:
     put:
       operationId: updateUser
@@ -1945,10 +2069,10 @@ paths:
       description: Updates a user in the caller's firm. Requires FULL tier.
       tags:
         - Users
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       parameters:
-        - *ref_8
+        - *ref_9
       requestBody:
         required: true
         content:
@@ -1974,14 +2098,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/User"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /sent-cases:
     get:
       operationId: listSentCases
@@ -1989,11 +2113,11 @@ paths:
       description: Paginated list of cases owned by the caller's firm, each with its most-recent referral.
       tags:
         - Sent Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - *ref_10
         - *ref_11
+        - *ref_12
         - name: status
           in: query
           schema:
@@ -2042,13 +2166,13 @@ paths:
                       $ref: "#/components/schemas/SentCaseListItem"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
     post:
       operationId: createSentCase
       summary: Create a sent case
@@ -2058,7 +2182,7 @@ paths:
         round-robin pointer. Requires STANDARD tier.
       tags:
         - Sent Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       requestBody:
         required: true
@@ -2155,16 +2279,16 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SentCase"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
         "409":
           description: A referral for this Salesforce record already exists
-          content: *ref_3
+          content: *ref_4
   /sent-cases/{id}:
     get:
       operationId: getSentCase
@@ -2174,10 +2298,10 @@ paths:
         reference number, or Salesforce id.
       tags:
         - Sent Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - *ref_8
+        - *ref_9
       responses:
         "200":
           description: Sent case detail
@@ -2188,23 +2312,23 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SentCase"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     patch:
       operationId: updateSentCase
       summary: Update a sent case
       description: Updates sender-editable fields (tier, source, Salesforce ids, client info, note). Requires STANDARD tier.
       tags:
         - Sent Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
-        - *ref_8
+        - *ref_9
       requestBody:
         required: true
         content:
@@ -2268,14 +2392,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SentCase"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /sent-cases/{id}/available-statuses:
     get:
       operationId: getSentCaseAvailableStatuses
@@ -2283,10 +2407,10 @@ paths:
       description: Sender-perspective status transitions available on the case's most-recent referral.
       tags:
         - Sent Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - *ref_8
+        - *ref_9
       responses:
         "200":
           description: Available transitions
@@ -2307,13 +2431,13 @@ paths:
                         type: array
                         items:
                           type: object
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /sent-cases/{id}/refer:
     post:
       operationId: referSentCase
@@ -2323,10 +2447,10 @@ paths:
         (from GET /routing/re-refer) to advance the round-robin pointer. Requires STANDARD tier.
       tags:
         - Sent Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
-        - *ref_8
+        - *ref_9
       requestBody:
         required: true
         content:
@@ -2363,14 +2487,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SentCase"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /routing/evaluate:
     get:
       operationId: evaluateRouting
@@ -2381,7 +2505,7 @@ paths:
         does NOT advance the pointer. Requires the firm to have routing-rule management enabled.
       tags:
         - Routing
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - name: caseType
@@ -2423,13 +2547,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/RoutingEvaluation"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /routing/re-refer:
     get:
       operationId: evaluateReReferRouting
@@ -2440,7 +2564,7 @@ paths:
         Requires the firm to have routing-rule management enabled.
       tags:
         - Routing
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - name: caseId
@@ -2466,13 +2590,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/RoutingEvaluation"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /routing/rules:
     get:
       operationId: listRoutingRules
@@ -2480,7 +2604,7 @@ paths:
       description: Returns the referral routing rules configured for the caller's firm.
       tags:
         - Routing
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       responses:
         "200":
@@ -2494,19 +2618,19 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/RoutingRule"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
     post:
       operationId: createRoutingRule
       summary: Create a routing rule
       description: Creates a new referral routing rule for the firm. Requires FULL tier.
       tags:
         - Routing
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       requestBody:
         required: true
@@ -2544,13 +2668,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/RoutingRule"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /routing/rules/{id}:
     put:
       operationId: updateRoutingRule
@@ -2558,10 +2682,10 @@ paths:
       description: Updates an existing routing rule. Requires FULL tier.
       tags:
         - Routing
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       parameters:
-        - *ref_8
+        - *ref_9
       requestBody:
         required: true
         content:
@@ -2593,30 +2717,30 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/RoutingRule"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     delete:
       operationId: deleteRoutingRule
       summary: Delete a routing rule
       description: Deletes a routing rule. Requires FULL tier.
       tags:
         - Routing
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       parameters:
-        - *ref_8
+        - *ref_9
       responses:
         "204":
           description: Rule deleted (no content)
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /analytics/dashboard:
     get:
       operationId: getDashboard
@@ -2624,7 +2748,7 @@ paths:
       description: Returns high-level referral analytics for the caller's firm.
       tags:
         - Analytics
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       responses:
         "200":
@@ -2637,12 +2761,12 @@ paths:
                   data:
                     type: object
                     description: Dashboard metrics object
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
   /analytics/cases:
     get:
       operationId: getCaseAnalytics
@@ -2650,7 +2774,7 @@ paths:
       description: Returns case-level analytics with optional date range filtering.
       tags:
         - Analytics
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: query
@@ -2674,12 +2798,85 @@ paths:
                   data:
                     type: object
                     description: Case analytics metrics
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
+  /analytics/sent:
+    get:
+      operationId: getSentAnalytics
+      summary: Get sent-referral analytics
+      description: >-
+        Extended analytics for referrals the caller's firm has SENT: KPIs, stage breakdown, trend, outcome
+        distributions, top receiving firms, and warm-transfer metrics (partner firms in `warmTransfer.byPartnerFirm` are
+        receiving firms). Supports the shared extended-analytics query filters (date ranges, case type, jurisdiction,
+        tz).
+      tags:
+        - Analytics
+      security: *ref_5
+      x-access-tier: read_only
+      responses:
+        "200":
+          description: Sent-referral analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: >-
+                      Sent-referral analytics object. Documented here (partially): warmTransfer; other sections (kpis,
+                      currentStageBreakdown, trend, outcomesOfSent, outcomesOfSigned, referralLooksDistribution,
+                      signedCasesByReferralAttempt, topSigningFirms, topCaseTypeJurisdictions) are returned as-is.
+                    properties:
+                      warmTransfer:
+                        $ref: "#/components/schemas/WarmTransferAnalytics"
+                  meta: *ref_2
+                required:
+                  - data
+                  - meta
+        "401": *ref_6
+        "403": *ref_7
+  /analytics/received:
+    get:
+      operationId: getReceivedAnalytics
+      summary: Get received-referral analytics
+      description: >-
+        Extended analytics for referrals the caller's firm has RECEIVED: KPIs, stage breakdown, pipeline, trends,
+        outcome distributions, top sending firms, and warm-transfer metrics (partner firms in
+        `warmTransfer.byPartnerFirm` are sending firms). Supports the shared extended-analytics query filters (date
+        ranges, case type, jurisdiction, tz).
+      tags:
+        - Analytics
+      security: *ref_5
+      x-access-tier: read_only
+      responses:
+        "200":
+          description: Received-referral analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: >-
+                      Received-referral analytics object. Documented here (partially): warmTransfer; other sections
+                      (kpis, currentStageBreakdown, activePipeline, timeToAcknowledgeTrend, timeToSignTrend,
+                      outcomesOfReceived, outcomesOfClosed, topSendingFirms, topCaseTypeJurisdictions) are returned
+                      as-is.
+                    properties:
+                      warmTransfer:
+                        $ref: "#/components/schemas/WarmTransferAnalytics"
+                  meta: *ref_2
+                required:
+                  - data
+                  - meta
+        "401": *ref_6
+        "403": *ref_7
   /notifications/preferences:
     get:
       operationId: getNotificationPreferences
@@ -2687,7 +2884,7 @@ paths:
       description: Returns the notification preferences for the caller's firm.
       tags:
         - Notifications
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       responses:
         "200":
@@ -2700,19 +2897,19 @@ paths:
                   data:
                     type: object
                     description: Notification preferences object
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
     put:
       operationId: updateNotificationPreferences
       summary: Update notification preferences
       description: Updates the notification preferences for the caller's firm. Requires FULL tier.
       tags:
         - Notifications
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       requestBody:
         required: true
@@ -2731,13 +2928,13 @@ paths:
                 properties:
                   data:
                     type: object
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /notifications/emails:
     get:
       operationId: listNotificationEmails
@@ -2745,7 +2942,7 @@ paths:
       description: Returns all notification email addresses configured for the caller's firm.
       tags:
         - Notifications
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       responses:
         "200":
@@ -2763,19 +2960,19 @@ paths:
                         email:
                           type: string
                           format: email
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
     post:
       operationId: addNotificationEmail
       summary: Add a notification email address
       description: Adds an email address to the firm's notification list. Requires FULL tier.
       tags:
         - Notifications
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       requestBody:
         required: true
@@ -2803,13 +3000,13 @@ paths:
                       email:
                         type: string
                         format: email
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /med-cases:
     get:
       operationId: listMedCases
@@ -2819,11 +3016,11 @@ paths:
         filtering.
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - *ref_10
         - *ref_11
+        - *ref_12
         - in: query
           name: search
           schema:
@@ -2850,13 +3047,13 @@ paths:
                       $ref: "#/components/schemas/MedCase"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
     post:
       operationId: createMedCase
       summary: Create a med case
@@ -2865,7 +3062,7 @@ paths:
         `patientFirstName` and `patientLastName`. Requires STANDARD tier.
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       requestBody:
         required: true
@@ -2883,13 +3080,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedCase"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /med-cases/{id}:
     get:
       operationId: getMedCaseById
@@ -2897,7 +3094,7 @@ paths:
       description: Returns a single Med Xchange case by UUID.
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -2917,20 +3114,20 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedCase"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     put:
       operationId: updateMedCase
       summary: Update a med case
       description: Updates an existing Med Xchange case. All body fields are optional. Requires STANDARD tier.
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
         - in: path
@@ -2956,14 +3153,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedCase"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     delete:
       operationId: deleteMedCase
       summary: Delete a med case (not supported)
@@ -2972,7 +3169,7 @@ paths:
         Set `isArchived` to `true` via PUT instead.
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
         - in: path
@@ -2983,13 +3180,13 @@ paths:
             format: uuid
           description: Med case UUID
       responses:
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
         "405":
           description: Method not allowed — deleting med cases is not supported. Set isArchived to true instead.
           content:
             application/json:
-              schema: *ref_2
+              schema: *ref_3
   /med-cases/{id}/referrals:
     get:
       operationId: listMedReferrals
@@ -2997,7 +3194,7 @@ paths:
       description: Returns referrals attached to the specified Med Xchange case, paginated (default `limit=20`, max 100).
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -3007,8 +3204,8 @@ paths:
             type: string
             format: uuid
           description: Med case UUID
-        - *ref_10
         - *ref_11
+        - *ref_12
       responses:
         "200":
           description: Med referral list
@@ -3023,21 +3220,21 @@ paths:
                       $ref: "#/components/schemas/MedReferral"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     post:
       operationId: createMedReferral
       summary: Create a referral on a med case
       description: Creates a new referral on the specified Med Xchange case. `providerId` is required. Requires STANDARD tier.
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
         - in: path
@@ -3063,14 +3260,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedReferral"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /med-cases/{id}/referrals/{referralId}:
     get:
       operationId: getMedReferralById
@@ -3078,7 +3275,7 @@ paths:
       description: Returns a single referral by UUID on the specified Med Xchange case.
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -3105,13 +3302,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedReferral"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
     put:
       operationId: updateMedReferral
       summary: Update a referral on a med case
@@ -3120,7 +3317,7 @@ paths:
         tier.
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: standard
       parameters:
         - in: path
@@ -3153,25 +3350,25 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedReferral"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /insurances:
     get:
       operationId: listInsurances
       summary: List insurance records the API key can access
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
-        - *ref_10
         - *ref_11
+        - *ref_12
         - in: query
           name: medCaseId
           schema:
@@ -3208,20 +3405,20 @@ paths:
                       $ref: "#/components/schemas/MedInsurance"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_5
-        "403": *ref_6
+        "401": *ref_6
+        "403": *ref_7
   /insurances/{id}:
     get:
       operationId: getInsuranceById
       summary: Get a single insurance record
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -3241,20 +3438,20 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedInsurance"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /med-cases/{id}/insurances:
     get:
       operationId: listMedCaseInsurances
       summary: List insurance records for a single med case
       tags:
         - Med Cases
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -3264,8 +3461,8 @@ paths:
             type: string
             format: uuid
           description: Med case UUID
-        - *ref_10
         - *ref_11
+        - *ref_12
         - in: query
           name: insuranceType
           schema:
@@ -3296,14 +3493,14 @@ paths:
                       $ref: "#/components/schemas/MedInsurance"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /med-cases/{caseId}/documents:
     get:
       operationId: listMedCaseDocuments
@@ -3311,7 +3508,7 @@ paths:
       description: Lists documents on a MedEx case visible to the caller (firm or provider scope). Metadata only.
       tags:
         - MedEx Documents
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -3321,8 +3518,8 @@ paths:
             type: string
             format: uuid
           description: MedCase UUID
-        - *ref_10
         - *ref_11
+        - *ref_12
       responses:
         "200":
           description: Document list
@@ -3337,14 +3534,14 @@ paths:
                       $ref: "#/components/schemas/MedCaseDocument"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /med-cases/{caseId}/documents/{documentId}:
     get:
       operationId: getMedCaseDocument
@@ -3354,7 +3551,7 @@ paths:
         (?format=base64, capped at 20 MB raw). Files over the cap must use ?format=url.
       tags:
         - MedEx Documents
-      security: *ref_4
+      security: *ref_5
       x-access-tier: read_only
       parameters:
         - in: path
@@ -3422,17 +3619,17 @@ paths:
                               - base64
                           data:
                             type: string
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
         "413":
           description: Document too large to inline as base64; use ?format=url.
-          content: *ref_3
+          content: *ref_4
   /import/cases:
     post:
       operationId: importCases
@@ -3440,7 +3637,7 @@ paths:
       description: Creates or upserts cases from a CSV file upload. Requires FULL tier. Maximum file size 20 MB.
       tags:
         - Import
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       requestBody:
         required: true
@@ -3476,13 +3673,13 @@ paths:
                         type: array
                         items:
                           type: object
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /import/cases/update:
     post:
       operationId: importCasesUpdate
@@ -3492,7 +3689,7 @@ paths:
         tier.
       tags:
         - Import
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       requestBody:
         required: true
@@ -3526,13 +3723,13 @@ paths:
                         type: array
                         items:
                           type: object
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
   /salesforce/send-mapping:
     get:
       operationId: getSalesforceSendMapping
@@ -3545,7 +3742,7 @@ paths:
         Requires FULL tier.
       tags:
         - Salesforce
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       parameters:
         - name: sfObjectApiName
@@ -3571,14 +3768,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SendMapping"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
   /salesforce/interactive-sends:
     post:
       operationId: createSalesforceInteractiveSend
@@ -3642,7 +3839,7 @@ paths:
         Requires FULL tier.
       tags:
         - Salesforce
-      security: *ref_4
+      security: *ref_5
       x-access-tier: full
       requestBody:
         required: true
@@ -3732,7 +3929,7 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/InteractiveSendResult"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
@@ -3745,14 +3942,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/InteractiveSendResult"
-                  meta: *ref_1
+                  meta: *ref_2
                 required:
                   - data
                   - meta
-        "400": *ref_7
-        "401": *ref_5
-        "403": *ref_6
-        "404": *ref_9
+        "400": *ref_8
+        "401": *ref_6
+        "403": *ref_7
+        "404": *ref_10
         "409":
           description: >-
             Conflict — the `error.code` selects one of four cases, each with a distinct `error.details` shape:
@@ -3767,9 +3964,9 @@ paths:
 
             - `attempt_failed` (the prior attempt for this idempotency key failed; use a fresh key) — `details: {
             failureCode, lastError }`.
-          content: *ref_3
+          content: *ref_4
         "502":
           description: >-
             Salesforce unavailable (`salesforce_unavailable`) or the source record read failed
             (`salesforce_read_failed`).
-          content: *ref_3
+          content: *ref_4
