@@ -289,12 +289,11 @@
               }
             ],
             "url": {
-              "raw": "{{public_api_url}}/reference/case-types/{{case_type_id}}/fields",
+              "raw": "{{public_api_url}}/case-types/{{case_type_id}}/fields",
               "host": [
                 "{{public_api_url}}"
               ],
               "path": [
-                "reference",
                 "case-types",
                 "{{case_type_id}}",
                 "fields"
@@ -2510,6 +2509,96 @@
               }
             }
           ]
+        },
+        {
+          "name": "Withdraw Med Referral",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/withdraw",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "withdraw"
+              ]
+            },
+            "description": "Firm-side: withdraw a referral you sent to a provider.\n\nTier: STANDARD",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Client chose another provider\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Med Referral",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/close",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "close"
+              ]
+            },
+            "description": "Firm-side: close a completed referral.\n\nTier: STANDARD",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Treatment complete\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     },
@@ -2798,6 +2887,43 @@
                   "  pm.expect(json.data).to.be.an('object');",
                   "  console.log('Bulk update result:', JSON.stringify(json.data, null, 2));",
                   "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Bulk Update Job",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/import/cases/update/jobs/{{bulk_update_job_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "import",
+                "cases",
+                "update",
+                "jobs",
+                "{{bulk_update_job_id}}"
+              ]
+            },
+            "description": "Status and progress of an asynchronous bulk update job returned by POST /import/cases/update.\n\nTier: FULL"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ],
                 "type": "text/javascript"
               }
@@ -3188,7 +3314,7 @@
                 "acknowledge"
               ]
             },
-            "description": "Acknowledges a SENT referral, transitioning it to RECEIVED. Tier: STANDARD. Only the receiving (referent) firm may call this action.\n\nOptional `reason` field (max 5,000 chars, CR/LF stripped). Body may be omitted entirely.",
+            "description": "Acknowledges a SENT referral, transitioning it to UNDER_EVALUATION (INVESTIGATING when the retainer was pre-signed). Tier: STANDARD. Only the receiving (referent) firm may call this action.\n\nOptional `reason` field (max 5,000 chars, CR/LF stripped). Body may be omitted entirely.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Acknowledged receipt of referral.\"\n}",
@@ -3237,7 +3363,7 @@
                 "begin-investigating"
               ]
             },
-            "description": "Begins investigation on a RECEIVED referral, transitioning it to INVESTIGATING. Tier: STANDARD. Only the receiving firm may call this action.\n\nOptional `reason` field (max 5,000 chars, CR/LF stripped). Body may be omitted entirely.",
+            "description": "Begins investigation on an UNDER_EVALUATION referral, transitioning it to INVESTIGATING. Tier: STANDARD. Only the receiving firm may call this action.\n\nOptional `reason` field (max 5,000 chars, CR/LF stripped). Body may be omitted entirely.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Beginning case investigation and client outreach.\"\n}",
@@ -3397,7 +3523,7 @@
                 "begin-closing"
               ]
             },
-            "description": "First step of the two-step close workflow. Transitions a referral from SIGNED or IN_LITIGATION to CLOSING. Only `closingStatus` is required. Tier: FULL. Only the referent firm may call this action.\n\n`reason` (optional, max 5,000 chars, CR/LF stripped) is written to the status_updates row's message. `closureReason` (optional, max 5,000 chars, CR/LF stripped) is written to the case record's closureReason column and is required at the service layer when `closingStatus` is `no_longer_pursuing`."
+            "description": "First step of the two-step close workflow. Transitions a referral from SIGNED or IN_LITIGATION to CLOSING. Only `closingStatus` is required. Tier: STANDARD. Only the referent firm may call this action.\n\n`reason` (optional, max 5,000 chars, CR/LF stripped) is written to the status_updates row's message. `closureReason` (optional, max 5,000 chars, CR/LF stripped) is written to the case record's closureReason column and is required at the service layer when `closingStatus` is `no_longer_pursuing`."
           },
           "event": [
             {
@@ -3450,7 +3576,7 @@
                 "close"
               ]
             },
-            "description": "Finalize the closing workflow (CLOSING \u2192 CLOSED). Tier: FULL. Only the referent firm may call this action.\n\n`closureReason` is required (min 1, max 5,000 chars, CR/LF stripped) and is written to the case record's closureReason column. `reason` is optional (min 1, max 5,000 chars, CR/LF stripped) and is written to the status_updates row's message; when omitted, the message defaults to using closureReason."
+            "description": "Finalize the closing workflow (CLOSING \u2192 CLOSED). Tier: STANDARD. Only the referent firm may call this action.\n\n`closureReason` is required (min 1, max 5,000 chars, CR/LF stripped) and is written to the case record's closureReason column. `reason` is optional (min 1, max 5,000 chars, CR/LF stripped) and is written to the status_updates row's message; when omitted, the message defaults to using closureReason."
           },
           "event": [
             {
@@ -3693,6 +3819,171 @@
       ]
     },
     {
+      "name": "Received Referrals",
+      "description": "Receiver-side view of referrals sent to your firm. IDs are flexible: referral UUID, CaseXchange reference number, or your CMS id (DearLegal case id, Neos intake id, Clio matter id, SmartAdvocate case id, Salesforce intake record id).",
+      "item": [
+        {
+          "name": "List Received Referrals",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/received-referrals?page=1&limit=20",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "received-referrals"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Paginated list of referrals your firm has received. Filter by status, closingStatus, search, sort/order.\n\nTier: READ_ONLY"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns data array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Received Referral",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/received-referrals/{{referral_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "received-referrals",
+                "{{referral_id}}"
+              ]
+            },
+            "description": "Full detail for one received referral, including settlement fields, the derived net fee split (netFeeToSendingFirm / netFeeToHandlingFirm) and outcome dates (resolutionDate / closedDate). Accepts UUID, reference number, or CMS id.\n\nTier: READ_ONLY"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns settlement + outcome fields', () => {",
+                  "  const d = pm.response.json().data;",
+                  "  ['settlementAmount','attorneyFees','netFeeToSendingFirm','netFeeToHandlingFirm','resolutionDate','closedDate'].forEach(k => pm.expect(d).to.have.property(k));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Available Statuses (Received)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/received-referrals/{{referral_id}}/available-statuses",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "received-referrals",
+                "{{referral_id}}",
+                "available-statuses"
+              ]
+            },
+            "description": "Allowed next status transitions from the receiver's perspective.\n\nTier: READ_ONLY"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Received Referral",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/received-referrals/{{referral_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "received-referrals",
+                "{{referral_id}}"
+              ]
+            },
+            "description": "Partial update of receiver-managed fields (settlement, fees, lead attorney, dates, phase, notes, custom fields).\n\nTier: STANDARD",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadAttorneyName\": \"Jane Doe\",\n  \"settlementAmount\": 150000,\n  \"attorneyFees\": 50000,\n  \"sendingFirmPercentage\": 33.33,\n  \"clientFeeAgreementPercentage\": 0.3333,\n  \"estimatedDateOfResolution\": \"2026-08-15\",\n  \"phase\": \"Settlement\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Status Updates",
       "description": "Status update lookups and listings. All endpoints require at minimum READ_ONLY tier.",
       "item": [
@@ -3921,7 +4212,7 @@
                 }
               ]
             },
-            "description": "Evaluates routing rules for the given case type and jurisdiction, returning the ranked list of firms that would receive the referral. Tier: READ_ONLY.\n\nResponse data includes selectedFirmId (the round-robin firm to send to; null for external-contact picks) and roundRobinPosition. Pass rule.id + roundRobinPosition back into POST /sent-cases to advance the pointer. Read-only — evaluating does NOT advance the pointer."
+            "description": "Evaluates routing rules for the given case type and jurisdiction, returning the ranked list of firms that would receive the referral. Tier: READ_ONLY.\n\nResponse data includes selectedFirmId (the round-robin firm to send to; null for external-contact picks) and roundRobinPosition. Pass rule.id + roundRobinPosition back into POST /sent-cases to advance the pointer. Read-only \u2014 evaluating does NOT advance the pointer."
           },
           "event": [
             {
@@ -5163,6 +5454,141 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Account",
+      "item": [
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/me",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "Identity of the calling API key: firm, tier, key name and auth method.\n\nTier: READ_ONLY"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Identity of the calling API key."
+    },
+    {
+      "name": "Extension",
+      "item": [
+        {
+          "name": "Record Selector Miss",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/extension/telemetry/selector-miss",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "extension",
+                "telemetry",
+                "selector-miss"
+              ]
+            },
+            "description": "Browser-extension telemetry: report a DOM selector that failed to match on a partner site.\n\nTier: STANDARD",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"extensionVersion\": \"1.4.0\",\n  \"adapter\": \"cloudlex\",\n  \"adapterVersion\": \"3\",\n  \"selectorKey\": \"matter.title\",\n  \"url\": \"https://app.cloudlex.com/matters/123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Request succeeded', () => pm.response.to.be.success);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Telemetry endpoints used by the CaseXchange browser extension."
+    },
+    {
+      "name": "SSO",
+      "item": [
+        {
+          "name": "Mint SSO Link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/sso-links",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "sso-links"
+              ]
+            },
+            "description": "Provider-scoped keys only: mints a short-lived sign-in link for a MedEx user.\n\nTier: STANDARD",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"provider-user@example.com\",\n  \"firstName\": \"Pat\",\n  \"lastName\": \"Nguyen\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Request succeeded', () => pm.response.to.be.success);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Partner single sign-on links. Provider-scoped keys only."
     }
   ],
   "variable": [
@@ -5196,6 +5622,12 @@
       "value": "",
       "type": "string",
       "description": "Optional Salesforce integration token (format cxsf_<64 hex>). To use: change a request's auth header key from X-API-Key to Authorization with value 'Bearer {{sf_token}}'. Always maps to FULL tier."
+    },
+    {
+      "key": "bulk_update_job_id",
+      "value": "",
+      "type": "string",
+      "description": "Bulk update job id from POST /import/cases/update"
     }
   ]
 }
