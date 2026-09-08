@@ -916,12 +916,13 @@ components:
         assignments:
           type: array
           description: >-
-            All active assignments for the matched rule, ordered starting at the round-robin selection (then the rest of
-            the configured order, wrapping). assignments[0] is always the rotation's pick — the same firm as
-            selectedFirmId when the pick is a CaseXchange firm. When the pick is an external-contact assignment,
-            assignments[0].firmId (and selectedFirmId) are null — callers that send to assignments[0] must treat a null
-            firmId as "no auto-routable firm" and fall back to manual selection. The order changes between calls as the
-            pointer advances; do not rely on positional stability except that index 0 is the current pick.
+            The matched rule's active assignments that are eligible for this attempt (inside their attempt window and,
+            for /routing/re-refer, not a firm that already holds the case), ordered starting at the round-robin
+            selection (then the rest of the configured order, wrapping). assignments[0] is always the rotation's pick —
+            the same firm as selectedFirmId when the pick is a CaseXchange firm. When the pick is an external-contact
+            assignment, assignments[0].firmId (and selectedFirmId) are null — callers that send to assignments[0] must
+            treat a null firmId as "no auto-routable firm" and fall back to manual selection. The order changes between
+            calls as the pointer advances; do not rely on positional stability except that index 0 is the current pick.
           items:
             type: object
             properties:
@@ -7358,14 +7359,16 @@ paths:
                       Sent-referral analytics object. Documented here (partially): warmTransfer; other sections (kpis,
                       currentStageBreakdown, trend, trendStats, outcomesOfSent, outcomesOfSigned,
                       referralLooksDistribution, signedCasesByReferralAttempt, topSigningFirms,
-                      topCaseTypeJurisdictions) are returned as-is. trendStats carries the same volume as the raw daily
-                      `trend`, regrouped into a dense day/week/month-bucketed series over [rangeStart, rangeEnd] whose
-                      bucket size follows the window span, plus the window total, the mean per bucket, the busiest
-                      bucket, and the immediately preceding same-length window's totals when a referral date range is
-                      active. An empty bucket carries a count of 0 (a real zero, unlike the duration trends' null). When
-                      no date range is requested and a run of volume sits stranded far from the rest of the data — a
-                      legacy import dated decades before everything else, which would otherwise stretch the axis across
-                      those decades — the range narrows to where the data lives and the stranded volume is reported in
+                      topCaseTypeJurisdictions) are returned as-is. topSigningFirms ranks receiving firms by cases whose
+                      most recent referral is currently signed, in litigation or closing; since 2026-09-08 closed, won
+                      and lost cases are not counted. trendStats carries the same volume as the raw daily `trend`,
+                      regrouped into a dense day/week/month-bucketed series over [rangeStart, rangeEnd] whose bucket
+                      size follows the window span, plus the window total, the mean per bucket, the busiest bucket, and
+                      the immediately preceding same-length window's totals when a referral date range is active. An
+                      empty bucket carries a count of 0 (a real zero, unlike the duration trends' null). When no date
+                      range is requested and a run of volume sits stranded far from the rest of the data — a legacy
+                      import dated decades before everything else, which would otherwise stretch the axis across those
+                      decades — the range narrows to where the data lives and the stranded volume is reported in
                       `excluded` instead: it stays in `total` but is out of `trend`, `avgPerBucket` and `peak`, so
                       sum(trend) + excluded.count === total. `excluded` is null in the normal case, and an explicitly
                       requested range is never narrowed.
