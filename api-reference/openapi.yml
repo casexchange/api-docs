@@ -2,30 +2,335 @@ openapi: 3.0.3
 info:
   title: CaseXchange Public API
   version: 1.0.0
-  description: |-
+  description: >-
     The CaseXchange Public API enables law firms to integrate referral management
+
     directly into their own systems.
 
+
     ## Authentication
-    All requests must include an `X-API-Key` header containing a valid API key
-    (format: `cxp_<hex>`). Keys are scoped to a firm and an access tier.
+
+    All requests must include an `X-API-Key` header containing a valid API key: `cxp_<hex>` (firm-scoped) or
+
+    `cxpp_<hex>` (provider-scoped). Keys are scoped to an owner — a firm or a Med Xchange provider — and an
+
+    access tier. Salesforce-issued tokens (`cxsf_<hex>`) authenticate requests as firm context but are not a
+
+    named, revocable public API key; a handful of actions (e.g. managing webhook subscriptions) require an
+
+    actual `cxp_`/`cxpp_` key and reject an `sf_token` context with `403 wrong_scope`.
+
 
     ## Access Tiers
+
     | Tier | Description |
+
     |------|-------------|
+
     | `read_only` | GET endpoints — read data without mutation |
+
     | `standard` | read_only + create/update case referrals |
+
     | `full` | standard + delete, routing rules, bulk import, firm mutation |
 
+
     ## Rate Limiting
+
     Rate limits are enforced per API key. Exceeded limits return `429 Too Many Requests`.
 
+
     ## Pagination
+
     List endpoints accept `page` (default 1) and `limit` (default 20, max 100) query params.
 
+
     ## Response Format
+
     Successful responses are wrapped in `{ data: T, meta: { requestId, timestamp } }`.
+
     Errors are wrapped in `{ error: { code, message }, meta: { requestId, timestamp } }`.
+
+
+    ## Webhooks
+
+
+    CaseXchange can push referral lifecycle events to an HTTPS endpoint you control, so you do not have to poll.
+
+    Webhooks are notifications that something changed — not a synchronisation feed. Treat them as a signal to
+
+    reconcile against `GET /status-updates`, `GET /referrals` and the other read endpoints, which remain the
+
+    authority. There is no backfill: a subscription only ever receives events that happen after it is created.
+
+
+    ### Subscribing
+
+
+    Create a subscription with `POST /webhooks` using a firm-scoped `cxp_` key at `standard` tier or above; the
+
+    GET endpoints need only `read_only`. Admin keys, Salesforce `cxsf_` tokens and MCP-issued keys cannot own a
+
+    subscription and are rejected with `403 wrong_scope`, whatever their tier. Provider-scoped `cxpp_` keys manage
+
+    their own Med Xchange subscriptions through the same endpoints, but those deliveries use a different body
+
+    shape — everything below describes firm subscriptions.
+
+
+    - A firm may hold **5 active** subscriptions. Creating a sixth, or re-activating one when five are already
+      active, returns `400 subscription_limit_reached`.
+    - The URL must be `https://` **on port 443**, carry no `user:password@` credentials, and resolve to a public IP
+      address (a hostname that will not resolve, or that resolves to a private or reserved range, is rejected with
+      `400 invalid_webhook_url`). Deliveries do not follow redirects: a 3xx counts as a failed attempt.
+    - **Every active subscription receives every event for your firm.** There is no per-subscription event filter
+      yet, so branch on the `event` field (or the `X-CaseXchange-Event` header) and ignore what you do not handle.
+      Unknown event names should be ignored rather than treated as errors — new ones are added over time.
+    - The signing `secret` is returned exactly twice: by `POST /webhooks` and by `POST /webhooks/{id}/rotate-secret`.
+      It cannot be read back.
+
+    ### What a delivery looks like
+
+
+    Each delivery is a single HTTPS `POST` of a JSON body, with a 10-second timeout and no redirect following.
+
+
+    | Header | Meaning |
+
+    |--------|---------|
+
+    | `X-CaseXchange-Event` | The event name — same value as `event` in the body |
+
+    | `X-CaseXchange-Event-Id` | Identifies the *fact*. Shared by the deliveries to both firms and to all of your
+    subscriptions |
+
+    | `X-CaseXchange-Delivery` | Identifies *this* delivery. Resent unchanged on every retry — use it as your
+    idempotency key |
+
+    | `X-CaseXchange-Signature` | `t=<unix-seconds>,v1=<hex>` — see below |
+
+
+    The body is the `CasexWebhookEnvelope` schema: a self-describing envelope so a low-code receiver can route and
+
+    deduplicate without reading headers. `data` varies by event; the `x-webhook-events` extension at the root of
+
+    this document maps every event name to its `data` schema, the perspectives that can receive it, and whether it
+
+    can arrive masked.
+
+
+    ```json
+
+    {
+      "schemaVersion": 1,
+      "event": "referral.accepted",
+      "eventId": "3f9d2c1e-7b44-4a1c-9e0b-2c5f1a8d6e21",
+      "occurredAt": "2026-09-03T14:12:09.401Z",
+      "perspective": "sent",
+      "piiMasked": false,
+      "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+      "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+      "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+      "referenceNumber": "ACME-0042-BLF",
+      "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+      "referentFirm":  { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+      "isTestCase": false,
+      "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000002", "source": "manual" },
+      "data": { "...": "see x-webhook-events" }
+    }
+
+    ```
+
+
+    ### Verifying the signature
+
+
+    The `v1` value is `HMAC-SHA256` of `${t}.${rawBody}`, keyed with your subscription secret and hex-encoded,
+
+    where `t` is the timestamp from the same header and `rawBody` is the exact request body as bytes. Verify
+
+    before parsing the JSON — re-serialising changes the bytes and the signature will not match. Compare with a
+
+    constant-time function (`crypto.timingSafeEqual` in Node) and reject a `t` more than about 5 minutes old to
+
+    blunt replays.
+
+
+    ```javascript
+
+    const crypto = require("crypto");
+
+
+    // `rawBody` MUST be the exact bytes we sent — verify before any JSON.parse.
+
+    function verify(rawBody, signatureHeader, secret) {
+      const parts = Object.fromEntries(
+        signatureHeader.split(",").map((p) => p.split("=", 2))
+      );
+      const t = Number(parts.t);
+      if (!Number.isFinite(t) || Math.abs(Date.now() / 1000 - t) > 300) return false;
+
+      const expected = crypto
+        .createHmac("sha256", secret)
+        .update(`${t}.${rawBody}`)
+        .digest("hex");
+
+      const a = Buffer.from(expected, "hex");
+      const b = Buffer.from(parts.v1 ?? "", "hex");
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    }
+
+    ```
+
+
+    ### Retries, the circuit breaker, and what your endpoint should return
+
+
+    Return a `2xx` as soon as you have durably accepted the body, and do the work asynchronously. **Any** non-2xx
+
+    response, timeout or connection failure counts as a failed attempt. A delivery is attempted up to **5 attempts**
+
+    in total: a failed attempt is retried after 30 s, 2 min, 10 min and 30 min (about 43 minutes end to end), and
+
+    after the fifth it is marked `EXHAUSTED` and never retried. `GET /webhooks/{id}/deliveries` shows the attempt
+
+    count, last status code and last error — never the payload.
+
+
+    After **10 consecutive** exhausted deliveries the subscription trips a circuit breaker and is deactivated
+
+    (`isActive: false`). It stays visible on `GET /webhooks/{id}`; re-enable it with `PATCH /webhooks/{id}`
+
+    `{ "isActive": true }` once your endpoint is healthy, subject to the 5-active cap.
+
+
+    ### Rotating the secret
+
+
+    `POST /webhooks/{id}/rotate-secret` returns a new secret and starts signing with it immediately, including
+
+    retries of deliveries created before the rotation. There is no dual-signing window: switch your verifier over
+
+    at the moment you rotate, or briefly accept either secret on your side.
+
+
+    ### Trying it out
+
+
+    `POST /webhooks/{id}/test` queues a synthetic `webhook.test` delivery. It is not a CaseX firm event and does
+
+    not use the envelope: its body is `{ event, timestamp, data }`, and its `eventId` travels only in the header.
+
+
+    Echo mode points a subscription at a CaseXchange-hosted endpoint instead of yours, so you can read back the
+
+    exact headers, raw body and a signature check for what would have been delivered. Enable it with
+
+    `POST /webhooks/{id}/echo/enable`, read `GET /webhooks/{id}/echo/captures`, and restore your URL with
+
+    `POST /webhooks/{id}/echo/disable`. Captures keep the **full** body, are limited to the 50 most recent per
+
+    subscription, and are discarded after 1 hour.
+
+
+    The echo URL and its token come back from `echo/enable` only — that call is idempotent, so call it again if you
+
+    need them a second time. Reads never disclose them: while echo mode is on, `GET /webhooks` and
+
+    `GET /webhooks/{id}` keep reporting **your** endpoint in `url` (and repeat it in `originalUrl`) with
+
+    `isEchoActive: true`. The token is a credential, not a label — the echo endpoint accepts unauthenticated posts
+
+    on it, and anyone holding it could push the 50-capture cap over and evict the deliveries you were inspecting.
+
+
+    ### Client information and the receiving firm
+
+
+    A firm that is **sent** a referral sees a masked snapshot until it acknowledges receipt itself. While it is
+
+    masked, every delivery to that firm carries `piiMasked: true` and `data.case` is the `MaskedCaseSnapshot`:
+
+    only `id`, `baseCaseId`, `referenceNumber`, `status`, `closingStatus`, `referringFirmId`, `referentFirmId`,
+
+    `caseType`, `jurisdiction`, `county`, `sentDate`, `isRetainerSigned`, `createdAt` and `updatedAt`. Client
+
+    name, contact details, date of birth, incident date, case title, description, lead attorney, warm-transfer
+
+    text, the money block and custom fields are **absent from the object**, not present-and-null, and `message`
+
+    is forced to null.
+
+
+    - Only an action by the receiving firm unmasks it — its own user acknowledging in the app, via the
+      acknowledgment email, or through a bulk status update it uploads itself; its connected case-management
+      system; or its own Salesforce org. A platform administrator forcing a status, a historical CSV import, or
+      the sending firm acting on its behalf never does.
+    - In the normal flow the first unmasked delivery is `referral.accepted`. Until then, only the status family
+      (`referral.received`, `referral.accepted`, `referral.rejected`, `case.status_changed`) is delivered at all:
+      `case.updated`, `note.*` and `document.*` are withheld entirely from an unacknowledged receiving firm.
+    - A referral withdrawn or rejected before it was ever acknowledged never unmasks, and earlier deliveries
+      cannot be retracted.
+    - A receiving firm never receives `case.created`, `case.rated`, the tier fields, or the sending firm's
+      `source`. `document.*` additionally stops for the counterparty once the referral is CLOSED, where
+      `case.updated` and `note.*` keep flowing; all three stop at the other terminal statuses.
+    - Echo-mode captures return the full delivered body to the subscription owner, so treat echo mode the same
+      way you treat the payload itself.
+
+    ### Multi-hop cases
+
+
+    A case can be referred onward, so one `baseCaseId` may carry several referrals. Each firm only ever sees its
+
+    own hop: `referralId` identifies that hop and `referringFirm`/`referentFirm` name its two parties. Fields that
+
+    belong to a hop — fees, settlement figures, lead attorney, phase — are delivered only to the two firms on the
+
+    hop that changed; other firms on the same case are told only about case-level changes, and only when something
+
+    they can see actually changed.
+
+
+    ### Ordering, duplicates, and your own writes
+
+
+    - **Deduplicate on `X-CaseXchange-Delivery`.** It is stable across retries. `eventId` is *not* unique per
+      delivery: it is shared by the same fact across firms and subscriptions, which is what makes it useful for
+      correlation.
+    - There is **no ordering guarantee**. Dispatch is concurrent and a retried delivery can trail a later one by
+      the better part of an hour, so deliveries arrive out of order. Apply the delivery with the greatest
+      `occurredAt`.
+    - One transaction can commit two status rows (for example CLOSING then CLOSED), and those two deliveries carry
+      a byte-identical `occurredAt`. There is deliberately no tiebreaker field: chain them with
+      `data.previousStatus` → `data.status`.
+    - CaseXchange does not distinguish a change made in its own UI from one made through this API, so your own
+      writes come back to you as events. `actor.firmId` tells you which firm acted, not through which channel; to
+      suppress your own echo, compare the delivered state against what you last sent.
+
+    ### Known gaps
+
+
+    These are deliberate omissions today, listed so you can plan around them rather than discover them:
+
+
+    - Historical CSV import creates and updates cases silently — no events. A bulk status update by CSV does emit,
+      one event per row.
+    - Status changes written by the Clio Manage pull bypass the status pipeline and produce no event for either
+      firm. Reconcile with `GET /status-updates`.
+    - Status changes written by the DearLegal inbound webhook produce no event and do not count as the receiving
+      firm's acknowledgement.
+    - Notes written automatically alongside a status transition, a case creation or a CSV import are not published
+      as `note.created`. A note supplied to `PATCH /sent-cases/{id}` is a real note and does produce one.
+    - `note.deleted` does not exist: nothing in CaseXchange produces it, so it is not in the catalog.
+
+    - Archiving a case or a referral stops **all** events for it, and there is no event announcing the archive;
+      unarchiving resumes them. Revoking your firm's `public_api` integration or deactivating the firm has the
+      same effect, while `GET /webhooks/{id}` still reports `isActive: true`.
+    - Partner messages and document metadata edits produce no events.
+
+    - There is no per-subscription event filter and no endpoint to replay a delivery.
+
+    - Delivery payloads are retained on our side for 30 days once delivered (90 if exhausted) and hard-deleted
+      after 180; `GET /webhooks/{id}/deliveries` never returns them.
   contact:
     name: CaseXchange API Support
     url: https://casexchange.com
@@ -83,22 +388,26 @@ tags:
       `cloudlex`, `morgan_morgan`. Requires a firm-scoped API key.
   - name: Webhooks
     description: >-
-      Outbound event subscriptions for Med Xchange providers. Webhook endpoints require a **provider-scoped** API key
-      (`cxpp_*`); firm-scoped keys receive `403 wrong_scope`.
+      Outbound event subscriptions. Available to both firm-scoped (`cxp_*`) and provider-scoped (`cxpp_*`) API keys — a
+      subscription belongs to whichever kind of key created it, and each key can only see and manage its own
+      subscriptions (up to 5 active). Admin keys, Salesforce-issued tokens (`cxsf_*` — these authenticate as firm
+      context but are not a named, revocable key) and MCP-issued keys cannot manage webhooks and receive `403
+      wrong_scope`.
 
 
-      Each delivery is an HTTPS POST of a JSON body `{ event, timestamp, data }` with headers `X-CaseXchange-Event`
-      (event name), `X-CaseXchange-Delivery` (delivery UUID) and `X-CaseXchange-Signature` in the form
-      `t=<unix-seconds>,v1=<hex>`, where `v1` is HMAC-SHA256(secret, `<t>.<rawBody>`). Failed deliveries are retried
-      with back-off up to 5 attempts (10-second request timeout); after that the delivery is marked `EXHAUSTED`.
+      Each delivery is an HTTPS POST of a JSON body with headers `X-CaseXchange-Event` (event name),
+      `X-CaseXchange-Event-Id` (identifies the fact), `X-CaseXchange-Delivery` (identifies the delivery, stable across
+      retries — use it as your idempotency key) and `X-CaseXchange-Signature` in the form `t=<unix-seconds>,v1=<hex>`,
+      where `v1` is HMAC-SHA256(secret, `<t>.<rawBody>`). Failed deliveries are retried with back-off up to 5 attempts
+      (10-second request timeout); after that the delivery is marked `EXHAUSTED`.
 
 
-      Event types: `webhook.test`, `case.created`, `case.updated`, `case.archived`, `referral.sent`,
-      `appointment.created`, `appointment.updated`, `appointment.deleted`, `billing.created`, `billing.updated`,
-      `billing.deleted`, `diagnosis.created`, `diagnosis.updated`, `diagnosis.deleted`, `document.uploaded`,
-      `document.deleted`, `injury.created`, `injury.updated`, `injury.deleted`, `insurance.created`,
-      `insurance.updated`, `insurance.deleted`, `note.created`, `note.updated`, `note.deleted`, `prescription.created`,
-      `prescription.updated`, `prescription.deleted`.
+      Firm-owned subscriptions receive `WebhookEventType` events (CaseXchange referral lifecycle) and their body is the
+      self-describing `CasexWebhookEnvelope`; the `x-webhook-events` extension at the root of this document catalogues
+      every event with its `data` schema and PII rules, and the `## Webhooks` section of the introduction is the
+      narrative guide. Provider-owned subscriptions receive `MedexWebhookEventType` events (Med Xchange case lifecycle)
+      and their body is the bare entity payload, with no envelope. Both kinds may also receive the synthetic
+      `webhook.test` event from the "send test event" action, whose body is `{ event, timestamp, data }`.
   - name: Med Cases
     description: Med Xchange cases and their nested referrals to medical providers
   - name: MedEx Documents
@@ -117,7 +426,7 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-      description: Public API key (starts with cxp_). Required on every request.
+      description: "Public API key: `cxp_<hex>` (firm-scoped) or `cxpp_<hex>` (provider-scoped). Required on every request."
   schemas:
     Firm:
       type: object
@@ -916,12 +1225,13 @@ components:
         assignments:
           type: array
           description: >-
-            All active assignments for the matched rule, ordered starting at the round-robin selection (then the rest of
-            the configured order, wrapping). assignments[0] is always the rotation's pick — the same firm as
-            selectedFirmId when the pick is a CaseXchange firm. When the pick is an external-contact assignment,
-            assignments[0].firmId (and selectedFirmId) are null — callers that send to assignments[0] must treat a null
-            firmId as "no auto-routable firm" and fall back to manual selection. The order changes between calls as the
-            pointer advances; do not rely on positional stability except that index 0 is the current pick.
+            The matched rule's active assignments that are eligible for this attempt (inside their attempt window and,
+            for /routing/re-refer, not a firm that already holds the case), ordered starting at the round-robin
+            selection (then the rest of the configured order, wrapping). assignments[0] is always the rotation's pick —
+            the same firm as selectedFirmId when the pick is a CaseXchange firm. When the pick is an external-contact
+            assignment, assignments[0].firmId (and selectedFirmId) are null — callers that send to assignments[0] must
+            treat a null firmId as "no auto-routable firm" and fall back to manual selection. The order changes between
+            calls as the pointer advances; do not rely on positional stability except that index 0 is the current pick.
           items:
             type: object
             properties:
@@ -1501,7 +1811,7 @@ components:
               successful:
                 type: integer
               successRate: *ref_11
-    Error: &ref_13
+    Error: &ref_15
       type: object
       properties:
         error:
@@ -1514,7 +1824,7 @@ components:
           required:
             - code
             - message
-        meta: &ref_12
+        meta: &ref_14
           type: object
           properties:
             requestId:
@@ -1643,7 +1953,7 @@ components:
           format: date-time
           nullable: true
         clientFeeAgreementPercentage: *ref_5
-        sendingFirmPercentage: &ref_22
+        sendingFirmPercentage: &ref_12
           type: number
           minimum: 0
           maximum: 100
@@ -2464,8 +2774,11 @@ components:
           type: string
           format: uri
           description: >-
-            Delivery URL. While echo mode is enabled this is the CaseXchange echo URL and the original target is
-            preserved in `originalUrl`.
+            The HTTPS endpoint you registered. This field always reports YOUR endpoint, whether or not echo mode is on:
+            while echo mode is active CaseXchange delivers to its own echo endpoint instead, but that echo URL is never
+            returned by a read, because it embeds the echo token — an unauthenticated write capability against the echo
+            ingest. Read `isEchoActive` to tell whether deliveries are currently being diverted; the echo URL and its
+            token are returned only by `POST /webhooks/{id}/echo/enable`.
         description:
           type: string
           nullable: true
@@ -2473,12 +2786,18 @@ components:
           type: boolean
         isEchoActive:
           type: boolean
-          description: True while echo mode is enabled
+          description: >-
+            True while echo mode is enabled — deliveries go to the CaseXchange echo endpoint and are readable through
+            `GET /webhooks/{id}/echo/captures` instead of reaching `url`. This flag, not `url`, is how you detect echo
+            mode: `url` reads the same in both states.
         originalUrl:
           type: string
           format: uri
           nullable: true
-          description: The subscriber-provided URL saved while echo mode is enabled; null otherwise
+          description: >-
+            The endpoint saved when echo mode was enabled — identical to `url`, which keeps reporting your endpoint
+            throughout, so the two are the same string while echo mode is on. Null whenever echo mode is off. Kept for
+            compatibility; prefer `url` for the address and `isEchoActive` for the state.
         createdAt:
           type: string
           format: date-time
@@ -2515,35 +2834,48 @@ components:
         eventType:
           type: string
           enum:
-            - webhook.test
             - case.created
             - case.updated
-            - case.archived
+            - case.deleted
             - referral.sent
-            - appointment.created
-            - appointment.updated
-            - appointment.deleted
-            - billing.created
-            - billing.updated
-            - billing.deleted
-            - diagnosis.created
-            - diagnosis.updated
-            - diagnosis.deleted
+            - referral.received
+            - referral.accepted
+            - referral.rejected
+            - case.status_changed
+            - note.created
+            - note.updated
             - document.uploaded
             - document.deleted
+            - case.rated
+            - case.archived
             - injury.created
             - injury.updated
             - injury.deleted
             - insurance.created
             - insurance.updated
             - insurance.deleted
-            - note.created
-            - note.updated
-            - note.deleted
+            - appointment.created
+            - appointment.updated
+            - appointment.deleted
             - prescription.created
             - prescription.updated
             - prescription.deleted
-          description: Event name (see the Webhooks tag)
+            - diagnosis.created
+            - diagnosis.updated
+            - diagnosis.deleted
+            - billing.created
+            - billing.updated
+            - billing.deleted
+            - note.deleted
+            - referral.under_review
+            - referral.in_treatment
+            - referral.treatment_complete
+            - referral.closed
+            - referral.withdrawn
+            - webhook.test
+          description: >-
+            Event name. Deliveries for a firm-owned subscription carry a `WebhookEventType` value; deliveries for a
+            provider-owned subscription carry a `MedexWebhookEventType` value.
         eventId:
           type: string
           format: uuid
@@ -2611,6 +2943,10 @@ components:
           description: Exact bytes that were signed
         signatureValid:
           type: boolean
+          description: >-
+            Whether the `X-CaseXchange-Signature` CaseXchange sent verifies against the subscription secret. For 24
+            hours after `rotate-secret` the previous secret is accepted here too, so a capture signed just before a
+            rotation still reads as valid — outbound deliveries are signed with the current secret only.
         signatureDetails:
           type: object
           properties:
@@ -2647,10 +2983,946 @@ components:
           description: CaseXchange-hosted URL the subscription now delivers to
         echoToken:
           type: string
-          description: Opaque token embedded in the echo URL
+          description: >-
+            Opaque token embedded in the echo URL. Treat it as a credential, not a label: the echo ingest accepts
+            unauthenticated posts on it, so anyone holding it can flood your captures. It is returned here and nowhere
+            else — no read endpoint discloses it.
       required:
         - echoUrl
         - echoToken
+    WebhookEventType:
+      type: string
+      enum:
+        - case.created
+        - case.updated
+        - case.deleted
+        - referral.sent
+        - referral.received
+        - referral.accepted
+        - referral.rejected
+        - case.status_changed
+        - note.created
+        - note.updated
+        - document.uploaded
+        - document.deleted
+        - case.rated
+        - webhook.test
+      description: >-
+        CaseXchange firm-webhook event name, emitted to subscriptions owned by a firm-scoped (`cxp_*`) API key, plus the
+        synthetic `webhook.test` event queued by the "send test event" action. Per-event payload shapes are documented
+        separately.
+    MedexWebhookEventType:
+      type: string
+      enum:
+        - case.created
+        - case.updated
+        - case.archived
+        - injury.created
+        - injury.updated
+        - injury.deleted
+        - insurance.created
+        - insurance.updated
+        - insurance.deleted
+        - appointment.created
+        - appointment.updated
+        - appointment.deleted
+        - prescription.created
+        - prescription.updated
+        - prescription.deleted
+        - diagnosis.created
+        - diagnosis.updated
+        - diagnosis.deleted
+        - billing.created
+        - billing.updated
+        - billing.deleted
+        - note.created
+        - note.updated
+        - note.deleted
+        - document.uploaded
+        - document.deleted
+        - referral.sent
+        - referral.under_review
+        - referral.accepted
+        - referral.in_treatment
+        - referral.treatment_complete
+        - referral.closed
+        - referral.rejected
+        - referral.withdrawn
+        - webhook.test
+      description: >-
+        Med Xchange provider-webhook event name, emitted to subscriptions owned by a provider-scoped (`cxpp_*`) API key,
+        plus the synthetic `webhook.test` event queued by the "send test event" action.
+    CasexWebhookEnvelope:
+      type: object
+      description: >-
+        The JSON body of every CaseXchange firm-webhook delivery. `data` varies by `event` — see the `x-webhook-events`
+        catalog at the root of this document for the schema of each.
+      properties:
+        schemaVersion:
+          type: integer
+          enum:
+            - 1
+          description: Envelope version. A breaking change to the envelope increments this.
+        event:
+          type: string
+          enum:
+            - case.created
+            - case.updated
+            - case.deleted
+            - referral.sent
+            - referral.received
+            - referral.accepted
+            - referral.rejected
+            - case.status_changed
+            - note.created
+            - note.updated
+            - document.uploaded
+            - document.deleted
+            - case.rated
+          description: Mirrors the `X-CaseXchange-Event` header.
+        eventId:
+          type: string
+          format: uuid
+          description: >-
+            Mirrors `X-CaseXchange-Event-Id`. One fact gets one `eventId`, shared by the deliveries to both firms and by
+            every subscription of the same firm. Correlate on it; deduplicate on `X-CaseXchange-Delivery`.
+        occurredAt:
+          type: string
+          format: date-time
+          description: >-
+            When the underlying row was committed. Apply the delivery with the greatest `occurredAt`; when two status
+            deliveries tie, chain them by `data.previousStatus` → `data.status`.
+        perspective:
+          type: string
+          enum:
+            - sent
+            - received
+          description: Which side of this referral your firm is on. Same vocabulary as CaseXchange notification directions.
+        piiMasked:
+          type: boolean
+          description: >-
+            True only for a receiving firm that has not yet acknowledged the referral. `data.case` is then the
+            MaskedCaseSnapshot.
+        recipientFirmId:
+          type: string
+          format: uuid
+          description: The firm this delivery was built for — lets you detect a mis-routed delivery.
+        referralId:
+          type: string
+          format: uuid
+          description: The referral this event is about (the "hop"). Your firm may hold several per case.
+        baseCaseId:
+          type: string
+          format: uuid
+          description: The case behind the referral; stable across re-referrals.
+        referenceNumber:
+          type: string
+          nullable: true
+        referringFirm:
+          type: object
+          description: The sending firm on this hop.
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+          required:
+            - id
+            - name
+        referentFirm:
+          type: object
+          description: The receiving firm on this hop; null on a DRAFT referral.
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+          required:
+            - id
+            - name
+          nullable: true
+        isTestCase:
+          type: boolean
+          description: True for a test case. Filter on this in production.
+        actor:
+          type: object
+          description: >-
+            Who caused the change. Deliberately without a user id: the counterparty's user UUIDs are never exposed. Not
+            a channel — CaseXchange does not distinguish a UI write from a public API write today, so to ignore your own
+            echo, correlate against your own record.
+          properties:
+            firmId:
+              type: string
+              format: uuid
+              nullable: true
+              description: The firm that acted; null for platform administrators and system jobs.
+            source:
+              type: string
+              enum:
+                - manual
+                - case_status
+                - salesforce
+                - smartadvocate
+                - system
+                - dearlegal
+                - api
+                - filemaker
+                - clio
+                - admin
+                - ai
+          required:
+            - firmId
+            - source
+        data:
+          type: object
+          description: Event-specific body. See `x-webhook-events` for the schema keyed by `event`.
+        changedFields:
+          type: array
+          items:
+            type: string
+          description: >-
+            Present only on `case.updated` and `note.updated`. Already intersected with what YOUR firm is allowed to
+            see. Every entry is a `data` property except the sentinel `customFields`, which is not a snapshot field and
+            means "your custom field values changed — re-`GET` the case". A masked recipient never receives that
+            sentinel.
+      required:
+        - schemaVersion
+        - event
+        - eventId
+        - occurredAt
+        - perspective
+        - piiMasked
+        - recipientFirmId
+        - referralId
+        - baseCaseId
+        - referenceNumber
+        - referringFirm
+        - referentFirm
+        - isTestCase
+        - actor
+        - data
+    CaseSnapshot:
+      type: object
+      description: >-
+        A referral as the emitter reread it after the commit. Same vocabulary as `GET /cases`, so a push and a poll
+        agree field for field. Delivered to the sending firm, and to a receiving firm that has acknowledged receipt.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Referral UUID — the public API calls a referral a "case".
+        baseCaseId:
+          type: string
+          format: uuid
+        referenceNumber:
+          type: string
+          nullable: true
+          example: ABC-0001
+          description: >-
+            System-generated case identifier. Rows created by CSV import may carry firm-supplied text instead: the
+            importer does not validate the format, so do not parse it.
+        status:
+          type: string
+          enum:
+            - draft
+            - sent
+            - received
+            - under_evaluation
+            - investigating
+            - signed
+            - in_litigation
+            - closing
+            - won
+            - lost
+            - closed
+            - rejected
+            - withdrawn
+            - pending_spin_off
+          description: >-
+            Normalized status: the legacy 'received' is published as 'under_evaluation', and the private
+            'terminated'/'exhausted' categorizations are published as 'rejected'.
+        closingStatus:
+          type: string
+          nullable: true
+          enum:
+            - won_settled
+            - lost
+            - no_longer_pursuing
+          description: ClosingStatus enum value; null until the closing workflow starts.
+        payoutType:
+          type: string
+          nullable: true
+          enum:
+            - lump_sum
+            - structured
+            - hybrid
+            - other
+          description: How settlement funds are distributed; null until set during closing.
+        closureReason:
+          type: string
+          nullable: true
+        referringFirmId:
+          type: string
+          format: uuid
+          description: Sending firm
+        referentFirmId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Receiving firm; null on a DRAFT referral
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        caseType:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+        county:
+          type: string
+          nullable: true
+        clientFirstName:
+          type: string
+          nullable: true
+        clientLastName:
+          type: string
+          nullable: true
+        clientEmail:
+          type: string
+          format: email
+          nullable: true
+        clientPhone:
+          type: string
+          nullable: true
+        clientDateOfBirth:
+          type: string
+          format: date
+          nullable: true
+        incidentDate:
+          type: string
+          format: date
+          nullable: true
+        settlementAmount:
+          type: number
+          minimum: 0
+          maximum: 1000000000
+          nullable: true
+          description: Final settlement amount in dollars; null until recorded.
+        attorneyFees:
+          type: number
+          minimum: 0
+          maximum: 1000000000
+          nullable: true
+          description: Total attorney fees in dollars; null until recorded.
+        leadAttorneyName:
+          type: string
+          nullable: true
+          description: Lead attorney at the receiving firm; null until set.
+        warmTransferSuccessful:
+          type: boolean
+          description: Whether the warm transfer to the receiving firm succeeded.
+        warmTransferUnsuccessfulReason:
+          type: string
+          nullable: true
+          description: >-
+            Free-text explanation when the warm transfer was unsuccessful. Only populated when
+            warmTransferUnsuccessfulReasonType is OTHER. Never masked here: the masked snapshot omits these fields
+            entirely.
+        warmTransferUnsuccessfulReasonType:
+          type: string
+          nullable: true
+          enum:
+            - FIRM_UNABLE_TO_ANSWER
+            - CLIENT_UNABLE_TO_CONTINUE
+            - OTHER
+          description: >-
+            Reason category for an unsuccessful warm transfer. Never masked here: the masked snapshot omits these fields
+            entirely.
+        clientFeeAgreementPercentage: *ref_5
+        sendingFirmPercentage: *ref_12
+        netFeeToSendingFirm:
+          type: number
+          nullable: true
+          description: >-
+            attorneyFees × the sendingFirmPercentage published on this record ÷ 100, rounded to cents. Null when either
+            input is missing or zero.
+        netFeeToHandlingFirm:
+          type: number
+          nullable: true
+          description: attorneyFees − netFeeToSendingFirm. Null when netFeeToSendingFirm is null.
+        resolutionDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When the outcome was recorded: the most recent transition into CLOSING, or into WON/LOST for legacy
+            referrals that never passed through CLOSING.
+        closedDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: The most recent transition into CLOSED.
+        projectedSettlementAmount:
+          type: number
+          minimum: 0
+          maximum: 1000000000
+          nullable: true
+          description: Projected settlement amount in dollars, set while the case is open; null until estimated.
+        estimatedDateOfResolution:
+          type: string
+          format: date-time
+          nullable: true
+          description: Estimated resolution date; null until estimated.
+        estimatedDistributionDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: Estimated distribution date; null until estimated.
+        statuteOfLimitationsExpiration:
+          type: string
+          format: date-time
+          nullable: true
+        phase:
+          type: string
+          nullable: true
+        isRetainerSigned:
+          type: boolean
+        sentDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the referral was sent (`referrals.sent_at`); null on a DRAFT.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - baseCaseId
+        - referenceNumber
+        - status
+        - closingStatus
+        - payoutType
+        - closureReason
+        - referringFirmId
+        - referentFirmId
+        - title
+        - description
+        - caseType
+        - jurisdiction
+        - county
+        - clientFirstName
+        - clientLastName
+        - clientEmail
+        - clientPhone
+        - clientDateOfBirth
+        - incidentDate
+        - settlementAmount
+        - attorneyFees
+        - leadAttorneyName
+        - warmTransferSuccessful
+        - warmTransferUnsuccessfulReason
+        - warmTransferUnsuccessfulReasonType
+        - clientFeeAgreementPercentage
+        - sendingFirmPercentage
+        - netFeeToSendingFirm
+        - netFeeToHandlingFirm
+        - resolutionDate
+        - closedDate
+        - projectedSettlementAmount
+        - estimatedDateOfResolution
+        - estimatedDistributionDate
+        - statuteOfLimitationsExpiration
+        - phase
+        - isRetainerSigned
+        - sentDate
+        - createdAt
+        - updatedAt
+    MaskedCaseSnapshot:
+      type: object
+      description: >-
+        The pre-acknowledgment case snapshot: ids, the shared status, and non-personal descriptors only. Sent to a
+        receiving firm that has never acknowledged the referral (`piiMasked: true`). The omitted fields are absent from
+        the object, not present-and-null.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Referral UUID
+        baseCaseId:
+          type: string
+          format: uuid
+        referenceNumber:
+          type: string
+          nullable: true
+          example: ABC-0001
+        status:
+          type: string
+          enum:
+            - draft
+            - sent
+            - received
+            - under_evaluation
+            - investigating
+            - signed
+            - in_litigation
+            - closing
+            - won
+            - lost
+            - closed
+            - rejected
+            - withdrawn
+            - pending_spin_off
+          description: Normalized status (see CaseSnapshot.status).
+        closingStatus:
+          type: string
+          nullable: true
+          enum:
+            - won_settled
+            - lost
+            - no_longer_pursuing
+        referringFirmId:
+          type: string
+          format: uuid
+          description: Sending firm
+        referentFirmId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Receiving firm
+        caseType:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+        county:
+          type: string
+          nullable: true
+        sentDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the referral was sent.
+        isRetainerSigned:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - baseCaseId
+        - referenceNumber
+        - status
+        - closingStatus
+        - referringFirmId
+        - referentFirmId
+        - caseType
+        - jurisdiction
+        - county
+        - sentDate
+        - isRetainerSigned
+        - createdAt
+        - updatedAt
+    StatusChangeData:
+      type: object
+      description: >-
+        The `data` of `referral.sent`, `referral.received`, `referral.accepted`, `referral.rejected` and
+        `case.status_changed`. One shape for all five, so a consumer can point them at a single handler.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: "`status_updates` row id"
+        referralId:
+          type: string
+          format: uuid
+        referenceNumber:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - draft
+            - sent
+            - received
+            - under_evaluation
+            - investigating
+            - signed
+            - in_litigation
+            - closing
+            - won
+            - lost
+            - closed
+            - rejected
+            - withdrawn
+            - pending_spin_off
+          description: The status the referral moved INTO, normalized.
+        previousStatus:
+          type: string
+          nullable: true
+          enum:
+            - draft
+            - sent
+            - received
+            - under_evaluation
+            - investigating
+            - signed
+            - in_litigation
+            - closing
+            - won
+            - lost
+            - closed
+            - rejected
+            - withdrawn
+            - pending_spin_off
+          description: >-
+            The status the referral moved OUT of, normalized; null on a birth row. When two status deliveries share the
+            same `occurredAt` (one transaction wrote both rows), chain them by `previousStatus` → `status`.
+        message:
+          type: string
+          nullable: true
+          description: Free-text note recorded with the transition.
+        isMessage:
+          type: boolean
+          enum:
+            - false
+          description: Always false — partner messages do not produce webhook events.
+        source:
+          type: string
+          enum:
+            - manual
+            - case_status
+            - salesforce
+            - smartadvocate
+            - system
+            - dearlegal
+            - api
+            - filemaker
+          description: >-
+            The system that recorded the transition. `api` covers both the public API and the CaseXchange UI — the two
+            are not distinguished today.
+        createdAt:
+          type: string
+          format: date-time
+          description: Identical to the envelope `occurredAt`.
+        createdByName:
+          type: string
+          nullable: true
+          description: Display name of the user who made the change; null for system writes. Never a user UUID.
+        case:
+          $ref: "#/components/schemas/CaseSnapshot"
+      required: &ref_13
+        - id
+        - referralId
+        - referenceNumber
+        - status
+        - previousStatus
+        - message
+        - isMessage
+        - source
+        - createdAt
+        - createdByName
+        - case
+    MaskedStatusChangeData:
+      type: object
+      description: >-
+        The status-family `data` delivered to a receiving firm that has not acknowledged the referral (`piiMasked:
+        true`): the same envelope and the same keys, with a masked snapshot and a null `message`.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: "`status_updates` row id"
+        referralId:
+          type: string
+          format: uuid
+        referenceNumber:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - draft
+            - sent
+            - received
+            - under_evaluation
+            - investigating
+            - signed
+            - in_litigation
+            - closing
+            - won
+            - lost
+            - closed
+            - rejected
+            - withdrawn
+            - pending_spin_off
+          description: The status the referral moved INTO, normalized.
+        previousStatus:
+          type: string
+          nullable: true
+          enum:
+            - draft
+            - sent
+            - received
+            - under_evaluation
+            - investigating
+            - signed
+            - in_litigation
+            - closing
+            - won
+            - lost
+            - closed
+            - rejected
+            - withdrawn
+            - pending_spin_off
+          description: >-
+            The status the referral moved OUT of, normalized; null on a birth row. When two status deliveries share the
+            same `occurredAt` (one transaction wrote both rows), chain them by `previousStatus` → `status`.
+        message:
+          type: string
+          nullable: true
+          description: >-
+            Always null in a masked delivery: the sending firm embeds its referral notes in this field when it sends a
+            draft.
+        isMessage:
+          type: boolean
+          enum:
+            - false
+          description: Always false — partner messages do not produce webhook events.
+        source:
+          type: string
+          enum:
+            - manual
+            - case_status
+            - salesforce
+            - smartadvocate
+            - system
+            - dearlegal
+            - api
+            - filemaker
+          description: >-
+            The system that recorded the transition. `api` covers both the public API and the CaseXchange UI — the two
+            are not distinguished today.
+        createdAt:
+          type: string
+          format: date-time
+          description: Identical to the envelope `occurredAt`.
+        createdByName:
+          type: string
+          nullable: true
+          description: Display name of the user who made the change; null for system writes. Never a user UUID.
+        case:
+          $ref: "#/components/schemas/MaskedCaseSnapshot"
+      required: *ref_13
+    NoteData:
+      type: object
+      description: The `data` of `note.created` / `note.updated`. Notes carry no case snapshot — ids and the note body only.
+      properties:
+        id:
+          type: string
+          format: uuid
+        referralId:
+          type: string
+          format: uuid
+        baseCaseId:
+          type: string
+          format: uuid
+        firmId:
+          type: string
+          format: uuid
+          description: "The firm that owns the note. Notes are per-firm: each side keeps its own."
+        authorId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The author's user UUID, sent only to the firm that owns the note; null for the counterparty.
+        authorName:
+          type: string
+          nullable: true
+          description: The author's display name.
+        body:
+          type: string
+        origin:
+          type: string
+          enum:
+            - casexchange
+            - clio
+          description: "`clio` when the note was pulled from Clio Manage rather than written in CaseXchange."
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - referralId
+        - baseCaseId
+        - firmId
+        - authorId
+        - authorName
+        - body
+        - origin
+        - createdAt
+        - updatedAt
+    DocumentData:
+      type: object
+      description: >-
+        The `data` of `document.uploaded`: metadata only. Bytes come from `GET
+        /cases/{referralId}/documents/{id}/download` — the signed URL expires, so it never travels in a webhook.
+      properties:
+        id:
+          type: string
+          format: uuid
+        baseCaseId:
+          type: string
+          format: uuid
+          description: >-
+            Base case the document hangs off. Always present: a document with no base case (a fee agreement) produces no
+            event at all.
+        referralId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Referral the document was attached to; null for case-level uploads.
+        fileName:
+          type: string
+        fileType:
+          type: string
+        fileSize:
+          type: integer
+          description: Size in bytes
+        contentType:
+          type: string
+        isPublic:
+          type: boolean
+        uploadedById:
+          type: string
+          format: uuid
+          nullable: true
+          description: The uploader's user UUID, sent only to the uploader's own firm; null for the counterparty.
+        uploadedAt:
+          type: string
+          format: date-time
+        origin:
+          type: string
+          enum:
+            - casexchange
+            - clio
+          description: "`clio` when the file arrived through the Clio Manage document sync."
+        uploadedByName:
+          type: string
+          nullable: true
+          description: The uploader's display name.
+      required:
+        - id
+        - baseCaseId
+        - referralId
+        - fileName
+        - fileType
+        - fileSize
+        - contentType
+        - isPublic
+        - uploadedById
+        - uploadedAt
+        - origin
+        - uploadedByName
+    DocumentTombstone:
+      type: object
+      description: The `data` of `document.deleted` — ids only.
+      properties:
+        id:
+          type: string
+          format: uuid
+        baseCaseId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Base case the deleted document belonged to.
+        referralId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Referral the deleted document was attached to.
+      required:
+        - id
+        - baseCaseId
+        - referralId
+    CaseTombstone:
+      type: object
+      description: >-
+        The `data` of `case.deleted` — ids only, captured before the DRAFT row was removed. The envelope fields likewise
+        describe the state before the delete.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Referral UUID of the deleted draft
+        baseCaseId:
+          type: string
+          format: uuid
+        referenceNumber:
+          type: string
+          nullable: true
+      required:
+        - id
+        - baseCaseId
+        - referenceNumber
+    CaseRatingData:
+      type: object
+      description: >-
+        The `data` of `case.rated`. The sending firm's private appraisal of its own case: delivered only to the owning
+        firm, never to a receiving firm, acknowledged or not. `ratingNotes` is never published to anyone — the
+        classifier explanation restates facts about the client.
+      properties:
+        tier:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: The case tier after the write.
+        previousTier:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: The case tier before the write; null when the case was just created.
+        ratedTier:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: The tier the AI classifier assigned, when one ran.
+        caseRatingTier:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: The referral-level rating on the case's current referral.
+        ratingSource:
+          type: string
+          enum:
+            - manual
+            - ai
+          description: "`ai` for the classifier; `manual` for every user write (UI or public API alike)."
+      required:
+        - tier
+        - previousTier
+        - ratedTier
+        - caseRatingTier
+        - ratingSource
     NetworkRelationship:
       type: object
       properties:
@@ -2748,7 +4020,7 @@ components:
           format: uuid
         externalSystem:
           type: string
-          enum: &ref_38
+          enum: &ref_41
             - cloudlex
             - morgan_morgan
         externalId:
@@ -2950,13 +4222,13 @@ paths:
         Paginated list of referrals where the caller's firm is either the sending or receiving firm, newest first.
         Archived referrals are excluded. The status filter is symmetric across both directions because a referral's
         status is the truth both firms share.
-      tags: &ref_15
+      tags: &ref_17
         - Referrals
-      security: &ref_16
+      security: &ref_18
         - apiKeyAuth: []
       x-access-tier: read_only
       parameters:
-        - &ref_30
+        - &ref_31
           in: query
           name: page
           schema:
@@ -2964,7 +4236,7 @@ paths:
             default: 1
             minimum: 1
           description: Page number (1-indexed)
-        - &ref_31
+        - &ref_32
           in: query
           name: limit
           schema:
@@ -2973,7 +4245,7 @@ paths:
             minimum: 1
             maximum: 100
           description: Results per page (max 100)
-        - &ref_32
+        - &ref_33
           in: query
           name: status
           schema:
@@ -3010,22 +4282,22 @@ paths:
                       $ref: "#/components/schemas/Referral"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "400": &ref_17
+        "400": &ref_19
           description: Request validation failed
-          content: &ref_14
+          content: &ref_16
             application/json:
-              schema: *ref_13
-        "401": &ref_18
+              schema: *ref_15
+        "401": &ref_20
           description: Invalid or missing API key
-          content: *ref_14
-        "403": &ref_19
+          content: *ref_16
+        "403": &ref_21
           description: API key tier does not permit this action
-          content: *ref_14
+          content: *ref_16
   /referrals/match:
     post:
       operationId: matchReferrals
@@ -3035,8 +4307,8 @@ paths:
         candidates with a confidence score and the fields that matched. At least one identifier is required. Requires
         STANDARD tier (POST requests are rate-classified as writes even though this is a search). Note: the response
         body is `{ candidates, meta }` — the candidate array is not nested under `data`.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       requestBody:
         required: true
@@ -3086,13 +4358,13 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/MatchCandidate"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - candidates
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /referrals/{id}/status-history:
     get:
       operationId: getReferralStatusHistory
@@ -3100,15 +4372,15 @@ paths:
       description: >-
         Returns the status-history entries both firms share for a referral, newest first. The sending firm's private
         categorization entries are never included.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - &ref_20
+        - &ref_22
           in: path
           name: id
           required: true
-          schema: &ref_39
+          schema: &ref_42
             type: string
             format: uuid
           description: Resource UUID
@@ -3124,16 +4396,16 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/ReferralStatusUpdate"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": &ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": &ref_23
           description: Resource not found
-          content: *ref_14
+          content: *ref_16
   /referrals/{id}/available-statuses:
     get:
       operationId: getReferralAvailableStatuses
@@ -3141,11 +4413,11 @@ paths:
       description: >-
         Returns the next status transitions the caller's firm may perform on this referral, based on whether the firm is
         the sender or the receiver.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Available transitions
@@ -3156,24 +4428,24 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/AvailableStatuses"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /referrals/{id}:
     get:
       operationId: getReferral
       summary: Get referral by ID
       description: Returns a single referral by UUID. The caller's firm must be the sending or receiving firm; otherwise 404.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Referral record
@@ -3184,14 +4456,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Referral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     put:
       operationId: updateReferral
       summary: Update a referral
@@ -3201,11 +4473,11 @@ paths:
         edit notes while the referral is DRAFT, SENT, REJECTED or WITHDRAWN; custom fields are receiver-only after
         signing); disallowed edits return 403. When both are supplied, attorneyFees must not exceed settlementAmount.
         Requires STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -3255,7 +4527,7 @@ paths:
                   type: string
                   maxLength: 200
                   nullable: true
-                sendingFirmPercentage: *ref_22
+                sendingFirmPercentage: *ref_12
                 settlementAmount:
                   type: number
                   minimum: 0
@@ -3272,7 +4544,7 @@ paths:
                   nullable: true
                 isRetainerSigned:
                   type: boolean
-                customFields: &ref_34
+                customFields: &ref_35
                   type: array
                   description: >-
                     Custom field values to set. Custom fields can only be updated by the receiving firm once the
@@ -3300,40 +4572,40 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Referral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": &ref_23
+        "400": *ref_19
+        "401": *ref_20
+        "403": &ref_24
           description: >-
             API key tier does not permit this action, the key is not firm-scoped (`wrong_scope`), or the calling firm is
             not the party allowed to perform this transition
-          content: *ref_14
-        "404": *ref_21
+          content: *ref_16
+        "404": *ref_23
     delete:
       operationId: deleteReferral
       summary: Delete a draft referral
       description: >-
         Permanently deletes a referral that is still in DRAFT status. Only the sending firm may delete. Requires FULL
         tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: full
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "204":
           description: Referral deleted (no content)
-        "400": &ref_24
+        "400": &ref_25
           description: >-
             Request validation failed, or the referral is not in a status that permits this transition (error code
             `invalid_state` or a validation error)
-          content: *ref_14
-        "401": *ref_18
-        "403": *ref_23
-        "404": *ref_21
+          content: *ref_16
+        "401": *ref_20
+        "403": *ref_24
+        "404": *ref_23
   /referrals/{id}/send:
     post:
       operationId: sendReferral
@@ -3341,11 +4613,11 @@ paths:
       description: >-
         Sends a DRAFT referral to a receiving firm, transitioning it to SENT. Only the sending firm may send. Requires
         STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -3360,7 +4632,7 @@ paths:
                   type: string
                   format: uuid
                   description: Receiving firm
-                notes: &ref_27
+                notes: &ref_28
                   type: string
                   maxLength: 10000
                   description: Optional note appended to the referral notes. Line breaks are collapsed to spaces.
@@ -3368,7 +4640,7 @@ paths:
                   type: string
                   maxLength: 5000
                   description: Optional note recorded on the resulting status-history entry. Line breaks are collapsed to spaces.
-      responses: &ref_25
+      responses: &ref_26
         "200":
           description: Updated referral
           content:
@@ -3378,14 +4650,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Referral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_24
-        "401": *ref_18
-        "403": *ref_23
-        "404": *ref_21
+        "400": *ref_25
+        "401": *ref_20
+        "403": *ref_24
+        "404": *ref_23
   /referrals/{id}/acknowledge:
     post:
       operationId: acknowledgeReferral
@@ -3394,11 +4666,11 @@ paths:
         Acknowledges receipt of a SENT referral, transitioning it to UNDER_EVALUATION (INVESTIGATING when the retainer
         was pre-signed) and unmasking client details for the receiving firm. Only the receiving firm may acknowledge.
         Requires STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: false
         content:
@@ -3407,12 +4679,12 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                reason: &ref_26
+                reason: &ref_27
                   type: string
                   minLength: 1
                   maxLength: 5000
                   description: Optional note recorded on the resulting status-history entry. Line breaks are collapsed to spaces.
-      responses: *ref_25
+      responses: *ref_26
   /referrals/{id}/begin-investigating:
     post:
       operationId: beginInvestigatingReferral
@@ -3420,11 +4692,11 @@ paths:
       description: >-
         Transitions a referral from UNDER_EVALUATION to INVESTIGATING. Only the receiving firm may do this. Requires
         STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: false
         content:
@@ -3433,13 +4705,13 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                reason: *ref_26
-                notes: *ref_27
-                phase: &ref_28
+                reason: *ref_27
+                notes: *ref_28
+                phase: &ref_29
                   type: string
                   maxLength: 100
                   description: Free-text case phase label.
-      responses: *ref_25
+      responses: *ref_26
   /referrals/{id}/sign:
     post:
       operationId: signReferral
@@ -3447,11 +4719,11 @@ paths:
       description: >-
         Records that the client signed a retainer, transitioning the referral to SIGNED. Optional resolution fields set
         at the same time are stored on the referral. Only the receiving firm may sign. Requires STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: false
         content:
@@ -3460,8 +4732,8 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                reason: *ref_26
-                notes: *ref_27
+                reason: *ref_27
+                notes: *ref_28
                 leadAttorneyName:
                   type: string
                   maxLength: 255
@@ -3475,7 +4747,7 @@ paths:
                   format: date
                   nullable: true
                   description: YYYY-MM-DD
-                clientFeeAgreementPercentage: &ref_29
+                clientFeeAgreementPercentage: &ref_30
                   type: number
                   minimum: 0
                   maximum: 1
@@ -3492,8 +4764,8 @@ paths:
                   minimum: 0
                   maximum: 1000000000
                   description: Projected settlement amount in dollars
-                phase: *ref_28
-      responses: *ref_25
+                phase: *ref_29
+      responses: *ref_26
   /referrals/{id}/start-litigation:
     post:
       operationId: startLitigationReferral
@@ -3501,11 +4773,11 @@ paths:
       description: >-
         Transitions a SIGNED referral to IN_LITIGATION. Optional financial fields set at the same time are stored on the
         referral. Only the receiving firm may do this. Requires STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: false
         content:
@@ -3514,9 +4786,9 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                reason: *ref_26
-                notes: *ref_27
-                clientFeeAgreementPercentage: *ref_29
+                reason: *ref_27
+                notes: *ref_28
+                clientFeeAgreementPercentage: *ref_30
                 attorneyFees:
                   type: number
                   minimum: 0
@@ -3532,8 +4804,8 @@ paths:
                   minimum: 0
                   maximum: 1000000000
                   description: Projected settlement amount in dollars
-                phase: *ref_28
-      responses: *ref_25
+                phase: *ref_29
+      responses: *ref_26
   /referrals/{id}/begin-closing:
     post:
       operationId: beginClosingReferral
@@ -3542,11 +4814,11 @@ paths:
         Transitions a SIGNED or IN_LITIGATION referral to CLOSING and records the outcome. `reason` is stored as the
         status-history note. When both are supplied, attorneyFees must not exceed settlementAmount. Only the receiving
         firm may do this. Requires STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -3564,7 +4836,7 @@ paths:
                     - lost
                     - no_longer_pursuing
                   description: Outcome type (case-insensitive)
-                reason: *ref_26
+                reason: *ref_27
                 closureReason:
                   type: string
                   minLength: 1
@@ -3576,7 +4848,7 @@ paths:
                   exclusiveMinimum: true
                   maximum: 1000000000
                   description: Final settlement amount in dollars; must be greater than zero when supplied
-                clientFeeAgreementPercentage: *ref_29
+                clientFeeAgreementPercentage: *ref_30
                 attorneyFees:
                   type: number
                   minimum: 0
@@ -3594,7 +4866,7 @@ paths:
                     - structured
                     - hybrid
                     - other
-      responses: *ref_25
+      responses: *ref_26
   /referrals/{id}/close:
     post:
       operationId: closeReferral
@@ -3602,11 +4874,11 @@ paths:
       description: >-
         Finalizes the closing workflow, transitioning CLOSING to CLOSED. The referral must already be in CLOSING (call
         begin-closing first); any other status returns 400 `invalid_state`. Requires STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -3621,8 +4893,8 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 5000
-                reason: *ref_26
-      responses: *ref_25
+                reason: *ref_27
+      responses: *ref_26
   /referrals/{id}/reject:
     post:
       operationId: rejectReferral
@@ -3630,11 +4902,11 @@ paths:
       description: >-
         Rejects a referral, transitioning it to REJECTED. A reason is required. Only the receiving firm may reject, and
         only from a status that permits it. Requires STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -3649,7 +4921,7 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 5000
-      responses: *ref_25
+      responses: *ref_26
   /referrals/{id}/withdraw:
     post:
       operationId: withdrawReferral
@@ -3657,11 +4929,11 @@ paths:
       description: >-
         Withdraws a referral, transitioning it to WITHDRAWN. A reason is required. Only the sending firm may withdraw,
         and only from a status that permits it. Requires STANDARD tier.
-      tags: *ref_15
-      security: *ref_16
+      tags: *ref_17
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -3676,7 +4948,7 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 5000
-      responses: *ref_25
+      responses: *ref_26
   /received-referrals:
     get:
       operationId: listReceivedReferrals
@@ -3687,12 +4959,12 @@ paths:
         populated) and may narrow to one receiving firm with `firmId`.
       tags:
         - Received Referrals
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_30
         - *ref_31
         - *ref_32
+        - *ref_33
         - in: query
           name: closingStatus
           schema:
@@ -3748,14 +5020,14 @@ paths:
                       $ref: "#/components/schemas/ReceivedReferralListItem"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /received-referrals/{id}/available-statuses:
     get:
       operationId: getReceivedReferralAvailableStatuses
@@ -3763,10 +5035,10 @@ paths:
       description: Receiver-perspective status transitions available on a received referral. `party` is always 'receiver'.
       tags:
         - Received Referrals
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - &ref_33
+        - &ref_34
           in: path
           name: id
           required: true
@@ -3789,14 +5061,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/AvailableStatuses"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /received-referrals/{id}:
     get:
       operationId: getReceivedReferral
@@ -3807,10 +5079,10 @@ paths:
         may read any firm's referrals.
       tags:
         - Received Referrals
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_33
+        - *ref_34
       responses:
         "200":
           description: Received referral detail
@@ -3821,14 +5093,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/ReceivedReferral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     patch:
       operationId: updateReceivedReferral
       summary: Update a received referral
@@ -3839,10 +5111,10 @@ paths:
         firm-scoped key (admin-global keys receive 403 `wrong_scope`) and STANDARD tier.
       tags:
         - Received Referrals
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_33
+        - *ref_34
       requestBody:
         required: true
         content:
@@ -3888,7 +5160,7 @@ paths:
                   type: string
                   maxLength: 200
                   nullable: true
-                sendingFirmPercentage: *ref_22
+                sendingFirmPercentage: *ref_12
                 settlementAmount:
                   type: number
                   minimum: 0
@@ -3899,7 +5171,7 @@ paths:
                   type: string
                   maxLength: 10000
                   nullable: true
-                customFields: *ref_34
+                customFields: *ref_35
       responses:
         "200":
           description: Updated received referral
@@ -3910,14 +5182,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/ReceivedReferral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_23
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_24
+        "404": *ref_23
   /status-updates/lookup:
     get:
       operationId: lookupStatusUpdates
@@ -3928,7 +5200,7 @@ paths:
         involving the caller's firm are returned (an empty list if there are none).
       tags:
         - Status Updates
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -3956,14 +5228,14 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/PublicStatusUpdate"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /status-updates:
     get:
       operationId: listStatusUpdates
@@ -3973,12 +5245,12 @@ paths:
         receiver, newest first.
       tags:
         - Status Updates
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_30
         - *ref_31
         - *ref_32
+        - *ref_33
         - in: query
           name: dateFrom
           schema:
@@ -4019,14 +5291,14 @@ paths:
                       $ref: "#/components/schemas/PublicStatusUpdate"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /messages/send:
     post:
       operationId: sendMessage
@@ -4038,7 +5310,7 @@ paths:
         change the other party can confirm. Requires STANDARD tier.
       tags:
         - Messages
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       requestBody:
         required: true
@@ -4095,28 +5367,32 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/PublicStatusUpdate"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_24
-        "401": *ref_18
-        "403": *ref_23
-        "404": *ref_21
+        "400": *ref_25
+        "401": *ref_20
+        "403": *ref_24
+        "404": *ref_23
   /webhooks:
     post:
       operationId: createWebhook
       summary: Create a webhook subscription
       description: >-
-        Registers an HTTPS endpoint to receive provider events. The response includes the signing `secret` — this is the
-        only time it is returned (apart from a later rotate-secret call), so store it immediately.
+        Registers an HTTPS endpoint to receive events. The response includes the signing `secret` — this is the only
+        time it is returned (apart from a later rotate-secret call), so store it immediately. The new subscription is
+        owned by whichever kind of key created it (a firm or a Med Xchange provider) — see the Webhooks tag.
 
 
-        Requires a provider-scoped API key and STANDARD tier.
+        Requires a firm-scoped (`cxp_*`) or provider-scoped (`cxpp_*`) API key at STANDARD tier or above.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
+      x-key-scope: &ref_36
+        - firm
+        - provider
       requestBody:
         required: true
         content:
@@ -4131,7 +5407,9 @@ paths:
                   type: string
                   format: uri
                   maxLength: 2048
-                  description: Delivery endpoint. Must use `https://`.
+                  description: >-
+                    Delivery endpoint. Must use `https://` on port 443, carry no embedded credentials, and resolve to a
+                    public IP address.
                 description:
                   type: string
                   maxLength: 255
@@ -4145,28 +5423,37 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/WebhookSubscriptionWithSecret"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": &ref_35
-          description: API key tier does not permit this action, or the key is not provider-scoped (`wrong_scope`)
-          content: *ref_14
+        "400":
+          description: >-
+            Request validation failed, the URL failed the HTTPS/reachability check (`invalid_webhook_url`), or the owner
+            already has 5 active subscriptions (`subscription_limit_reached`)
+          content: *ref_16
+        "401": *ref_20
+        "403": &ref_38
+          description: >-
+            Either the key's tier is below `standard` (`insufficient_tier`), or the key cannot manage webhooks: an admin
+            key, a Salesforce `cxsf_*` token, or an MCP-issued key (`wrong_scope`)
+          content: *ref_16
     get:
       operationId: listWebhooks
       summary: List webhook subscriptions
       description: >-
-        Returns the provider's active (non-deleted) webhook subscriptions, paginated. Requires a provider-scoped API
-        key.
+        Returns the calling key's own webhook subscriptions, paginated — including ones that are deactivated (`isActive:
+        false`, whether you switched them off or the circuit breaker did); only deleted subscriptions are excluded. A
+        subscription in echo mode reports your own endpoint in `url` and `isEchoActive: true`. Requires a firm-scoped
+        (`cxp_*`) or provider-scoped (`cxpp_*`) API key.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
+      x-key-scope: *ref_36
       parameters:
-        - *ref_30
         - *ref_31
+        - *ref_32
       responses:
         "200":
           description: Paginated subscriptions
@@ -4181,27 +5468,33 @@ paths:
                       $ref: "#/components/schemas/WebhookSubscription"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_35
+        "400": *ref_19
+        "401": *ref_20
+        "403": &ref_37
+          description: >-
+            The key cannot manage webhooks: an admin key, a Salesforce `cxsf_*` token (authenticates as firm context but
+            is not webhook-capable), or an MCP-issued key (`wrong_scope`)
+          content: *ref_16
   /webhooks/{id}:
     get:
       operationId: getWebhookById
       summary: Get a webhook subscription
       description: >-
-        Returns a single subscription owned by the calling provider. The secret is never included. Requires a
-        provider-scoped API key.
+        Returns a single subscription owned by the calling key. Neither the signing `secret` nor the echo token is ever
+        included: in echo mode `url` still reports your own endpoint and `isEchoActive` is true. Requires a firm-scoped
+        (`cxp_*`) or provider-scoped (`cxpp_*`) API key.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Subscription
@@ -4212,25 +5505,26 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/WebhookSubscription"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_37
+        "404": *ref_23
     patch:
       operationId: updateWebhook
       summary: Update a webhook subscription
       description: >-
         Updates the URL, description and/or active flag. At least one field is required; unknown fields are rejected.
-        Requires a provider-scoped API key and STANDARD tier.
+        Requires a firm-scoped (`cxp_*`) or provider-scoped (`cxpp_*`) API key at STANDARD tier or above.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -4244,7 +5538,7 @@ paths:
                   type: string
                   format: uri
                   maxLength: 2048
-                  description: Must use `https://`
+                  description: Must use `https://` on port 443, carry no embedded credentials, and resolve to a public IP address.
                 description:
                   type: string
                   maxLength: 255
@@ -4262,47 +5556,55 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/WebhookSubscription"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+        "400":
+          description: >-
+            Request validation failed, the new URL failed the HTTPS/reachability check (`invalid_webhook_url`), the URL
+            was changed while echo mode is active (`echo_mode_active` — disable echo mode first), or reactivating via
+            `isActive: true` would exceed 5 active subscriptions (`subscription_limit_reached`)
+          content: *ref_16
+        "401": *ref_20
+        "403": *ref_38
+        "404": *ref_23
     delete:
       operationId: deleteWebhook
       summary: Delete a webhook subscription
       description: >-
-        Soft-deletes the subscription; no further deliveries are attempted. Requires a provider-scoped API key and
-        STANDARD tier.
+        Soft-deletes the subscription; no further deliveries are attempted. Requires a firm-scoped (`cxp_*`) or
+        provider-scoped (`cxpp_*`) API key at STANDARD tier or above.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "204":
           description: Subscription deleted (no content)
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_38
+        "404": *ref_23
   /webhooks/{id}/deliveries:
     get:
       operationId: listWebhookDeliveries
       summary: List deliveries for a webhook subscription
       description: >-
-        Returns the delivery attempts recorded for the subscription, newest first, paginated. Requires a provider-scoped
-        API key.
+        Returns the delivery attempts recorded for the subscription, newest first, paginated. `payload` is never
+        included — use echo mode to inspect what would be sent. Requires a firm-scoped (`cxp_*`) or provider-scoped
+        (`cxpp_*`) API key.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
-        - *ref_30
+        - *ref_22
         - *ref_31
+        - *ref_32
       responses:
         "200":
           description: Paginated deliveries
@@ -4317,29 +5619,31 @@ paths:
                       $ref: "#/components/schemas/WebhookDelivery"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_37
+        "404": *ref_23
   /webhooks/{id}/test:
     post:
       operationId: testWebhook
       summary: Send a test event
       description: >-
         Queues a synthetic `webhook.test` event to the subscription and returns the delivery record. The HTTP attempt
-        runs asynchronously — poll the deliveries list for its outcome. Requires a provider-scoped API key and STANDARD
-        tier.
+        runs asynchronously — poll the deliveries list for its outcome. An **inactive** subscription is refused with
+        `409 subscription_inactive`: reactivate it first, because a paused subscription never puts a request on the
+        wire. Requires a firm-scoped (`cxp_*`) or provider-scoped (`cxpp_*`) API key at STANDARD tier or above.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Queued test delivery
@@ -4350,27 +5654,34 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/WebhookDelivery"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_38
+        "404": *ref_23
+        "409":
+          description: >-
+            The subscription is inactive and cannot receive a test event (`subscription_inactive`). Reactivate it and
+            retry.
+          content: *ref_16
   /webhooks/{id}/rotate-secret:
     post:
       operationId: rotateWebhookSecret
       summary: Rotate the signing secret
       description: >-
-        Generates a new HMAC secret for the subscription and returns it. The previous secret stops validating
-        immediately. This and create are the only responses that expose the secret. Requires a provider-scoped API key
-        and STANDARD tier.
+        Generates a new HMAC secret for the subscription and returns it. Outbound deliveries — including retries of
+        deliveries created before the rotation — are signed with the new secret immediately; the previous one never
+        signs again. This and create are the only responses that expose the secret. Requires a firm-scoped (`cxp_*`) or
+        provider-scoped (`cxpp_*`) API key at STANDARD tier or above.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Subscription with its new secret
@@ -4381,31 +5692,38 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/WebhookSubscriptionWithSecret"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_38
+        "404": *ref_23
   /webhooks/{id}/echo/enable:
     post:
       operationId: enableWebhookEcho
       summary: Enable echo mode
       description: >-
         Redirects the subscription to a CaseXchange-hosted echo endpoint so you can inspect exactly what would be
-        delivered (headers, raw body, signature check) via the captures endpoint. The original URL is kept in
-        `originalUrl` and restored by echo/disable. Idempotent: calling again returns the existing echo URL/token.
+        delivered (headers, raw body, signature check) via the captures endpoint. Your endpoint is kept in `originalUrl`
+        and restored by echo/disable. Idempotent: calling again returns the existing echo URL/token.
 
 
-        Returns `400 echo_requires_active` when the subscription is inactive. Requires a provider-scoped API key and
-        STANDARD tier.
+        This is the only response that contains the echo URL and its `echoToken`. The reads (`GET /webhooks`, `GET
+        /webhooks/{id}`) keep reporting your own endpoint in `url` — and mirror it in `originalUrl` — with
+        `isEchoActive: true`, because the token authorises unauthenticated posts to the echo ingest. Call this endpoint
+        again if you need the URL back.
+
+
+        Returns `400 echo_requires_active` when the subscription is inactive. Requires a firm-scoped (`cxp_*`) or
+        provider-scoped (`cxpp_*`) API key at STANDARD tier or above.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Echo mode enabled
@@ -4416,29 +5734,30 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/WebhookEchoEnableResult"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
         "400":
           description: Subscription is inactive (`echo_requires_active`)
-          content: *ref_14
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+          content: *ref_16
+        "401": *ref_20
+        "403": *ref_38
+        "404": *ref_23
   /webhooks/{id}/echo/disable:
     post:
       operationId: disableWebhookEcho
       summary: Disable echo mode
       description: >-
-        Restores the original delivery URL and clears the echo token. Requires a provider-scoped API key and STANDARD
-        tier.
+        Restores the original delivery URL and clears the echo token; a no-op if echo mode is already off. Requires a
+        firm-scoped (`cxp_*`) or provider-scoped (`cxpp_*`) API key at STANDARD tier or above.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Echo mode disabled
@@ -4451,28 +5770,29 @@ paths:
                     nullable: true
                     type: object
                     description: Always null
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_38
+        "404": *ref_23
   /webhooks/{id}/echo/captures:
     get:
       operationId: listWebhookEchoCaptures
       summary: List echo captures
       description: >-
-        Returns the requests captured by the echo endpoint while echo mode was enabled, paginated. Requires a
-        provider-scoped API key.
+        Returns the requests captured by the echo endpoint while echo mode was enabled, paginated, with the full request
+        body (unlike the deliveries list). Requires a firm-scoped (`cxp_*`) or provider-scoped (`cxpp_*`) API key.
       tags:
         - Webhooks
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
+      x-key-scope: *ref_36
       parameters:
-        - *ref_20
-        - *ref_30
+        - *ref_22
         - *ref_31
+        - *ref_32
       responses:
         "200":
           description: Paginated captures
@@ -4487,15 +5807,17 @@ paths:
                       $ref: "#/components/schemas/WebhookEchoCapture"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_35
-        "404": *ref_21
+        "400":
+          description: Request validation failed, or echo mode is not active for this subscription (`echo_not_active`)
+          content: *ref_16
+        "401": *ref_20
+        "403": *ref_37
+        "404": *ref_23
   /network/pending:
     get:
       operationId: listPendingNetworkRelationships
@@ -4506,7 +5828,7 @@ paths:
         firm-scoped API key.
       tags:
         - Network
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -4520,14 +5842,14 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/PendingRelationship"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": &ref_36
+        "401": *ref_20
+        "403": &ref_39
           description: API key tier does not permit this action, or the key is not firm-scoped (`wrong_scope`)
-          content: *ref_14
+          content: *ref_16
   /network/outbound/{firmId}:
     get:
       operationId: getOutboundNetworkFirm
@@ -4538,10 +5860,10 @@ paths:
         included. Requires a firm-scoped API key.
       tags:
         - Network
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - &ref_37
+        - &ref_40
           in: path
           name: firmId
           required: true
@@ -4559,16 +5881,16 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/NetworkFirmDetail"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
         "404":
           description: Firm not found (`firm_not_found`)
-          content: *ref_14
+          content: *ref_16
     put:
       operationId: putOutboundNetworkFirm
       summary: Create or update an outbound relationship
@@ -4581,10 +5903,10 @@ paths:
         for the global testing firm. Requires a firm-scoped API key and STANDARD tier.
       tags:
         - Network
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_37
+        - *ref_40
       requestBody:
         required: true
         content:
@@ -4619,16 +5941,16 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/NetworkFirmDetail"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
         "404":
           description: Firm not found (`firm_not_found`)
-          content: *ref_14
+          content: *ref_16
     patch:
       operationId: patchOutboundNetworkFirm
       summary: Update an outbound relationship
@@ -4637,10 +5959,10 @@ paths:
         relationship_not_found` when no outbound relationship exists. Requires a firm-scoped API key and STANDARD tier.
       tags:
         - Network
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_37
+        - *ref_40
       requestBody:
         required: true
         content:
@@ -4676,16 +5998,16 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/NetworkFirmDetail"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
         "404":
           description: Firm or relationship not found (`firm_not_found`, `relationship_not_found`)
-          content: *ref_14
+          content: *ref_16
   /network/inbound/{firmId}:
     get:
       operationId: getInboundNetworkFirm
@@ -4696,10 +6018,10 @@ paths:
         firm-scoped API key.
       tags:
         - Network
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_37
+        - *ref_40
       responses:
         "200":
           description: Firm detail with inbound relationship
@@ -4710,16 +6032,16 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/NetworkFirmDetail"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
         "404":
           description: Firm not found (`firm_not_found`)
-          content: *ref_14
+          content: *ref_16
     patch:
       operationId: patchInboundNetworkFirm
       summary: Update or accept/reject an inbound relationship
@@ -4729,10 +6051,10 @@ paths:
         relationship_not_found` when no inbound relationship exists. Requires a firm-scoped API key and STANDARD tier.
       tags:
         - Network
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_37
+        - *ref_40
       requestBody:
         required: true
         content:
@@ -4765,16 +6087,16 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/NetworkFirmDetail"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
         "404":
           description: Firm or relationship not found (`firm_not_found`, `relationship_not_found`)
-          content: *ref_14
+          content: *ref_16
   /external-links/list:
     get:
       operationId: listExternalLinks
@@ -4784,7 +6106,7 @@ paths:
         the status transitions the caller may perform. Requires a firm-scoped API key.
       tags:
         - External Links
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -4792,10 +6114,10 @@ paths:
           required: true
           schema:
             type: string
-            enum: *ref_38
+            enum: *ref_41
           description: External system to list links for
-        - *ref_30
         - *ref_31
+        - *ref_32
       responses:
         "200":
           description: Paginated links
@@ -4810,14 +6132,14 @@ paths:
                       $ref: "#/components/schemas/ExternalCaseLinkLookup"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
   /external-links:
     get:
       operationId: lookupExternalLink
@@ -4831,7 +6153,7 @@ paths:
         API key.
       tags:
         - External Links
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -4839,7 +6161,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: *ref_38
+            enum: *ref_41
         - in: query
           name: externalId
           required: true
@@ -4858,13 +6180,13 @@ paths:
                   - $ref: "#/components/schemas/ExternalCaseLinkLookup"
                   - type: object
                     properties:
-                      meta: *ref_12
+                      meta: *ref_14
                     required:
                       - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
+        "404": *ref_23
     post:
       operationId: createExternalLink
       summary: Create an external link
@@ -4878,7 +6200,7 @@ paths:
         firm-scoped API key and STANDARD tier.
       tags:
         - External Links
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       requestBody:
         required: true
@@ -4897,7 +6219,7 @@ paths:
                   format: uuid
                 externalSystem:
                   type: string
-                  enum: *ref_38
+                  enum: *ref_41
                 externalId:
                   type: string
                   minLength: 1
@@ -4916,13 +6238,13 @@ paths:
                   - $ref: "#/components/schemas/ExternalCaseLink"
                   - type: object
                     properties:
-                      meta: *ref_12
+                      meta: *ref_14
                     required:
                       - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
+        "404": *ref_23
         "409":
           description: Referral already has an active link for this system (`external_link_conflict`)
           content:
@@ -4947,7 +6269,7 @@ paths:
                     required:
                       - code
                       - message
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - error
                   - meta
@@ -4961,13 +6283,13 @@ paths:
         `meta`. Requires a firm-scoped API key and STANDARD tier.
       tags:
         - External Links
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
         - in: path
           name: id
           required: true
-          schema: *ref_39
+          schema: *ref_42
           description: UUID of the link being replaced
       requestBody:
         required: true
@@ -4986,7 +6308,7 @@ paths:
                   format: uuid
                 externalSystem:
                   type: string
-                  enum: *ref_38
+                  enum: *ref_41
                 externalId:
                   type: string
                   minLength: 1
@@ -5005,13 +6327,13 @@ paths:
                   - $ref: "#/components/schemas/ExternalCaseLink"
                   - type: object
                     properties:
-                      meta: *ref_12
+                      meta: *ref_14
                     required:
                       - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
+        "404": *ref_23
   /external-links/{id}:
     delete:
       operationId: deleteExternalLink
@@ -5019,16 +6341,16 @@ paths:
       description: Soft-deletes the link. Requires a firm-scoped API key and STANDARD tier.
       tags:
         - External Links
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "204":
           description: Link deleted (no content)
-        "401": *ref_18
-        "403": *ref_36
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_39
+        "404": *ref_23
   /me:
     get:
       operationId: getMe
@@ -5038,7 +6360,7 @@ paths:
         use it to verify a key and discover whether its tier is sufficient before making other requests.
       tags:
         - Account
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -5050,15 +6372,15 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Me"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_36
+        "401": *ref_20
+        "403": *ref_39
         "404":
           description: The firm the key belongs to no longer exists (`firm_not_found`)
-          content: *ref_14
+          content: *ref_16
   /sso-links:
     post:
       operationId: mintSsoLink
@@ -5072,7 +6394,7 @@ paths:
         **Provider-scoped keys only** (`cxpp_*`) — firm-scoped keys receive `403 wrong_scope`. Requires STANDARD tier.
       tags:
         - SSO
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       requestBody:
         required: true
@@ -5107,13 +6429,15 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SsoLink"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_35
+        "400": *ref_19
+        "401": *ref_20
+        "403":
+          description: API key tier does not permit this action, or the key is not provider-scoped (`wrong_scope`)
+          content: *ref_16
   /extension/telemetry/selector-miss:
     post:
       operationId: recordExtensionSelectorMiss
@@ -5123,7 +6447,7 @@ paths:
         detected. STANDARD tier is required because POSTs are rate-classified as writes. Requires a firm-scoped API key.
       tags:
         - Extension
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       requestBody:
         required: true
@@ -5168,9 +6492,9 @@ paths:
       responses:
         "204":
           description: Recorded (no content)
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
   /analytics/export:
     get:
       operationId: exportAllAnalytics
@@ -5184,7 +6508,7 @@ paths:
         Limited to 10 export requests per API key per minute in addition to tier rate limits.
       tags:
         - Export
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -5259,10 +6583,10 @@ paths:
               schema:
                 type: string
                 format: binary
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_36
-        "429": &ref_40
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_39
+        "429": &ref_43
           description: >-
             Export rate limit exceeded (`export_rate_limit_exceeded`) — at most 10 export requests per API key per
             sliding 60-second window. `Retry-After` carries the seconds until the window frees up.
@@ -5271,7 +6595,7 @@ paths:
               schema:
                 type: integer
               description: Seconds to wait before retrying
-          content: *ref_14
+          content: *ref_16
   /analytics/{category}/export:
     get:
       operationId: exportAnalyticsCategory
@@ -5285,7 +6609,7 @@ paths:
         Limited to 10 export requests per API key per minute in addition to tier rate limits.
       tags:
         - Export
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -5377,10 +6701,10 @@ paths:
                 format: binary
         "400":
           description: Request validation failed or unknown category (`invalid_category`)
-          content: *ref_14
-        "401": *ref_18
-        "403": *ref_36
-        "429": *ref_40
+          content: *ref_16
+        "401": *ref_20
+        "403": *ref_39
+        "429": *ref_43
   /cases/export:
     get:
       operationId: exportCases
@@ -5395,7 +6719,7 @@ paths:
         filters and retry. Limited to 10 export requests per API key per minute in addition to tier rate limits.
       tags:
         - Export
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -5498,10 +6822,10 @@ paths:
                 format: binary
         "400":
           description: Request validation failed or result set exceeds 50,000 rows (`export_row_limit_exceeded`)
-          content: *ref_14
-        "401": *ref_18
-        "403": *ref_36
-        "429": *ref_40
+          content: *ref_16
+        "401": *ref_20
+        "403": *ref_39
+        "429": *ref_43
   /health:
     get:
       operationId: getPublicApiHealth
@@ -5528,7 +6852,7 @@ paths:
       description: Returns all active case types available for creating referrals.
       tags:
         - Reference Data
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -5542,12 +6866,12 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/CaseType"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /case-types/{id}/fields:
     get:
       operationId: listCaseTypeFields
@@ -5555,13 +6879,13 @@ paths:
       description: Returns the custom field definitions configured for a case type, in display order.
       tags:
         - Reference Data
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
           name: id
           required: true
-          schema: *ref_39
+          schema: *ref_42
           description: Case type UUID
       responses:
         "200":
@@ -5575,13 +6899,13 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/CaseTypeField"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /jurisdictions:
     get:
       operationId: listJurisdictions
@@ -5589,7 +6913,7 @@ paths:
       description: Returns all jurisdictions (US states and territories) supported by the platform.
       tags:
         - Reference Data
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -5610,12 +6934,12 @@ paths:
                         name:
                           type: string
                           example: New York
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /counties:
     get:
       operationId: listCounties
@@ -5623,7 +6947,7 @@ paths:
       description: Returns counties, optionally filtered by one or more jurisdiction codes (comma-separated).
       tags:
         - Reference Data
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -5652,12 +6976,12 @@ paths:
                           type: string
                         jurisdictionCode:
                           type: string
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /firms/directory:
     get:
       operationId: listFirmDirectory
@@ -5665,7 +6989,7 @@ paths:
       description: Returns a directory of all active firms on the platform.
       tags:
         - Firms
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -5679,12 +7003,12 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Firm"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /firms/me:
     get:
       operationId: getOwnFirm
@@ -5692,7 +7016,7 @@ paths:
       description: Returns the firm associated with the API key making the request.
       tags:
         - Firms
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -5704,19 +7028,19 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Firm"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
     put:
       operationId: updateOwnFirm
       summary: Update the caller's firm
       description: Updates editable fields on the API key's own firm. Requires FULL tier.
       tags:
         - Firms
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       requestBody:
         required: true
@@ -5750,13 +7074,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Firm"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /firms/available:
     get:
       operationId: listAvailableFirms
@@ -5766,7 +7090,7 @@ paths:
         directory access. Requesting a source your firm cannot see returns 403 `directory_access_denied`.
       tags:
         - Firms
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -5808,14 +7132,14 @@ paths:
                       $ref: "#/components/schemas/AvailableFirm"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
+        "401": *ref_20
         "403":
           description: Tier does not permit this action, or `directory_access_denied`
-          content: *ref_14
+          content: *ref_16
   /firms/{id}:
     get:
       operationId: getFirmById
@@ -5823,10 +7147,10 @@ paths:
       description: Returns a single firm by its UUID.
       tags:
         - Firms
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Firm record
@@ -5837,13 +7161,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Firm"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /cases:
     get:
       operationId: listCases
@@ -5853,11 +7177,11 @@ paths:
         keyword search.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_30
         - *ref_31
+        - *ref_32
         - in: query
           name: status
           schema:
@@ -5934,19 +7258,19 @@ paths:
                         type: integer
                       limit:
                         type: integer
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
     post:
       operationId: createCase
       summary: Create a case
       description: Creates a new case referral. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       requestBody:
         required: true
@@ -6016,13 +7340,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /cases/{id}:
     get:
       operationId: getCaseById
@@ -6030,10 +7354,10 @@ paths:
       description: Returns a single case by UUID.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Case record
@@ -6044,23 +7368,23 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     put:
       operationId: updateCase
       summary: Update a case
       description: Updates editable fields on a case. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -6106,30 +7430,30 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     delete:
       operationId: deleteCase
       summary: Delete a case
       description: Permanently deletes a DRAFT case. Requires FULL tier.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "204":
           description: Case deleted (no content)
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /cases/{id}/status-history:
     get:
       operationId: getCaseStatusHistory
@@ -6137,10 +7461,10 @@ paths:
       description: Returns all historical status transitions for a case.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Status history
@@ -6167,13 +7491,13 @@ paths:
                           format: date-time
                         createdBy:
                           type: string
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /cases/{id}/acknowledge:
     post:
       operationId: acknowledgeCase
@@ -6183,10 +7507,10 @@ paths:
         when the retainer was pre-signed). Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Acknowledged case
@@ -6197,13 +7521,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /cases/{id}/status:
     post:
       operationId: updateCaseStatus
@@ -6211,10 +7535,10 @@ paths:
       description: Transitions a case to a new status. Invalid transitions are rejected. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -6257,14 +7581,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /cases/{id}/close:
     post:
       operationId: closeCase
@@ -6272,10 +7596,10 @@ paths:
       description: Initiates the closing workflow for a case. Requires STANDARD tier.
       tags:
         - Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -6311,14 +7635,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Case"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /cases/{caseId}/documents:
     get:
       operationId: listDocuments
@@ -6326,7 +7650,7 @@ paths:
       description: Returns all documents attached to the specified case.
       tags:
         - Documents
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -6348,13 +7672,13 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Document"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     post:
       operationId: uploadDocument
       summary: Upload a document
@@ -6363,7 +7687,7 @@ paths:
         size 50 MB.
       tags:
         - Documents
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
         - in: path
@@ -6396,13 +7720,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/Document"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /cases/{caseId}/documents/{docId}/download:
     get:
       operationId: getDocumentDownloadUrl
@@ -6410,7 +7734,7 @@ paths:
       description: Returns a short-lived pre-signed S3 URL for downloading the specified document.
       tags:
         - Documents
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -6444,13 +7768,13 @@ paths:
                       expiresAt:
                         type: string
                         format: date-time
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /cases/{caseId}/documents/{docId}:
     delete:
       operationId: deleteDocument
@@ -6458,7 +7782,7 @@ paths:
       description: Permanently deletes the specified document from the case and S3. Requires FULL tier.
       tags:
         - Documents
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       parameters:
         - in: path
@@ -6478,9 +7802,9 @@ paths:
       responses:
         "204":
           description: Document deleted (no content)
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /users:
     get:
       operationId: listUsers
@@ -6488,11 +7812,11 @@ paths:
       description: Returns all users belonging to the API key's own firm.
       tags:
         - Users
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_30
         - *ref_31
+        - *ref_32
       responses:
         "200":
           description: User list
@@ -6505,19 +7829,19 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/User"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
     post:
       operationId: inviteUser
       summary: Invite a user
       description: Invites a new user to the caller's firm. Requires FULL tier.
       tags:
         - Users
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       requestBody:
         required: true
@@ -6551,13 +7875,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/User"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /users/{id}:
     delete:
       operationId: deactivateUser
@@ -6565,26 +7889,26 @@ paths:
       description: Deactivates a user in the caller's firm. Users are never hard-deleted. Requires FULL tier.
       tags:
         - Users
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "204":
           description: User deactivated (no content)
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     put:
       operationId: updateUser
       summary: Update a user
       description: Updates a user in the caller's firm. Requires FULL tier.
       tags:
         - Users
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -6610,14 +7934,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/User"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /sent-cases:
     get:
       operationId: listSentCases
@@ -6625,11 +7949,11 @@ paths:
       description: Paginated list of cases owned by the caller's firm, each with its most-recent referral.
       tags:
         - Sent Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_30
         - *ref_31
+        - *ref_32
         - name: status
           in: query
           schema:
@@ -6693,13 +8017,13 @@ paths:
                       $ref: "#/components/schemas/SentCaseListItem"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
     post:
       operationId: createSentCase
       summary: Create a sent case
@@ -6709,7 +8033,7 @@ paths:
         round-robin pointer. Requires STANDARD tier.
       tags:
         - Sent Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       requestBody:
         required: true
@@ -6806,16 +8130,16 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SentCase"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
         "409":
           description: A referral for this Salesforce record already exists
-          content: *ref_14
+          content: *ref_16
   /sent-cases/{id}:
     get:
       operationId: getSentCase
@@ -6825,10 +8149,10 @@ paths:
         reference number, or Salesforce id.
       tags:
         - Sent Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Sent case detail
@@ -6839,23 +8163,23 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SentCase"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     patch:
       operationId: updateSentCase
       summary: Update a sent case
       description: Updates sender-editable fields (tier, source, Salesforce ids, client info, note). Requires STANDARD tier.
       tags:
         - Sent Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -6919,14 +8243,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SentCase"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /sent-cases/{id}/available-statuses:
     get:
       operationId: getSentCaseAvailableStatuses
@@ -6934,10 +8258,10 @@ paths:
       description: Sender-perspective status transitions available on the case's most-recent referral.
       tags:
         - Sent Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "200":
           description: Available transitions
@@ -6958,13 +8282,13 @@ paths:
                         type: array
                         items:
                           type: object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /sent-cases/{id}/refer:
     post:
       operationId: referSentCase
@@ -6974,10 +8298,10 @@ paths:
         (from GET /routing/re-refer) to advance the round-robin pointer. Requires STANDARD tier.
       tags:
         - Sent Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -7014,14 +8338,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SentCase"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /routing/evaluate:
     get:
       operationId: evaluateRouting
@@ -7032,7 +8356,7 @@ paths:
         does NOT advance the pointer. Requires the firm to have routing-rule management enabled.
       tags:
         - Routing
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - name: caseType
@@ -7074,13 +8398,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/RoutingEvaluation"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /routing/re-refer:
     get:
       operationId: evaluateReReferRouting
@@ -7091,7 +8415,7 @@ paths:
         Requires the firm to have routing-rule management enabled.
       tags:
         - Routing
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - name: caseId
@@ -7117,13 +8441,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/RoutingEvaluation"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /routing/rules:
     get:
       operationId: listRoutingRules
@@ -7131,7 +8455,7 @@ paths:
       description: Returns the referral routing rules configured for the caller's firm.
       tags:
         - Routing
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -7145,19 +8469,19 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/RoutingRule"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
     post:
       operationId: createRoutingRule
       summary: Create a routing rule
       description: Creates a new referral routing rule for the firm. Requires FULL tier.
       tags:
         - Routing
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       requestBody:
         required: true
@@ -7195,13 +8519,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/RoutingRule"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /routing/rules/{id}:
     put:
       operationId: updateRoutingRule
@@ -7209,10 +8533,10 @@ paths:
       description: Updates an existing routing rule. Requires FULL tier.
       tags:
         - Routing
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       parameters:
-        - *ref_20
+        - *ref_22
       requestBody:
         required: true
         content:
@@ -7244,30 +8568,30 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/RoutingRule"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     delete:
       operationId: deleteRoutingRule
       summary: Delete a routing rule
       description: Deletes a routing rule. Requires FULL tier.
       tags:
         - Routing
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       parameters:
-        - *ref_20
+        - *ref_22
       responses:
         "204":
           description: Rule deleted (no content)
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /analytics/dashboard:
     get:
       operationId: getDashboard
@@ -7275,7 +8599,7 @@ paths:
       description: Returns high-level referral analytics for the caller's firm.
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -7288,12 +8612,12 @@ paths:
                   data:
                     type: object
                     description: Dashboard metrics object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /analytics/cases:
     get:
       operationId: getCaseAnalytics
@@ -7301,7 +8625,7 @@ paths:
       description: Returns case-level analytics with optional date range filtering.
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -7325,12 +8649,12 @@ paths:
                   data:
                     type: object
                     description: Case analytics metrics
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /analytics/sent:
     get:
       operationId: getSentAnalytics
@@ -7342,7 +8666,7 @@ paths:
         tz).
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -7358,26 +8682,28 @@ paths:
                       Sent-referral analytics object. Documented here (partially): warmTransfer; other sections (kpis,
                       currentStageBreakdown, trend, trendStats, outcomesOfSent, outcomesOfSigned,
                       referralLooksDistribution, signedCasesByReferralAttempt, topSigningFirms,
-                      topCaseTypeJurisdictions) are returned as-is. trendStats carries the same volume as the raw daily
-                      `trend`, regrouped into a dense day/week/month-bucketed series over [rangeStart, rangeEnd] whose
-                      bucket size follows the window span, plus the window total, the mean per bucket, the busiest
-                      bucket, and the immediately preceding same-length window's totals when a referral date range is
-                      active. An empty bucket carries a count of 0 (a real zero, unlike the duration trends' null). When
-                      no date range is requested and a run of volume sits stranded far from the rest of the data — a
-                      legacy import dated decades before everything else, which would otherwise stretch the axis across
-                      those decades — the range narrows to where the data lives and the stranded volume is reported in
+                      topCaseTypeJurisdictions) are returned as-is. topSigningFirms ranks receiving firms by cases whose
+                      most recent referral is currently signed, in litigation or closing; since 2026-09-08 closed, won
+                      and lost cases are not counted. trendStats carries the same volume as the raw daily `trend`,
+                      regrouped into a dense day/week/month-bucketed series over [rangeStart, rangeEnd] whose bucket
+                      size follows the window span, plus the window total, the mean per bucket, the busiest bucket, and
+                      the immediately preceding same-length window's totals when a referral date range is active. An
+                      empty bucket carries a count of 0 (a real zero, unlike the duration trends' null). When no date
+                      range is requested and a run of volume sits stranded far from the rest of the data — a legacy
+                      import dated decades before everything else, which would otherwise stretch the axis across those
+                      decades — the range narrows to where the data lives and the stranded volume is reported in
                       `excluded` instead: it stays in `total` but is out of `trend`, `avgPerBucket` and `peak`, so
                       sum(trend) + excluded.count === total. `excluded` is null in the normal case, and an explicitly
                       requested range is never narrowed.
                     properties:
                       warmTransfer:
                         $ref: "#/components/schemas/WarmTransferAnalytics"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /analytics/received:
     get:
       operationId: getReceivedAnalytics
@@ -7389,7 +8715,7 @@ paths:
         ranges, case type, jurisdiction, tz).
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -7424,12 +8750,12 @@ paths:
                     properties:
                       warmTransfer:
                         $ref: "#/components/schemas/WarmTransferAnalytics"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /analytics/homepage:
     get:
       operationId: getHomepageAnalytics
@@ -7437,7 +8763,7 @@ paths:
       description: The summary metrics shown on the CaseXchange homepage for the caller's firm.
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -7456,12 +8782,12 @@ paths:
                   data:
                     type: object
                     description: Homepage analytics object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /analytics/cases-by-status:
     get:
       operationId: listCasesByStatus
@@ -7471,7 +8797,7 @@ paths:
         acknowledgment)" for SENT cases viewed from the received side.
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: query
@@ -7512,13 +8838,13 @@ paths:
                     items:
                       type: object
                       description: Case summary row
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /analytics/revenue-received:
     get:
       operationId: getRevenueReceivedAnalytics
@@ -7528,9 +8854,9 @@ paths:
         query filters.
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
-      parameters: &ref_41
+      parameters: &ref_44
         - in: query
           name: referralStartDate
           schema:
@@ -7585,12 +8911,12 @@ paths:
                   data:
                     type: object
                     description: Received-revenue analytics object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /analytics/revenue-sent:
     get:
       operationId: getRevenueSentAnalytics
@@ -7600,9 +8926,9 @@ paths:
         filters.
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
-      parameters: *ref_41
+      parameters: *ref_44
       responses:
         "200":
           description: Sent-revenue analytics object
@@ -7614,12 +8940,12 @@ paths:
                   data:
                     type: object
                     description: Sent-revenue analytics object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /analytics/referrals:
     get:
       operationId: getReferralsAnalytics
@@ -7627,9 +8953,9 @@ paths:
       description: Referral volume and flow analytics across both directions. Supports the shared extended-analytics query filters.
       tags:
         - Analytics
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
-      parameters: *ref_41
+      parameters: *ref_44
       responses:
         "200":
           description: Referral analytics object
@@ -7641,12 +8967,12 @@ paths:
                   data:
                     type: object
                     description: Referral analytics object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /notifications/preferences:
     get:
       operationId: getNotificationPreferences
@@ -7654,7 +8980,7 @@ paths:
       description: Returns the notification preferences for the caller's firm.
       tags:
         - Notifications
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -7667,19 +8993,19 @@ paths:
                   data:
                     type: object
                     description: Notification preferences object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
     put:
       operationId: updateNotificationPreferences
       summary: Update notification preferences
       description: Updates the notification preferences for the caller's firm. Requires FULL tier.
       tags:
         - Notifications
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       requestBody:
         required: true
@@ -7698,13 +9024,13 @@ paths:
                 properties:
                   data:
                     type: object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /notifications/emails:
     get:
       operationId: listNotificationEmails
@@ -7712,7 +9038,7 @@ paths:
       description: Returns all notification email addresses configured for the caller's firm.
       tags:
         - Notifications
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       responses:
         "200":
@@ -7730,19 +9056,19 @@ paths:
                         email:
                           type: string
                           format: email
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
     post:
       operationId: addNotificationEmail
       summary: Add a notification email address
       description: Adds an email address to the firm's notification list. Requires FULL tier.
       tags:
         - Notifications
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       requestBody:
         required: true
@@ -7770,13 +9096,13 @@ paths:
                       email:
                         type: string
                         format: email
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /med-cases:
     get:
       operationId: listMedCases
@@ -7786,11 +9112,11 @@ paths:
         filtering.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_30
         - *ref_31
+        - *ref_32
         - in: query
           name: search
           schema:
@@ -7817,13 +9143,13 @@ paths:
                       $ref: "#/components/schemas/MedCase"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
     post:
       operationId: createMedCase
       summary: Create a med case
@@ -7832,7 +9158,7 @@ paths:
         `patientFirstName` and `patientLastName`. Requires STANDARD tier.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       requestBody:
         required: true
@@ -7850,13 +9176,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedCase"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /med-cases/{id}:
     get:
       operationId: getMedCaseById
@@ -7864,7 +9190,7 @@ paths:
       description: Returns a single Med Xchange case by UUID.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -7884,20 +9210,20 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedCase"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     put:
       operationId: updateMedCase
       summary: Update a med case
       description: Updates an existing Med Xchange case. All body fields are optional. Requires STANDARD tier.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
         - in: path
@@ -7923,14 +9249,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedCase"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     delete:
       operationId: deleteMedCase
       summary: Delete a med case (not supported)
@@ -7939,7 +9265,7 @@ paths:
         Set `isArchived` to `true` via PUT instead.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
         - in: path
@@ -7950,13 +9276,13 @@ paths:
             format: uuid
           description: Med case UUID
       responses:
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
         "405":
           description: Method not allowed — deleting med cases is not supported. Set isArchived to true instead.
           content:
             application/json:
-              schema: *ref_13
+              schema: *ref_15
   /med-cases/{id}/referrals:
     get:
       operationId: listMedReferrals
@@ -7964,7 +9290,7 @@ paths:
       description: Returns referrals attached to the specified Med Xchange case, paginated (default `limit=20`, max 100).
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -7974,8 +9300,8 @@ paths:
             type: string
             format: uuid
           description: Med case UUID
-        - *ref_30
         - *ref_31
+        - *ref_32
       responses:
         "200":
           description: Med referral list
@@ -7990,21 +9316,21 @@ paths:
                       $ref: "#/components/schemas/MedReferral"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     post:
       operationId: createMedReferral
       summary: Create a referral on a med case
       description: Creates a new referral on the specified Med Xchange case. `providerId` is required. Requires STANDARD tier.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
         - in: path
@@ -8030,14 +9356,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedReferral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /med-cases/{id}/referrals/{referralId}:
     get:
       operationId: getMedReferralById
@@ -8045,7 +9371,7 @@ paths:
       description: Returns a single referral by UUID on the specified Med Xchange case.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -8072,13 +9398,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedReferral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
     put:
       operationId: updateMedReferral
       summary: Update a referral on a med case
@@ -8087,7 +9413,7 @@ paths:
         tier.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
       parameters:
         - in: path
@@ -8120,14 +9446,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedReferral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /med-cases/{id}/referrals/{referralId}/acknowledge:
     post:
       operationId: acknowledgeMedReferral
@@ -8137,9 +9463,9 @@ paths:
         provider-side public API ships. Use the firm dashboard in the meantime.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
-      parameters: &ref_42
+      parameters: &ref_45
         - in: path
           name: id
           required: true
@@ -8155,11 +9481,11 @@ paths:
             format: uuid
           description: Med referral UUID
       responses:
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
         "501":
           description: Provider-side public API not yet available
-          content: *ref_14
+          content: *ref_16
   /med-cases/{id}/referrals/{referralId}/accept:
     post:
       operationId: acceptMedReferral
@@ -8169,15 +9495,15 @@ paths:
         provider-side public API ships. Use the firm dashboard in the meantime.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
-      parameters: *ref_42
+      parameters: *ref_45
       responses:
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
         "501":
           description: Provider-side public API not yet available
-          content: *ref_14
+          content: *ref_16
   /med-cases/{id}/referrals/{referralId}/reject:
     post:
       operationId: rejectMedReferral
@@ -8187,15 +9513,15 @@ paths:
         provider-side public API ships. Use the firm dashboard in the meantime.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
-      parameters: *ref_42
+      parameters: *ref_45
       responses:
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
         "501":
           description: Provider-side public API not yet available
-          content: *ref_14
+          content: *ref_16
   /med-cases/{id}/referrals/{referralId}/start-treatment:
     post:
       operationId: startTreatmentMedReferral
@@ -8205,15 +9531,15 @@ paths:
         provider-side public API ships. Use the firm dashboard in the meantime.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
-      parameters: *ref_42
+      parameters: *ref_45
       responses:
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
         "501":
           description: Provider-side public API not yet available
-          content: *ref_14
+          content: *ref_16
   /med-cases/{id}/referrals/{referralId}/complete-treatment:
     post:
       operationId: completeTreatmentMedReferral
@@ -8223,15 +9549,15 @@ paths:
         provider-side public API ships. Use the firm dashboard in the meantime.
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
-      parameters: *ref_42
+      parameters: *ref_45
       responses:
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
         "501":
           description: Provider-side public API not yet available
-          content: *ref_14
+          content: *ref_16
   /med-cases/{id}/referrals/{referralId}/withdraw:
     post:
       operationId: withdrawMedReferral
@@ -8239,10 +9565,10 @@ paths:
       description: "Firm-side: withdraw a referral you sent to a provider. Requires STANDARD tier."
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
-      parameters: *ref_42
-      requestBody: &ref_43
+      parameters: *ref_45
+      requestBody: &ref_46
         required: false
         content:
           application/json:
@@ -8263,14 +9589,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedReferral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /med-cases/{id}/referrals/{referralId}/close:
     post:
       operationId: closeMedReferral
@@ -8278,10 +9604,10 @@ paths:
       description: "Firm-side: close a completed referral. Requires STANDARD tier."
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: standard
-      parameters: *ref_42
-      requestBody: *ref_43
+      parameters: *ref_45
+      requestBody: *ref_46
       responses:
         "200":
           description: Closed med referral
@@ -8292,25 +9618,25 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedReferral"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /insurances:
     get:
       operationId: listInsurances
       summary: List insurance records the API key can access
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
-        - *ref_30
         - *ref_31
+        - *ref_32
         - in: query
           name: medCaseId
           schema:
@@ -8347,20 +9673,20 @@ paths:
                       $ref: "#/components/schemas/MedInsurance"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_18
-        "403": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /insurances/{id}:
     get:
       operationId: getInsuranceById
       summary: Get a single insurance record
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -8380,20 +9706,20 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/MedInsurance"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /med-cases/{id}/insurances:
     get:
       operationId: listMedCaseInsurances
       summary: List insurance records for a single med case
       tags:
         - Med Cases
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -8403,8 +9729,8 @@ paths:
             type: string
             format: uuid
           description: Med case UUID
-        - *ref_30
         - *ref_31
+        - *ref_32
         - in: query
           name: insuranceType
           schema:
@@ -8435,14 +9761,14 @@ paths:
                       $ref: "#/components/schemas/MedInsurance"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /med-cases/{caseId}/documents:
     get:
       operationId: listMedCaseDocuments
@@ -8450,7 +9776,7 @@ paths:
       description: Lists documents on a MedEx case visible to the caller (firm or provider scope). Metadata only.
       tags:
         - MedEx Documents
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -8460,8 +9786,8 @@ paths:
             type: string
             format: uuid
           description: MedCase UUID
-        - *ref_30
         - *ref_31
+        - *ref_32
       responses:
         "200":
           description: Document list
@@ -8476,14 +9802,14 @@ paths:
                       $ref: "#/components/schemas/MedCaseDocument"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - pagination
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /med-cases/{caseId}/documents/{documentId}:
     get:
       operationId: getMedCaseDocument
@@ -8493,7 +9819,7 @@ paths:
         (?format=base64, capped at 20 MB raw). Files over the cap must use ?format=url.
       tags:
         - MedEx Documents
-      security: *ref_16
+      security: *ref_18
       x-access-tier: read_only
       parameters:
         - in: path
@@ -8561,17 +9887,17 @@ paths:
                               - base64
                           data:
                             type: string
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
         "413":
           description: Document too large to inline as base64; use ?format=url.
-          content: *ref_14
+          content: *ref_16
   /import/cases:
     post:
       operationId: importCases
@@ -8579,7 +9905,7 @@ paths:
       description: Creates or upserts cases from a CSV file upload. Requires FULL tier. Maximum file size 20 MB.
       tags:
         - Import
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       requestBody:
         required: true
@@ -8615,13 +9941,13 @@ paths:
                         type: array
                         items:
                           type: object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /import/cases/update:
     post:
       operationId: importCasesUpdate
@@ -8631,7 +9957,7 @@ paths:
         tier.
       tags:
         - Import
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       requestBody:
         required: true
@@ -8665,13 +9991,13 @@ paths:
                         type: array
                         items:
                           type: object
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
   /import/cases/update/jobs/{jobId}:
     get:
       operationId: getBulkUpdateJob
@@ -8681,7 +10007,7 @@ paths:
         tier.
       tags:
         - Import
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       parameters:
         - in: path
@@ -8700,13 +10026,13 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/BulkUpdateJob"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /salesforce/send-mapping:
     get:
       operationId: getSalesforceSendMapping
@@ -8719,7 +10045,7 @@ paths:
         Requires FULL tier.
       tags:
         - Salesforce
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       parameters:
         - name: sfObjectApiName
@@ -8745,14 +10071,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/SendMapping"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
   /salesforce/interactive-sends:
     post:
       operationId: createSalesforceInteractiveSend
@@ -8816,7 +10142,7 @@ paths:
         Requires FULL tier.
       tags:
         - Salesforce
-      security: *ref_16
+      security: *ref_18
       x-access-tier: full
       requestBody:
         required: true
@@ -8906,7 +10232,7 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/InteractiveSendResult"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
@@ -8919,14 +10245,14 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/InteractiveSendResult"
-                  meta: *ref_12
+                  meta: *ref_14
                 required:
                   - data
                   - meta
-        "400": *ref_17
-        "401": *ref_18
-        "403": *ref_19
-        "404": *ref_21
+        "400": *ref_19
+        "401": *ref_20
+        "403": *ref_21
+        "404": *ref_23
         "409":
           description: >-
             Conflict — the `error.code` selects one of four cases, each with a distinct `error.details` shape:
@@ -8941,9 +10267,164 @@ paths:
 
             - `attempt_failed` (the prior attempt for this idempotency key failed; use a fresh key) — `details: {
             failureCode, lastError }`.
-          content: *ref_14
+          content: *ref_16
         "502":
           description: >-
             Salesforce unavailable (`salesforce_unavailable`) or the source record read failed
             (`salesforce_read_failed`).
-          content: *ref_14
+          content: *ref_16
+x-webhook-events:
+  - event: case.created
+    description: A new case was created.
+    perspectives:
+      - sent
+    piiMasked: false
+    changedFields: Never.
+    recipients: >-
+      The sending firm only. Every case is born before the receiving firm can have acknowledged anything; a case born
+      already sent produces `referral.received` for the other side.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/CaseSnapshot"
+  - event: case.updated
+    description: One or more fields on a case changed.
+    perspectives:
+      - sent
+      - received
+    piiMasked: false
+    changedFields: >-
+      Always, when the update carried a diff — intersected with what the recipient may see, plus the sentinel
+      `customFields` (not a snapshot field; it means "re-`GET` the case", and a masked recipient never gets it). A
+      recipient for whom the intersection is empty is not delivered the event at all. `PATCH /sent-cases/{id}` reports
+      the columns it WROTE rather than a value diff, so re-sending an identical value can still produce a `case.updated`
+      naming that column.
+    recipients: >-
+      The sending firm, plus every receiving firm on the case that has acknowledged its own hop and is not in a
+      pre-acknowledgment or never-acknowledged terminal state. Referral-level keys (fees, settlement, lead attorney,
+      phase) reach only the two parties of the hop that was updated.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/CaseSnapshot"
+  - event: case.deleted
+    description: A draft case was deleted.
+    perspectives:
+      - sent
+    piiMasked: false
+    changedFields: Never.
+    recipients: The sending firm only — a DRAFT has no receiving firm.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/CaseTombstone"
+  - event: referral.sent
+    description: A referral was sent to another firm.
+    perspectives:
+      - sent
+    piiMasked: false
+    changedFields: Never.
+    recipients: The sending firm. The receiving firm gets `referral.received` for the same fact and `eventId`.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/StatusChangeData"
+  - event: referral.received
+    description: A referral was received from another firm.
+    perspectives:
+      - received
+    piiMasked: true
+    changedFields: Never.
+    recipients: >-
+      The receiving firm. Masked until that firm has itself acknowledged the referral — which, on a first send, it has
+      not.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/StatusChangeData"
+    maskedDataSchema: "#/components/schemas/MaskedStatusChangeData"
+  - event: referral.accepted
+    description: A received referral was acknowledged/accepted.
+    perspectives:
+      - sent
+      - received
+    piiMasked: true
+    changedFields: Never.
+    recipients: >-
+      Both firms. Sent when the referral moves out of SENT into UNDER_EVALUATION or INVESTIGATING. This is normally the
+      first unmasked delivery a receiving firm gets — but an administrator or an integration can produce the same
+      transition without the receiving firm acknowledging, and then it stays masked.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/StatusChangeData"
+    maskedDataSchema: "#/components/schemas/MaskedStatusChangeData"
+  - event: referral.rejected
+    description: A referral was rejected.
+    perspectives:
+      - sent
+      - received
+    piiMasked: true
+    changedFields: Never.
+    recipients: Both firms. A referral rejected without ever being acknowledged stays masked for the receiving firm forever.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/StatusChangeData"
+    maskedDataSchema: "#/components/schemas/MaskedStatusChangeData"
+  - event: case.status_changed
+    description: A case's status changed.
+    perspectives:
+      - sent
+      - received
+    piiMasked: true
+    changedFields: Never.
+    recipients: >-
+      Both firms, for every other transition that records a status row — including withdrawal and closing. An
+      administrator override such as SENT → SIGNED arrives here, not as `referral.accepted`, and does not unmask the
+      receiving firm.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/StatusChangeData"
+    maskedDataSchema: "#/components/schemas/MaskedStatusChangeData"
+  - event: note.created
+    description: A note was added to a case.
+    perspectives:
+      - sent
+      - received
+    piiMasked: false
+    changedFields: Never.
+    recipients: >-
+      The firm that owns the note, always — a note is its own content. The counterparty only once it is entitled to case
+      content (acknowledged, and the referral in a working state).
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/NoteData"
+  - event: note.updated
+    description: A note on a case was edited.
+    perspectives:
+      - sent
+      - received
+    piiMasked: false
+    changedFields: Always `['body']` — the body is the only editable field.
+    recipients: Same as `note.created`.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/NoteData"
+  - event: document.uploaded
+    description: A document was uploaded to a case.
+    perspectives:
+      - sent
+      - received
+    piiMasked: false
+    changedFields: Never.
+    recipients: >-
+      The owning firm, plus each counterparty whose hop still grants document access. Document access is stricter than
+      case content: it also ends at CLOSED, where `case.updated` and `note.*` keep flowing. Documents attached to a fee
+      agreement rather than a case produce no event.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/DocumentData"
+  - event: document.deleted
+    description: A document was deleted from a case.
+    perspectives:
+      - sent
+      - received
+    piiMasked: false
+    changedFields: Never.
+    recipients: Same as `document.uploaded`.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/DocumentTombstone"
+  - event: case.rated
+    description: A case's tier/rating was set or changed.
+    perspectives:
+      - sent
+    piiMasked: false
+    changedFields: Never.
+    recipients: >-
+      The owning firm only, acknowledged counterparty or not: a tier is a firm's private appraisal of its own case.
+      Because the case snapshot carries no `tier`, this event is the only way to observe one.
+    envelopeSchema: "#/components/schemas/CasexWebhookEnvelope"
+    dataSchema: "#/components/schemas/CaseRatingData"
