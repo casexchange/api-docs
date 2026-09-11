@@ -1,0 +1,230 @@
+---
+title: "Anatomy of a Delivery"
+description: "What arrives at your webhook endpoint, and how to process it correctly"
+icon: "inbox"
+sidebarTitle: "Deliveries"
+---
+
+## What a delivery is
+
+A delivery is one HTTPS `POST` from CaseXchange carrying one event, sent to your subscription's `url` — or, while echo mode is on, to the CaseXchange capture endpoint instead (see [Testing webhooks](/webhooks/testing)). Every active subscription of your firm receives every event, so if you have three subscriptions, one event produces three deliveries. This page covers the request, the headers, the JSON envelope, and the processing rules your handler must follow. Event-specific `data` shapes live in the [Event catalog](/webhooks/events); signature verification lives in [Verifying signatures](/webhooks/verify-signatures).
+
+## The request
+
+| Property | Value |
+|---|---|
+| Method | `POST` |
+| `Content-Type` | `application/json` |
+| Body | The `CasexWebhookEnvelope` JSON. The exact bytes sent are the bytes that are signed. |
+| Idle timeout | The attempt is aborted if no bytes are received from your server for 10 seconds. |
+| Total deadline | No attempt may exceed 30 seconds end to end, however slowly your server streams. |
+| Success | Any `2xx` response. |
+| Failure | `3xx`, `4xx`, `5xx`, a timeout, or a TLS/connection failure. |
+| Redirects | Never followed. A `3xx` is a failed attempt. |
+
+Answer `2xx` as soon as the body is durably stored, and do the real work asynchronously. A failed attempt is retried on a fixed schedule; see [Reliability](/webhooks/reliability) for the retry ladder and the circuit breaker.
+
+<Warning>
+  Deliveries never follow redirects. If your endpoint sits behind a redirecting host (for example a `www` or trailing-slash redirect), every attempt fails with `Redirect not allowed`. Subscribe to the final URL.
+</Warning>
+
+Your subscription's `url` is re-checked at every delivery against the same rules that apply on create: `https://` on port 443, no credentials in the URL, and a hostname that resolves only to public addresses. See [Managing subscriptions](/webhooks/subscriptions) for the full list.
+
+## Headers
+
+Every delivery carries these four headers.
+
+| Header | Value |
+|---|---|
+| `X-CaseXchange-Event` | The event name. Same value as `event` in the body. |
+| `X-CaseXchange-Event-Id` | UUID of the **fact**. Shared by every delivery of that fact: to both firms on the referral, and to every subscription of one firm. Correlate on it. **Not unique per delivery.** |
+| `X-CaseXchange-Delivery` | UUID of **this delivery**. Stable across retries of the same delivery. **Deduplicate on it.** |
+| `X-CaseXchange-Signature` | `t=<unix-seconds>,v1=<hex>`. See [Verifying signatures](/webhooks/verify-signatures). |
+
+### Event id versus delivery id
+
+The two UUIDs answer different questions.
+
+- **`X-CaseXchange-Event-Id`** identifies *what happened*. When a referral is sent, the sending firm receives `referral.sent` and the receiving firm receives `referral.received` for the same fact, with the same event id. If your firm has two active subscriptions, both receive a delivery with the same event id. Use it to correlate, never to deduplicate: two deliveries with the same event id are not necessarily duplicates.
+- **`X-CaseXchange-Delivery`** identifies *this attempt to tell this subscription*. Retries resend the same body with the same delivery id. Two requests with the same delivery id are always duplicates.
+
+## The envelope
+
+Every firm event carries the same top-level shape. All fields are present on every event; `changedFields` is the one exception and appears only on `case.updated` and `note.updated`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schemaVersion` | `1` | Envelope version. A breaking change to the envelope increments it. |
+| `event` | string | One of the 13 event names in the [Event catalog](/webhooks/events). |
+| `eventId` | uuid | Same value as `X-CaseXchange-Event-Id`. |
+| `occurredAt` | date-time | When the underlying change was committed. Apply the delivery with the greatest `occurredAt`. |
+| `perspective` | `sent` or `received` | Which side of this referral your firm is on. |
+| `piiMasked` | boolean | `true` only for a receiving firm that has not yet acknowledged the referral. |
+| `recipientFirmId` | uuid | The firm this delivery was built for. |
+| `referralId` | uuid | The referral (one "hop"). The public API calls a referral a "case". |
+| `baseCaseId` | uuid | The case behind the referral. Stable across re-referrals. |
+| `referenceNumber` | string or null | For example `ACME-0042-BLF`. |
+| `referringFirm` | `{ id, name }` | The sending firm on this hop. |
+| `referentFirm` | `{ id, name }` or null | The receiving firm. `null` on a draft. |
+| `isTestCase` | boolean | `true` for test cases. Filter on it in production. |
+| `actor` | `{ firmId, source }` | Who caused the event. See [Actor](#actor). |
+| `data` | object | Event-specific payload. See the [Event catalog](/webhooks/events). |
+| `changedFields` | string[] | Only on `case.updated` and `note.updated`. See [changedFields](#changedfields-and-the-customfields-sentinel). |
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "referral.accepted",
+  "eventId": "3f9d2c1e-7b44-4a1c-9e0b-2c5f1a8d6e21",
+  "occurredAt": "2026-09-03T14:12:09.401Z",
+  "perspective": "sent",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm":  { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000002", "source": "manual" },
+  "data": { "...": "event-specific, see the event catalog" }
+}
+```
+
+<Note>
+  `webhook.test` deliveries do **not** use this envelope, so branch on `event` before you read envelope fields — the exact body is in the [Event catalog](/webhooks/events).
+</Note>
+
+### Perspective
+
+`perspective` tells you which side of the referral your firm is on: `sent` if your firm referred the case out, `received` if your firm received it. The same fact can produce a `sent` delivery for one firm and a `received` delivery for the other. `piiMasked` can only be `true` on the `received` side, and only until your firm acknowledges the referral. See [Client data and masking](/webhooks/privacy) for what is withheld while masked.
+
+### Actor
+
+`actor` says who caused the event, at firm granularity.
+
+- `actor.firmId` is the firm that acted, or `null` for platform administrators and system jobs.
+- `actor.source` is the channel: one of `manual`, `case_status`, `salesforce`, `smartadvocate`, `system`, `dearlegal`, `api`, `filemaker`, `clio`, `admin`, `ai`.
+- `api` covers both the Public API and the CaseXchange web application. The two are not distinguished.
+- `actor` never contains a user id. Where a person is relevant, `data` carries a display name (`createdByName`, `authorName`, `uploadedByName`). The only user identifiers anywhere in a delivery are `authorId` on `note.created` and `note.updated`, and `uploadedById` on `document.uploaded` (`document.deleted` carries record ids only, never a user id), and those are sent only to the firm that owns the note or uploaded the document; the counterparty receives `null`.
+
+### changedFields and the customFields sentinel
+
+`changedFields` is present only on `case.updated` and `note.updated`. On `note.updated` it is always `["body"]`. On `case.updated` it lists the case fields that changed, already intersected with what your firm is allowed to see; if the intersection would be empty, your firm does not receive the event at all.
+
+One entry is special. The value `customFields` means "your firm's custom field values changed". Custom field values are never included in `data`, so on `customFields` re-fetch the case with the API to read them. A masked recipient never receives `customFields`.
+
+<Note>
+  `changedFields` reports the columns that were written, not a value diff. A `PATCH /sent-cases/{id}` that re-sends an identical value can still produce a `case.updated` naming that column. Treat `changedFields` as a hint about where to look, and compare against your stored copy before acting.
+</Note>
+
+### recipientFirmId
+
+`recipientFirmId` is the firm this delivery was built for. The masking and field intersection in `data` were computed for that firm. Compare it with your own firm id (from `GET /firms/me`) and drop anything that does not match; a mismatch means the delivery was not meant for you.
+
+### referralId versus baseCaseId
+
+One case (`baseCaseId`) can carry several referrals over its life, each with its own `referralId`, and each firm sees only the hops it is a party to. Key your records on `referralId` for hop-level state (status, fees, lead attorney) and on `baseCaseId` when you need to group hops of the same case. See [Client data and masking](/webhooks/privacy) for how multi-hop cases are scoped.
+
+## Processing rules
+
+Deliveries are at-least-once, concurrent, and unordered. Build your handler around the rules below rather than around what you observe on a quiet day.
+
+### Deduplicate on the delivery id
+
+Retries resend the same body with the same `X-CaseXchange-Delivery`. Store that UUID before you acknowledge, and treat any later request with the same value as already handled. Do not deduplicate on `eventId`: one fact fans out to every subscription of your firm, and to the counterparty, with the same `eventId`, so a second delivery with the same event id can be a legitimate delivery to a different subscription.
+
+### Do not assume ordering
+
+Dispatch is concurrent, and deliveries to a single subscription are not serialised, so expect parallel `POST`s. A delivery that failed and is being retried can arrive up to about 43 minutes after a later event for the same referral. Never apply state in arrival order. Compare `occurredAt` with the last value you applied for that `referralId` and keep the greatest.
+
+### Identical occurredAt: chain the statuses
+
+One transaction can commit two status changes at once, for example `closing` followed by `closed`, and both deliveries carry a byte-identical `occurredAt`. There is deliberately no tiebreaker. For status events, chain them instead: `data.previousStatus` of one delivery matches `data.status` of the other, so order them by walking that link rather than by timestamp.
+
+### Your own writes come back
+
+Most of what your firm changes, through the API or in the web application, comes back to you as an event — but not everything: see [Known gaps](/webhooks/known-gaps) for the writes that produce none. `actor.firmId` tells you which firm acted, not which channel, so you cannot recognise your own integration's writes from the actor alone. To ignore your own echo, compare the delivered state with what you last wrote and skip when nothing differs.
+
+### No backfill: reconcile against the API
+
+A subscription receives only events that happen after it is created. There is no replay or redeliver endpoint, and the delivery log at `GET /webhooks/{id}/deliveries` reports status, attempt count, and last error but never the payload. Store the bodies you receive yourself, and treat webhooks as a signal to reconcile against `GET /status-updates`, `GET /referrals`, `GET /sent-cases`, and `GET /received-referrals`, which remain the authority.
+
+```bash
+# Delivery log for a subscription: status, attempts, last code, last error. Never the payload.
+curl "https://api.casexchange.com/api/public/v1/webhooks/{id}/deliveries?page=1&limit=20" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+Some changes never produce an event at all (creating a case by CSV import, some connected-system writes, archiving). See [Known gaps](/webhooks/known-gaps) before relying on webhooks for completeness.
+
+## A minimal handler
+
+The handler below shows the order that matters: verify on the raw bytes, deduplicate, acknowledge, then do the work off the request path and apply by `occurredAt`. `verify` is the reference function from [Verifying signatures](/webhooks/verify-signatures).
+
+```javascript
+const express = require("express");
+const { verify } = require("./verify"); // see Verifying signatures
+
+const app = express();
+
+app.post(
+  "/casexchange",
+  express.raw({ type: "application/json" }), // raw bytes, not parsed JSON
+  async (req, res) => {
+    // 1. Verify the signature on the exact bytes, before JSON.parse.
+    //    A non-2xx makes CaseXchange retry, re-signed with the current secret.
+    const signature = req.get("X-CaseXchange-Signature");
+    if (!verify(req.body, signature, process.env.CASEXCHANGE_WEBHOOK_SECRET)) {
+      return res.status(401).end();
+    }
+
+    // 2. Deduplicate on the delivery id (stable across retries).
+    const deliveryId = req.get("X-CaseXchange-Delivery");
+    const isNew = await store.insertIfAbsent(deliveryId, req.body);
+
+    // 3. Acknowledge as soon as the body is durably stored.
+    res.status(200).end();
+    if (!isNew) return;
+
+    // 4. Do the real work outside the request.
+    await queue.enqueue(deliveryId);
+  }
+);
+
+// Worker: apply by occurredAt, never by arrival order.
+async function processDelivery(deliveryId) {
+  const envelope = JSON.parse(await store.rawBody(deliveryId));
+
+  if (envelope.event === "webhook.test") return;          // not an envelope
+  if (envelope.recipientFirmId !== MY_FIRM_ID) return;    // not built for us
+  if (envelope.isTestCase) return;                        // or route to a sandbox
+
+  const last = await db.lastAppliedAt(envelope.referralId);
+  if (last && last > envelope.occurredAt) return;         // stale: a newer event was already applied
+
+  await apply(envelope);                                  // branch on envelope.event
+  await db.markApplied(envelope.referralId, envelope.occurredAt);
+}
+```
+
+<Tip>
+  Keep the raw body (`req.body` above) exactly as received. Re-serialising the JSON changes the bytes and breaks signature verification, and the delivery log will never give you the payload again.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Event catalog" icon="list-check" href="/webhooks/events">
+    Every event name, who receives it, and the exact `data` shape.
+  </Card>
+  <Card title="Verifying signatures" icon="signature" href="/webhooks/verify-signatures">
+    HMAC-SHA256 over the raw body, the 300-second window, and secret rotation.
+  </Card>
+  <Card title="Reliability" icon="arrows-rotate" href="/webhooks/reliability">
+    Retry schedule, delivery statuses, the circuit breaker, and retention.
+  </Card>
+  <Card title="Client data and masking" icon="eye-slash" href="/webhooks/privacy">
+    What a receiving firm sees before and after acknowledging.
+  </Card>
+</CardGroup>

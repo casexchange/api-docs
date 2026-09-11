@@ -1,6 +1,8 @@
 ---
 title: "Integration Workflows"
 description: "End-to-end flows for the CaseXchange Public API (/api/public/v1)"
+icon: "diagram-project"
+sidebarTitle: "Workflows"
 ---
 
 ## Common workflows
@@ -162,3 +164,38 @@ Implementation tips:
 - Rules can overlap -- the API evaluates them in priority order and returns the first match.
 
 See [Routing examples](/api-reference/examples/routing).
+
+---
+
+### 6. Subscribing to webhooks
+
+Replace polling with push: register an HTTPS endpoint once and CaseXchange delivers every referral lifecycle event for your firm to it, signed and retried.
+
+1. Create a `standard`-tier key (webhook management needs it; `read_only` can only list and inspect).
+2. `POST /webhooks` with your HTTPS URL. The response carries the signing `secret` -- it is shown once, store it immediately.
+3. `POST /webhooks/{id}/test` to queue a `webhook.test` delivery, then `GET /webhooks/{id}/deliveries` to see it land.
+4. Verify `X-CaseXchange-Signature` on every delivery before you trust the body.
+5. Deduplicate on `X-CaseXchange-Delivery` and keep reconciling against `GET /status-updates` -- webhooks are a signal, not a sync feed.
+
+```bash
+# Create a subscription (returns the secret once)
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://hooks.yourfirm.com/casexchange",
+    "description": "Production intake"
+  }'
+
+# Send a test event
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks/{id}/test" \
+  -H "X-API-Key: cxp_std_your_key_here"
+```
+
+Implementation tips:
+
+- Answer `2xx` as soon as you have stored the body; do the real work asynchronously. Anything else is retried up to 5 attempts over about 43 minutes.
+- Every active subscription receives every event -- branch on the `event` field and ignore names you do not handle.
+- A receiving firm sees a masked case snapshot until it acknowledges the referral; check `piiMasked` before reading client fields.
+
+See the [Webhooks](/webhooks) tab for the full setup guide, the [event catalog](/webhooks/events), and [signature verification](/webhooks/verify-signatures).

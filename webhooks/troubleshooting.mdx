@@ -1,0 +1,189 @@
+---
+title: "Troubleshooting"
+description: "Symptom-by-symptom guide to missing deliveries, failed attempts, signature mismatches and management-call errors"
+icon: "bug"
+---
+
+## Start with the delivery log
+
+Almost every webhook problem is answered by the delivery log. It shows, per delivery, the `status`, the number of `attempts`, the HTTP code of the last attempt (`lastStatusCode`) and the text of the last failure (`lastError`) — but never the payload.
+
+```bash
+# Inspect recent deliveries for one subscription (read_only tier is enough)
+curl "https://api.casexchange.com/api/public/v1/webhooks/{id}/deliveries?page=1&limit=20" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+
+# Confirm the subscription itself is active and not diverted to echo mode
+curl "https://api.casexchange.com/api/public/v1/webhooks/{id}" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+Then find your symptom below. Each table lists the likely cause and what to check. See [Anatomy of a delivery](/webhooks/deliveries) for the full delivery record and [Reliability](/webhooks/reliability) for the retry ladder.
+
+## I am not receiving any events
+
+| Likely cause | What to check |
+|---|---|
+| The subscription is inactive — either you set `isActive: false`, or the circuit breaker did after 10 consecutive exhausted deliveries. | `GET /webhooks/{id}` and look at `isActive`. Re-enable with `PATCH /webhooks/{id}` and `{ "isActive": true }` once the endpoint is healthy. See [My subscription turned itself off](#my-subscription-turned-itself-off). |
+| Deliveries are diverted to echo mode. | `isEchoActive: true` on the subscription. Your `url` is unchanged while echo is on, so read the flag, not the URL. `POST /webhooks/{id}/echo/disable` restores your endpoint and deletes every capture. See [Testing webhooks](/webhooks/testing). |
+| The Public API integration is not enabled on your firm's account, or your firm has been deactivated. | Deliveries are not created for a firm without the Public API integration, or for a deactivated firm. You see it on every management call too: the key stops authenticating and returns `403 public_api_not_enabled` (integration revoked) or `403 api_key_firm_inactive` (firm deactivated). Email `help@casexchange.com`. |
+| The case or referral is archived. | Archiving stops all events for it and no event announces the archive; unarchiving resumes them. An archived case disappears from the Public API: `GET /sent-cases/{id}` answers `404 sent_case_not_found` and `GET /received-referrals/{id}` answers `404 received_referral_not_found`, and no response field reports the archive. If a case that used to emit has gone quiet and now 404s there, ask the case owner to unarchive it. |
+| You are the receiving firm and have not acknowledged the referral. | Until you acknowledge, you receive only the status family (`referral.received`, `referral.accepted`, `referral.rejected`, `case.status_changed`), with `piiMasked: true`. `case.updated` and `document.*` are withheld entirely, and so are the sending firm's notes — but notes your own firm writes still reach you: you receive `note.created` and `note.updated` for notes your firm owns even before you acknowledge. See [Client data and masking](/webhooks/privacy). |
+| The change is one that never produces an event. | Historical CSV imports, Clio Manage pull status changes, DearLegal inbound status changes, automatic notes, note deletion, partner messages and document metadata edits do not emit. See [Known gaps](/webhooks/known-gaps). |
+| The event happened before the subscription existed. | There is no backfill and no replay endpoint. Seed and reconcile from `GET /status-updates`, `GET /sent-cases` and `GET /received-referrals`. |
+| Your hostname now resolves to a private address. | The URL is re-checked at every delivery. Look for `SSRF check failed: <reason>` in `lastError`. Fix DNS so every resolved address is public, then re-enable the subscription if the breaker tripped. |
+| The subscription was deleted. | `GET /webhooks/{id}` returns `404 not_found`. Queued deliveries stop on delete. Create a new subscription with `POST /webhooks`. |
+
+<Note>
+  `isActive: true` means you have not disabled the subscription and the circuit breaker has not tripped. It does not prove deliveries are reaching your endpoint: while `isEchoActive` is true they are diverted to the capture endpoint instead of your URL, and an archived case emits nothing at all.
+</Note>
+
+## Deliveries show FAILED or EXHAUSTED
+
+`FAILED` means the last attempt did not succeed and a retry is scheduled (`nextRetryAt` is set). `EXHAUSTED` means the delivery is final — either all 5 attempts failed, or it was cancelled because the subscription was disabled or deleted before it could be sent. Retries follow the ladder 30 s, 2 min, 10 min, 30 min — about 43 minutes end to end.
+
+Your endpoint must answer `2xx` for an attempt to count as delivered. `3xx`, `4xx`, `5xx`, a timeout and a TLS or connection failure are all failed attempts. Return `2xx` as soon as the body is durably stored and do the real work asynchronously.
+
+[Reliability](/webhooks/reliability) lists every `lastError` string and what each one means. These three are the ones that get misread:
+
+| `lastError` | What it actually means | Fix |
+|---|---|---|
+| `Request timed out` | Not the 30-second budget: no bytes at all were received from your server for 10 seconds. | Respond before doing any work. Do not call other services, verify against your database, or process the event before sending the response. |
+| `SSRF check failed: <reason>` | Nothing attacked you. The URL is re-checked at delivery time, and the hostname now resolves to a private, loopback, link-local or otherwise non-public address — a subscription that worked for weeks can start failing on a DNS change alone. | Point the hostname at public addresses only. Every resolved address, IPv4 and IPv6, must be public. |
+| Any other text, with `lastStatusCode` null | The attempt never received an HTTP response at all, so there is no code to report — a TLS handshake or connection failure. | Confirm the endpoint is reachable from the public internet on port 443 and serves a valid, complete certificate chain from a public CA. |
+
+<Warning>
+  An `EXHAUSTED` delivery is not replayed. There is no redeliver endpoint. Treat it as a prompt to re-read the affected case from `GET /sent-cases/{id}`, `GET /received-referrals/{id}` or `GET /status-updates`. Ten deliveries in a row that exhaust their retries deactivate the subscription.
+</Warning>
+
+<Tip>
+  While you are fixing the endpoint, use `POST /webhooks/{id}/test` to queue a synthetic `webhook.test` delivery and confirm the fix from the delivery log rather than waiting for a real event. The subscription must be active (`409 subscription_inactive` otherwise).
+</Tip>
+
+## Signature does not verify
+
+The header is `X-CaseXchange-Signature: t=<unix-seconds>,v1=<hex>`. `v1` is the hex HMAC-SHA256, keyed with your secret, over the string `<t>.<rawBody>` — the integer `t` from the header, a dot, and the exact request body bytes. See [Verifying signatures](/webhooks/verify-signatures) for reference code.
+
+| Likely cause | What to check |
+|---|---|
+| You are hashing a re-serialised body. | Parsing and re-encoding JSON changes the bytes. Read the raw body before any JSON parsing — in Express use `express.raw({ type: 'application/json' })` or the `verify` hook of `express.json`; in Django use `request.body`. Verify first, then parse. |
+| You rotated the secret and your endpoint still holds the old one. | Rotation takes effect immediately, with no grace window and no dual signing. Every delivery — including retries of deliveries created before the rotation — is signed with the current secret. Update your verifier at the moment you rotate, or accept both secrets on your side for a few minutes. Retries are re-signed on each attempt, so switching within about 43 minutes recovers them; after that they are exhausted. |
+| The timestamp check rejects the delivery. | Your verifier should reject `t` more than about 300 seconds from now. If every delivery fails on this rule, check your server clock. Remember `t` is in seconds, not milliseconds. |
+| The header is parsed incorrectly. | Split on the comma, then split each part on the first `=` only. Only one `v1` is ever sent. Take `t` from the header, not from the body's `occurredAt`. |
+| The message is built incorrectly. | The message is `<t>.<rawBody>` with a literal dot — not the body alone, not the header, not `t` followed by a newline. The digest is hex-encoded. |
+| You compare with `==`. | This does not cause a mismatch, but it leaks timing information. Decode both hex strings, check they have the same length, then compare with `crypto.timingSafeEqual` or `hmac.compare_digest`. |
+| Your secret was copied incorrectly. | The secret is `whsec_` followed by 64 hex characters and is returned only by `POST /webhooks` and `POST /webhooks/{id}/rotate-secret`. It cannot be read back. If you no longer have it, rotate. |
+
+<Tip>
+  Echo mode reports the signature check for you: enable it with `POST /webhooks/{id}/echo/enable`, trigger a test delivery, and read `signatureValid`, `signatureDetails` and `rawBody` from `GET /webhooks/{id}/echo/captures`. Comparing your computed digest with the `v1=` value inside `signatureDetails.received` (the full `t=…,v1=…` header we sent) over the captured `rawBody`, and reading `signatureDetails.match`, isolates a serialisation bug from a secret bug. See [Testing webhooks](/webhooks/testing).
+</Tip>
+
+<Note>
+  For 24 hours after a rotation, echo captures also accept the previous secret for the `signatureValid` read-back check only. Outbound deliveries to your endpoint are always signed with the current secret alone, so a capture that says `signatureValid: true` right after a rotation does not mean your old secret still works.
+</Note>
+
+## Management calls fail
+
+Every error uses the standard envelope — branch on `error.code` and keep `meta.requestId` for support. [Managing subscriptions](/webhooks/subscriptions) carries the full error table for these eleven endpoints, with the exact trigger for every code, and [Error Handling](/api-reference/error-handling) covers the general pattern. Read those first; the rows below are only the ones where the code you get points somewhere other than the problem.
+
+| Status | `error.code` | Cause | What to check |
+|---|---|---|---|
+| 403 | `wrong_scope` | Not a tier problem, despite the `403`: the key cannot manage webhooks at any tier. Admin keys, Salesforce `cxsf_*` tokens and MCP-issued keys are all refused here, and upgrading the tier changes nothing. | Use a firm-scoped `cxp_*` key created from **Settings > API Keys** — see the [Quickstart](/quickstart). |
+| 403 | `public_api_not_enabled` / `api_key_firm_inactive` | The Public API integration is not enabled on your firm, or the firm is deactivated. The key itself is fine, so this reads like a key problem and is not one — and it is the same condition that silently stops deliveries, which is why every call fails at once rather than one endpoint misbehaving. | Email `help@casexchange.com`. Rotating or regenerating the key will not help. |
+| 400 | `validation_error` where you expected `invalid_webhook_url` | A non-`https` URL is rejected by schema validation before the delivery-safety checks ever run, so it surfaces as a generic `validation_error`. `invalid_webhook_url` appears only for a URL that is well-formed HTTPS and still unsafe to deliver to — wrong port, embedded credentials, or a hostname that resolves to a non-public address. | If you get `validation_error` on a URL, check the scheme first. `localhost`, `127.0.0.1` and LAN addresses fail the second check, not the first; use a public HTTPS tunnel or echo mode for local development. |
+| 404 | `not_found` | Another firm's subscription id is indistinguishable from one that never existed — both answer `404 not_found`. A deleted subscription answers the same way. | `GET /webhooks` lists every subscription your key can see. If the id is not in that list, it is not yours, whatever its origin. |
+
+```bash
+# Which subscriptions does this key actually see?
+curl "https://api.casexchange.com/api/public/v1/webhooks" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+## I get duplicates, events out of order, or my own changes
+
+| Symptom | Why | What to do |
+|---|---|---|
+| The same delivery arrives more than once. | Delivery is at-least-once. A retry resends the same delivery with the same `X-CaseXchange-Delivery` value — for example, when your endpoint returned `2xx` too slowly and the attempt timed out. | Deduplicate on `X-CaseXchange-Delivery`. Store it before you return `2xx`. |
+| Two deliveries share an `X-CaseXchange-Event-Id`. | The event id identifies the fact, not the delivery. It is shared by the deliveries of the same fact to both firms and to every subscription of one firm. | Correlate on the event id; never deduplicate on it. If you run two subscriptions, each receives its own delivery for the same fact. |
+| Events arrive out of order. | There is no ordering guarantee. Deliveries to one subscription are dispatched concurrently, and a retried delivery can trail a later one by up to about 43 minutes. | Apply the delivery with the greatest `occurredAt` and ignore older ones for the same referral. Expect parallel `POST` requests. |
+| Two status events carry a byte-identical `occurredAt`. | One transaction can commit two status rows at once (for example `closing` then `closed`). There is deliberately no tiebreaker. | Chain them: the delivery whose `data.previousStatus` equals the other's `data.status` comes second. |
+| My own API or CaseXchange UI writes come back as events. | Every event for your firm is delivered, including the ones you caused. `actor.firmId` tells you which firm acted, not which channel; `actor.source` is `api` for both the Public API and the CaseXchange UI. | Compare the delivered state with what you last wrote and skip the delivery if nothing differs. |
+| A `case.updated` names a field whose value did not change. | `PATCH /sent-cases/{id}` reports the columns it wrote in `changedFields`, not a value diff. | Diff the snapshot against your stored state. See [Known gaps](/webhooks/known-gaps). |
+| `changedFields` contains `customFields` but the snapshot has no custom field values. | `customFields` is a sentinel meaning your custom field values changed. The snapshot never carries them. | Re-read the case with the API. |
+| Test data is mixed in with production events. | Test cases are delivered like any other case. | Every delivery for a test case carries `isTestCase: true`. Filter on it. |
+
+## My subscription turned itself off
+
+After 10 consecutive exhausted deliveries — that is, 10 deliveries in a row that each failed all 5 attempts — the circuit breaker deactivates the subscription. It stays listed with `isActive: false`. A successful delivery at any point resets the count.
+
+While the subscription is inactive, no deliveries are created for it. Events that occur during that time are not delivered later — there is no backfill — so reconcile from the API once you are back.
+
+<Steps>
+  <Step title="Find the failure pattern">
+    Read `GET /webhooks/{id}/deliveries` and look at `lastError` and `lastStatusCode` on the `EXHAUSTED` records. [Reliability](/webhooks/reliability) maps every `lastError` value to its cause, and [Deliveries show FAILED or EXHAUSTED](#deliveries-show-failed-or-exhausted) covers the three that are easiest to misread.
+  </Step>
+  <Step title="Fix the endpoint">
+    Ten exhausted deliveries in a row means the endpoint kept failing across full retry ladders of about 43 minutes each, not a single blip. Confirm it is publicly reachable on port 443, returns `2xx` within the timeouts, does not redirect, and resolves to public addresses.
+  </Step>
+  <Step title="Re-enable the subscription">
+
+```bash
+curl -X PATCH "https://api.casexchange.com/api/public/v1/webhooks/{id}" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{ "isActive": true }'
+```
+
+This is subject to the 5-active cap; `400 subscription_limit_reached` means another subscription must be deactivated or deleted first.
+
+Reactivating also clears the consecutive-exhausted count, so the subscription starts clean: it takes another 10 exhausted deliveries in a row to trip the breaker again.
+
+  </Step>
+  <Step title="Confirm with a test delivery">
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks/{id}/test" \
+  -H "X-API-Key: cxp_std_your_key_here"
+```
+
+Poll `GET /webhooks/{id}/deliveries` until the `webhook.test` record reads `DELIVERED`.
+
+  </Step>
+  <Step title="Reconcile">
+    Re-read the cases that changed while the subscription was off from `GET /status-updates`, `GET /sent-cases` and `GET /received-referrals`.
+  </Step>
+</Steps>
+
+<Note>
+  Deleting the subscription instead of re-enabling it also works, but a new subscription gets a new id and a new secret, and it too starts with no backfill.
+</Note>
+
+## Contacting support
+
+Email `help@casexchange.com`. Include the following so the team can trace the delivery end to end:
+
+| Item | Where to find it |
+|---|---|
+| Subscription id | `id` from `GET /webhooks`. |
+| Delivery id | `id` from `GET /webhooks/{id}/deliveries`, or the `X-CaseXchange-Delivery` header on the request you received. |
+| Event id | `X-CaseXchange-Event-Id` header or `eventId` in the body. |
+| `meta.requestId` | From the response envelope of the management call that failed. |
+| Timestamps | The delivery's `createdAt`, `nextRetryAt` or `deliveredAt`, the envelope's `occurredAt`, and when you observed the problem, all in UTC. |
+| What your endpoint returned | The HTTP status and how long it took to respond. |
+
+Never send your API key, your signing secret or your echo token. Support does not need them and cannot read the secret back either — if you believe one is compromised, rotate it with `POST /webhooks/{id}/rotate-secret` or generate a new key.
+
+<CardGroup cols={2}>
+  <Card title="Reliability" icon="arrows-rotate" href="/webhooks/reliability">
+    Retry ladder, delivery statuses, circuit breaker and retention.
+  </Card>
+  <Card title="Testing webhooks" icon="flask" href="/webhooks/testing">
+    Test deliveries and echo mode for debugging without a public endpoint.
+  </Card>
+  <Card title="Verifying signatures" icon="shield-check" href="/webhooks/verify-signatures">
+    Reference verifiers and secret rotation.
+  </Card>
+  <Card title="Known gaps" icon="list-check" href="/webhooks/known-gaps">
+    Changes that produce no event, and how to detect them.
+  </Card>
+</CardGroup>

@@ -1,0 +1,242 @@
+---
+title: "Retries, Failures and the Circuit Breaker"
+description: "What CaseXchange guarantees for a webhook delivery: attempt timeouts, the retry ladder, delivery statuses, the circuit breaker, and how long delivery records are kept"
+icon: "arrows-rotate"
+sidebarTitle: "Retries and failures"
+---
+
+## What this page covers
+
+Every event produces one HTTPS `POST` per active subscription. This page describes what happens to that `POST` when your endpoint is slow, down, or answers with the wrong status: how many times CaseXchange retries, how long it waits, what the delivery log shows you, and when a failing endpoint gets its subscription switched off.
+
+For the request itself (headers, body, envelope fields) see [Deliveries](/webhooks/deliveries). For checking the signature see [Verify Signatures](/webhooks/verify-signatures).
+
+## What counts as a successful attempt
+
+An attempt is successful when your endpoint answers with a `2xx` status. Everything else is a failed attempt:
+
+| Outcome | Result |
+|---|---|
+| `2xx` response | Delivered. |
+| `3xx` response | Failed. Deliveries never follow redirects. |
+| `4xx` or `5xx` response | Failed. |
+| No bytes received for 10 seconds | Failed. The connection is aborted. |
+| Attempt exceeds 30 seconds in total | Failed. The deadline applies however slowly your server streams the response. |
+| TLS or connection failure | Failed. |
+| URL re-check fails at delivery time | Failed. The URL rules from [Subscriptions](/webhooks/subscriptions) are re-checked on every delivery, for example when DNS now resolves to a private address. |
+
+<Tip>
+Answer `2xx` as soon as the body is durably stored, then do the real work asynchronously. A handler that validates, writes to your database, and calls other systems before responding is the most common cause of timeouts and, eventually, a tripped circuit breaker.
+</Tip>
+
+## The retry ladder
+
+A delivery gets 5 attempts in total. After a failed attempt the next one waits progressively longer:
+
+| Attempt | Wait before it | Time since first attempt |
+|---|---|---|
+| 1 | — | 0 |
+| 2 | 30 seconds | 30 seconds |
+| 3 | 2 minutes | 2.5 minutes |
+| 4 | 10 minutes | 12.5 minutes |
+| 5 | 30 minutes | about 43 minutes |
+
+After the fifth failure the delivery is marked `EXHAUSTED` and is never retried. There is no replay or redeliver endpoint, so an exhausted delivery has to be recovered by reconciling against the `GET` endpoints (see [Webhooks are a signal](#webhooks-are-a-signal) below).
+
+Every retry resends the same delivery with the same `X-CaseXchange-Delivery` header, so your endpoint can deduplicate across attempts. Each attempt is signed with the secret that is current at that moment: if you rotate the secret while a delivery is on the ladder, its later attempts are signed with the new secret. See [Verify Signatures](/webhooks/verify-signatures) for what that means for a rotation.
+
+## Delivery statuses
+
+Each delivery moves through these statuses. You can read them from `GET /webhooks/{id}/deliveries`.
+
+| `status` | Meaning | Fields to look at |
+|---|---|---|
+| `PENDING` | Queued and waiting for an attempt. | `attempts` is `0` on a newly queued delivery; it can be higher if an earlier attempt did not complete and the delivery was returned to the queue. |
+| `IN_PROGRESS` | An attempt is running right now. | |
+| `FAILED` | The last attempt failed and a retry is scheduled. | `nextRetryAt` is set; `lastStatusCode` and `lastError` describe the last attempt. |
+| `DELIVERED` | Your endpoint answered `2xx`. Final. | `deliveredAt` is set; `nextRetryAt` is `null`. |
+| `EXHAUSTED` | All 5 attempts failed, or the delivery was cancelled because the subscription was disabled or deleted. Final; never retried. | `lastError` says why; `nextRetryAt` is `null`. |
+
+## The delivery record
+
+`GET /webhooks/{id}/deliveries` returns the delivery log for one subscription, newest first, paginated with `page` (default 1) and `limit` (default 20, max 100). It needs a `read_only` key or higher.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | uuid | The delivery. Same value as the `X-CaseXchange-Delivery` header on every attempt. |
+| `eventType` | string | Event name, for example `referral.accepted` or `webhook.test`. |
+| `eventId` | uuid | The fact this delivery carries. Same value as `X-CaseXchange-Event-Id`. |
+| `status` | string | One of the statuses above. |
+| `attempts` | integer | Attempts made so far, 0 to 5. |
+| `lastStatusCode` | integer or null | HTTP status from the most recent attempt. `null` if no response was ever received (timeout, connection failure, cancelled before any attempt). |
+| `lastError` | string or null | Why the last attempt failed. See the [`lastError` reference](#lasterror-reference). `null` on success. |
+| `deliveredAt` | date-time or null | Set when the status becomes `DELIVERED`. |
+| `nextRetryAt` | date-time or null | Set while the status is `FAILED`. |
+| `createdAt` | date-time | When the delivery was queued. |
+
+<Warning>
+The delivery record never includes the payload, at any status and at any age. If you need to see exactly what was sent, use echo mode before the event happens — see [Testing](/webhooks/testing).
+</Warning>
+
+```bash
+curl "https://api.casexchange.com/api/public/v1/webhooks/{id}/deliveries?page=1&limit=20" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+**Example 200 response:**
+
+```json
+{
+  "data": [
+    {
+      "id": "8c1f2e3d-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "eventType": "case.status_changed",
+      "eventId": "3f9d2c1e-7b44-4a1c-9e0b-2c5f1a8d6e21",
+      "status": "FAILED",
+      "attempts": 2,
+      "lastStatusCode": 503,
+      "lastError": "HTTP 503",
+      "deliveredAt": null,
+      "nextRetryAt": "2026-09-03T14:14:41.118Z",
+      "createdAt": "2026-09-03T14:12:09.612Z"
+    },
+    {
+      "id": "5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e",
+      "eventType": "referral.accepted",
+      "eventId": "9b8a7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+      "status": "DELIVERED",
+      "attempts": 1,
+      "lastStatusCode": 200,
+      "lastError": null,
+      "deliveredAt": "2026-09-03T13:58:20.044Z",
+      "nextRetryAt": null,
+      "createdAt": "2026-09-03T13:58:19.731Z"
+    },
+    {
+      "id": "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d",
+      "eventType": "note.created",
+      "eventId": "c4d5e6f7-a8b9-4c0d-8e1f-2a3b4c5d6e7f",
+      "status": "EXHAUSTED",
+      "attempts": 5,
+      "lastStatusCode": null,
+      "lastError": "Request timed out",
+      "deliveredAt": null,
+      "nextRetryAt": null,
+      "createdAt": "2026-09-02T09:30:02.917Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 3,
+    "totalPages": 1
+  },
+  "meta": {
+    "requestId": "req_a1b2c3d4e5f6",
+    "timestamp": "2026-09-03T14:20:00.000Z"
+  }
+}
+```
+
+## `lastError` reference
+
+| `lastError` | What happened | What it means for you |
+|---|---|---|
+| `HTTP <code>` | Your endpoint responded with a non-`2xx` status; `lastStatusCode` holds the code. | Your endpoint received the request and rejected it. Check your handler's logs for that delivery id. A `401` or `403` here often means your own signature check rejected the request. |
+| `Request timed out` | No bytes were received for 10 seconds. | Your endpoint accepted the connection but did not start responding in time. Respond before doing the work. |
+| `Webhook request exceeded the 30000ms absolute deadline` | The attempt ran longer than 30 seconds in total. | Your endpoint was sending bytes but too slowly to finish. Respond with a short body as soon as the payload is stored. |
+| `Redirect not allowed: <3xx>` | Your endpoint answered with a redirect. | Deliveries never follow redirects. Point the subscription `url` at the final address. |
+| `SSRF check failed: <reason>` | The URL failed the re-check that runs at delivery time, for example because its hostname now resolves to a private address. | Nothing was sent. Fix the DNS record or the URL so that every resolved address is public, then check the rules in [Subscriptions](/webhooks/subscriptions). |
+| `Subscription is no longer active (deleted or disabled) — delivery cancelled` | The subscription was disabled or deleted while this delivery was still queued or waiting for a retry. | Nothing was sent. Expected after a `DELETE` or `PATCH {"isActive": false}`; reconcile with the `GET` endpoints if you needed the event. |
+
+`lastError` is `null` for a `DELIVERED` delivery and for a `PENDING` one that has not been attempted yet.
+
+## The circuit breaker
+
+If your endpoint keeps failing, CaseXchange stops sending to it rather than queueing retries forever.
+
+- After **10 consecutive** `EXHAUSTED` deliveries, the subscription is deactivated: `isActive` becomes `false`.
+- The subscription stays listed in `GET /webhooks` and `GET /webhooks/{id}`; it is not deleted.
+- Any delivery that ends `DELIVERED` resets the consecutive count to zero. Ten exhausted deliveries with a single success between them do not trip the breaker.
+- Deliveries cancelled because you disabled or deleted the subscription do not count toward the breaker.
+
+While the subscription is inactive, no new deliveries are created for it, and `POST /webhooks/{id}/test` is refused with `409 subscription_inactive`. Events that occur during that time are not delivered later: there is no replay.
+
+### How to tell the breaker tripped
+
+There is no separate flag. You know it was the breaker when:
+
+- `GET /webhooks/{id}` reports `isActive: false` and nobody at your firm sent `PATCH {"isActive": false}` or `DELETE`.
+- `GET /webhooks/{id}/deliveries` shows a run of `EXHAUSTED` deliveries with `attempts: 5` and endpoint-side errors (`HTTP 5xx`, `Request timed out`, and so on) leading up to the moment it went inactive.
+
+Monitor `isActive` on your subscriptions as part of your health checks. If `isActive` is `true` and deliveries are still not arriving, the breaker is not the cause; see [Troubleshooting](/webhooks/troubleshooting).
+
+### Re-enabling after a trip
+
+Fix the endpoint first. Then reactivate the subscription:
+
+```bash
+curl -X PATCH "https://api.casexchange.com/api/public/v1/webhooks/{id}" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{ "isActive": true }'
+```
+
+Reactivation is subject to the limit of 5 active subscriptions per firm: if five others are already active, the request fails with `400 subscription_limit_reached`. Reactivating also resets the consecutive-exhausted count, so the subscription starts with a clean slate.
+
+Send `POST /webhooks/{id}/test` after reactivating and watch `GET /webhooks/{id}/deliveries` for a `DELIVERED` result before you rely on the subscription again.
+
+## Disabling or deleting a subscription
+
+`PATCH /webhooks/{id}` with `{"isActive": false}` and `DELETE /webhooks/{id}` both stop deliveries that are already queued, not just future ones. Pending deliveries and deliveries waiting for a retry are cancelled instead of sent: they move to `EXHAUSTED` with `lastError` set to `Subscription is no longer active (deleted or disabled) — delivery cancelled`.
+
+Those cancelled deliveries do not count toward the circuit breaker. If you disable a subscription for maintenance and later reactivate it, reconcile with the `GET` endpoints for anything that happened in between.
+
+## At-least-once delivery and concurrency
+
+CaseXchange delivers **at least once**. A retry can arrive after the same attempt already reached you (for example when your endpoint stored the body but timed out before responding), so deduplicate on `X-CaseXchange-Delivery`.
+
+Deliveries to one subscription are not serialised. Two events that happen close together are sent in parallel, and a retried delivery can trail a later one by up to about 43 minutes. Expect concurrent `POST`s to your endpoint, do not assume order, and apply the delivery with the greatest `occurredAt`. [Deliveries](/webhooks/deliveries) covers ordering and duplicate handling in detail.
+
+## Retention
+
+| What | Kept for |
+|---|---|
+| Stored payload of a `DELIVERED` delivery | 30 days |
+| Stored payload of an `EXHAUSTED` delivery | 90 days |
+| The delivery record itself (`status`, `attempts`, `lastError`, and the other fields above) | 180 days, then hard-deleted |
+
+Stored payloads are never exposed through the API at any point during their retention; the periods above describe internal storage only. Pull the delivery log into your own systems if you need history beyond 180 days.
+
+## Webhooks are a signal
+
+Treat a delivery as a prompt to fetch current state, not as the state itself. The `GET` endpoints remain the authority:
+
+- `GET /status-updates` for status history — see [Status Updates examples](/api-reference/examples/status-updates).
+- `GET /sent-cases` and `GET /received-referrals` for the current state of each referral — see [Sent Cases examples](/api-reference/examples/sent-cases) and [Received Referrals examples](/api-reference/examples/received-referrals).
+- `GET /referrals` for referral records.
+
+Three things follow from this:
+
+- **No backfill.** A subscription only receives events that happen after it is created.
+- **No replay.** An `EXHAUSTED` delivery cannot be resent, and there is no endpoint to request one.
+- **Not every write produces an event.** Some paths into CaseXchange, such as historical CSV imports, create or update cases without emitting anything — see [Known Gaps](/webhooks/known-gaps).
+
+A periodic reconciliation against the `GET` endpoints covers exhausted deliveries, breaker trips, and the gaps in one pass — for example, pull `GET /status-updates` hourly with `dateFrom` set to your last run, and page `GET /sent-cases?sort=updatedAt&order=desc` until you reach records you have already seen.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Deliveries" icon="paper-plane" href="/webhooks/deliveries">
+    Headers, the envelope, ordering, and deduplication.
+  </Card>
+  <Card title="Verify Signatures" icon="signature" href="/webhooks/verify-signatures">
+    Check `X-CaseXchange-Signature` and handle secret rotation.
+  </Card>
+  <Card title="Testing" icon="flask" href="/webhooks/testing">
+    Test events and echo mode for inspecting what was sent.
+  </Card>
+  <Card title="Troubleshooting" icon="bug" href="/webhooks/troubleshooting">
+    Nothing arriving, signature failures, and unexpected `isActive: false`.
+  </Card>
+</CardGroup>

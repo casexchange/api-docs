@@ -1,0 +1,245 @@
+---
+title: "Managing Subscriptions"
+description: "Create, inspect, update and delete webhook subscriptions for your firm through the Public API"
+icon: "gear"
+sidebarTitle: "Subscriptions"
+---
+
+## Overview
+
+A subscription is one HTTPS URL that CaseXchange posts your firm's events to. Subscriptions are created and managed only through the Public API — there is no webhooks screen for firms in the CaseXchange dashboard. You need an API key first; see the [Quickstart](/quickstart) for how to create one from **Settings > API Keys**.
+
+Every active subscription receives every event for your firm. There is no per-subscription event filter: branch on the `event` field in your handler and ignore names you do not handle. The full list is in the [Event catalog](/webhooks/events).
+
+All paths on this page are relative to `https://api.casexchange.com/api/public/v1`.
+
+## Endpoints
+
+| Method | Path | Tier | Purpose |
+|---|---|---|---|
+| `POST` | `/webhooks` | `standard` | Create a subscription. Returns the signing secret — the only time besides rotation. `201`. |
+| `GET` | `/webhooks` | `read_only` | List your firm's subscriptions (paginated). |
+| `GET` | `/webhooks/{id}` | `read_only` | Fetch one subscription. |
+| `PATCH` | `/webhooks/{id}` | `standard` | Change `url`, `description` or `isActive`. |
+| `DELETE` | `/webhooks/{id}` | `standard` | Delete a subscription. `204`, no body. Queued deliveries stop. |
+| `GET` | `/webhooks/{id}/deliveries` | `read_only` | Delivery log: status, attempts, last status code, last error — never the payload. |
+| `POST` | `/webhooks/{id}/test` | `standard` | Queue a synthetic `webhook.test` delivery. `200` with the delivery record. |
+| `POST` | `/webhooks/{id}/rotate-secret` | `standard` | Issue a new secret, returned once. Takes effect immediately. |
+| `POST` | `/webhooks/{id}/echo/enable` | `standard` | Divert deliveries to a CaseXchange-hosted capture endpoint. Returns the echo URL and token (only here). Idempotent. |
+| `POST` | `/webhooks/{id}/echo/disable` | `standard` | Restore your URL. Deletes every capture. |
+| `GET` | `/webhooks/{id}/echo/captures` | `read_only` | Read captured deliveries (paginated). |
+
+The three list endpoints take `page` (default 1) and `limit` (default 20, maximum 100).
+
+This page covers the first five endpoints and the rules they share. The delivery log is covered on [Anatomy of a delivery](/webhooks/deliveries); `test`, echo mode and secret rotation are covered on [Testing webhooks](/webhooks/testing) and [Verifying signatures](/webhooks/verify-signatures).
+
+<Tip>
+The [Postman collection](/postman/CaseXchange-Public-API.postman_collection.json) has a **Webhooks** folder with ready-made requests for every endpoint on this page — create, list, get, update, delete — plus rotate, test, deliveries and the three echo-mode calls.
+</Tip>
+
+## Create a subscription
+
+`POST /webhooks` — requires a `standard` or `full` key.
+
+### Request body
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `url` | string | yes | Must start with `https://`; at most 2048 characters. See [URL rules](#url-rules). |
+| `description` | string | no | At most 255 characters. |
+
+The body is strict: any field not listed above is rejected with `400 validation_error`. In particular, there is no `events` field — you cannot choose which events a subscription receives.
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://hooks.yourfirm.com/casexchange",
+    "description": "Production intake"
+  }'
+```
+
+**Expected 201 response:**
+
+```json
+{
+  "data": {
+    "id": "7c1e2b40-5d3a-4f8e-9a6b-1c2d3e4f5a6b",
+    "url": "https://hooks.yourfirm.com/casexchange",
+    "description": "Production intake",
+    "isActive": true,
+    "isEchoActive": false,
+    "originalUrl": null,
+    "secret": "whsec_4f2a9c1e8b7d6a5f3e2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e",
+    "createdAt": "2026-09-03T14:12:09.401Z",
+    "updatedAt": "2026-09-03T14:12:09.401Z"
+  },
+  "meta": {
+    "requestId": "req_f2dbe1d3f6ad4a7bb5b4c9f2",
+    "timestamp": "2026-09-03T14:12:09.410Z"
+  }
+}
+```
+
+<Warning>
+`secret` is returned once, in this response, and never again. It is not readable from `GET /webhooks/{id}` or anywhere else. Store it in a secrets manager before doing anything else. If you lose it, call `POST /webhooks/{id}/rotate-secret` to get a new one — rotation takes effect immediately, with no grace window and no dual-signing. See [Verifying signatures](/webhooks/verify-signatures).
+</Warning>
+
+The secret is the string `whsec_` followed by 64 hex characters. It signs every delivery to this subscription.
+
+### URL rules
+
+The URL is validated when you create the subscription, again when you change it, and re-checked at every delivery. A URL that fails any check is rejected with `400 invalid_webhook_url`.
+
+- `https://` only. Plain `http://` is rejected.
+- Port 443 only. An explicit `:443` is accepted; any other port is rejected.
+- No credentials in the URL (`user:password@host` is rejected).
+- The hostname must resolve, and every address it resolves to must be public. Loopback, private network, link-local, carrier-grade NAT, multicast, reserved, documentation and benchmarking ranges are all rejected, for IPv4 and IPv6 alike.
+- Deliveries never follow redirects. A `3xx` response counts as a failed attempt, so point the URL at the final endpoint.
+
+For local development this means `localhost`, `127.0.0.1` and LAN addresses cannot be used. Use a public HTTPS tunnel, a hosted request-capture service, or echo mode, which needs no endpoint at all — see [Testing webhooks](/webhooks/testing).
+
+## Read subscriptions
+
+`GET /webhooks` and `GET /webhooks/{id}` — a `read_only` key is enough.
+
+```bash
+# List (paginated; limit defaults to 20, max 100)
+curl "https://api.casexchange.com/api/public/v1/webhooks?page=1&limit=20" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+
+# Fetch one
+curl "https://api.casexchange.com/api/public/v1/webhooks/7c1e2b40-5d3a-4f8e-9a6b-1c2d3e4f5a6b" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+The list returns `data` as an array of subscription objects plus a `pagination` object (`page`, `limit`, `total`, `totalPages`). A `limit` above 100 is a `400 validation_error`.
+
+### The subscription object
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | uuid | Use it in every `/webhooks/{id}` path. |
+| `url` | string | Always your endpoint, even while echo mode is on. |
+| `description` | string or null | Free text for your own bookkeeping. |
+| `isActive` | boolean | `false` after you deactivate it, or after CaseXchange deactivates it following 10 consecutive exhausted deliveries. See [Reliability](/webhooks/reliability). |
+| `isEchoActive` | boolean | `true` while deliveries are diverted to the echo capture endpoint. This flag, not `url`, tells you whether echo mode is on. |
+| `originalUrl` | string or null | Equal to `url` while echo mode is on; `null` when it is off. Kept for compatibility — prefer `url` plus `isEchoActive`. |
+| `createdAt`, `updatedAt` | date-time | |
+
+The secret is never part of this object. Only `POST /webhooks` and `POST /webhooks/{id}/rotate-secret` return it.
+
+<Note>
+`isActive: true` means the subscription itself is enabled. Deliveries also require that your firm has the Public API integration enabled on its account and that the firm is active. If either is not the case, events are not delivered — and your API keys stop working at the same moment, returning `403 public_api_not_enabled` or `403 api_key_firm_inactive`. The subscription itself is not deactivated, so deliveries resume once access is restored. See [Known gaps](/webhooks/known-gaps).
+</Note>
+
+## Update a subscription
+
+`PATCH /webhooks/{id}` — requires a `standard` or `full` key.
+
+| Field | Type | Rules |
+|---|---|---|
+| `url` | string | `https://`, at most 2048 characters, same [URL rules](#url-rules) as on create. |
+| `description` | string or null | At most 255 characters. Send `null` to clear it. |
+| `isActive` | boolean | `false` pauses the subscription; `true` reactivates it. |
+
+Send at least one field. An empty body, or any field not listed, is a `400 validation_error`.
+
+```bash
+# Deactivate a subscription
+curl -X PATCH "https://api.casexchange.com/api/public/v1/webhooks/7c1e2b40-5d3a-4f8e-9a6b-1c2d3e4f5a6b" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{ "isActive": false }'
+```
+
+The response is `200` with the updated subscription object (no secret).
+
+Things to know:
+
+- **Deactivating stops queued deliveries too.** Deliveries that are pending or waiting for a retry are cancelled rather than sent. Events that happen while the subscription is inactive are not delivered later — there is no backfill.
+- **Reactivating is subject to the active cap.** `{ "isActive": true }` when your firm already has five active subscriptions returns `400 subscription_limit_reached`. Deactivate or delete another subscription first.
+- **You cannot change `url` while echo mode is on.** The request returns `400 echo_mode_active`; call `POST /webhooks/{id}/echo/disable` first, then change the URL.
+- **Changing `url` does not change the secret.** The same secret keeps signing deliveries to the new URL.
+
+## Delete a subscription
+
+`DELETE /webhooks/{id}` — requires a `standard` or `full` key. Returns `204` with no body.
+
+```bash
+curl -X DELETE "https://api.casexchange.com/api/public/v1/webhooks/7c1e2b40-5d3a-4f8e-9a6b-1c2d3e4f5a6b" \
+  -H "X-API-Key: cxp_std_your_key_here"
+```
+
+Deliveries that were queued or waiting for a retry are cancelled, not sent. After deletion the id returns `404 not_found` from every endpoint, and the subscription no longer counts toward the active cap.
+
+## Limits
+
+**Five active subscriptions per firm.** Creating a sixth, or reactivating one with `PATCH { "isActive": true }` while five are active, returns `400 subscription_limit_reached`.
+
+Only subscriptions with `isActive: true` count. Deactivated and deleted subscriptions do not, so you can keep a paused subscription around without it consuming a slot.
+
+## Who can manage subscriptions
+
+| Key | Read (`GET`) | Manage (`POST`, `PATCH`, `DELETE`) |
+|---|---|---|
+| `read_only` (`cxp_ro_`) | yes | no — `403 insufficient_tier` |
+| `standard` (`cxp_std_`) | yes | yes |
+| `full` (`cxp_full_`) | yes | yes |
+
+Admin keys, Salesforce `cxsf_*` tokens and MCP-issued keys cannot use the webhook endpoints at any tier; they receive `403 wrong_scope`.
+
+Every key sees and manages only the subscriptions of its own firm. A subscription id that belongs to another firm returns `404 not_found` — it looks exactly like an id that does not exist. If you manage several firms, use a key for each firm.
+
+## Rate limits
+
+Webhook management calls count against your key's rate limit like any other Public API call. Limits are per API key over a 60-second sliding window:
+
+| Tier | `GET` per minute | Writes (`POST`, `PATCH`, `DELETE`) per minute |
+|---|---|---|
+| `read_only` | 500 | 0 |
+| `standard` | 300 | 100 |
+| `full` | 300 | 100 |
+
+Across all keys of one firm the aggregate cap is 1000 `GET` and 200 writes per minute. Responses that pass the tier check carry `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` (a `403 insufficient_tier` refusal does not); exceeding a limit returns `429 rate_limit_exceeded` with a `Retry-After` header. See [Error Handling](/api-reference/error-handling) for backoff guidance.
+
+<Info>
+Deliveries from CaseXchange to your endpoint are not rate-limited by these numbers and do not consume your key's budget. Only the calls you make count.
+</Info>
+
+## Error codes
+
+All errors use the standard envelope described in [Error Handling](/api-reference/error-handling): branch on `error.code`, log `error.message` and `meta.requestId`.
+
+| HTTP | `error.code` | When | What to do |
+|---|---|---|---|
+| 400 | `validation_error` | Body or query failed validation: unknown field, bad UUID, `limit` above 100, empty `PATCH` body. | Fix the request; check field names against the tables above. |
+| 400 | `invalid_webhook_url` | URL failed the HTTPS, port, credentials or public-address check. | Correct the URL per the [URL rules](#url-rules). |
+| 400 | `subscription_limit_reached` | Creating or reactivating would exceed five active subscriptions. | Deactivate or delete another subscription first. |
+| 400 | `echo_mode_active` | `PATCH` tried to change `url` while echo mode is on. | Call `POST /webhooks/{id}/echo/disable`, then retry. |
+| 400 | `echo_not_active` | `GET /webhooks/{id}/echo/captures` on a subscription whose echo mode is off. | Enable echo mode first, or stop polling captures. |
+| 400 | `echo_requires_active` | `POST /webhooks/{id}/echo/enable` on an inactive subscription. | Reactivate first. |
+| 401 | `auth_missing`, `api_key_invalid_format`, `api_key_not_found`, `api_key_revoked`, `api_key_expired` | No `X-API-Key` header, a key whose format is not recognized, or a key that is unknown, revoked or expired. | Check the `X-API-Key` header; generate a new key if it was revoked or expired. |
+| 403 | `insufficient_tier` | A `read_only` key called a mutation. | Use a `standard` or `full` key. |
+| 403 | `wrong_scope` | Admin key, `cxsf_*` token or MCP key. | Use a firm `cxp_*` key created in **Settings > API Keys**. |
+| 404 | `not_found` | The id is not one of your firm's subscriptions, or it was deleted. | Refetch `GET /webhooks` and confirm you are using the right firm's key. |
+| 409 | `subscription_inactive` | `POST /webhooks/{id}/test` on an inactive subscription. | Reactivate with `PATCH { "isActive": true }`, then retry. |
+| 429 | `rate_limit_exceeded` | Per-key or per-firm limit exceeded. | Wait for `X-RateLimit-Reset`; do not retry in a tight loop. |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Anatomy of a delivery" icon="clock-rotate-left" href="/webhooks/deliveries">
+    Read the delivery log, status values and error strings for a subscription.
+  </Card>
+  <Card title="Verifying signatures" icon="shield-check" href="/webhooks/verify-signatures">
+    Check `X-CaseXchange-Signature` and handle secret rotation safely.
+  </Card>
+  <Card title="Testing webhooks" icon="flask" href="/webhooks/testing">
+    Send a `webhook.test` delivery or capture real deliveries with echo mode.
+  </Card>
+  <Card title="Reliability" icon="arrows-rotate" href="/webhooks/reliability">
+    Retry schedule, automatic deactivation after repeated failures, and retention.
+  </Card>
+</CardGroup>

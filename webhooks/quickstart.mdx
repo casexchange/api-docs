@@ -1,0 +1,263 @@
+---
+title: "Webhooks Quickstart"
+description: "From no subscription to a verified delivery on your own endpoint"
+icon: "rocket"
+sidebarTitle: "Quickstart"
+---
+
+## What you will do
+
+Register an HTTPS endpoint, receive a test delivery on it, verify the signature, and then watch a real referral event arrive. Budget about thirty minutes.
+
+You need a firm-scoped `cxp_` API key at the `standard` tier or above, and your firm's account must have the Public API integration enabled. See [Webhooks](/webhooks) for the full prerequisites.
+
+<Steps>
+
+<Step title="Get a standard-tier API key">
+
+Generate the key from **Settings > API Keys** in the CaseXchange dashboard, or programmatically with a JWT session — the [Quickstart](/quickstart) and the [JWT guide](/auth/jwt) both cover it.
+
+A `read_only` key can list subscriptions and read the delivery log, but it cannot create, change, test or delete a subscription. Those calls return `403 insufficient_tier`.
+
+<Warning>
+  Admin keys, Salesforce `cxsf_` tokens and MCP-issued keys cannot manage webhooks at any tier. They return `403 wrong_scope`.
+</Warning>
+
+</Step>
+
+<Step title="Stand up an endpoint">
+
+Your endpoint must:
+
+- be reachable at `https://` on port 443, with a hostname that resolves to a public address;
+- read the **raw** request body, because that is what the signature covers;
+- answer `2xx` quickly, and do the real work afterwards.
+
+Here is a minimal Express receiver. The `verify` function is the reference implementation from [Verify signatures](/webhooks/verify-signatures) — copy it from there.
+
+```javascript
+const express = require("express");
+const app = express();
+
+const SECRET = process.env.CASEXCHANGE_WEBHOOK_SECRET;
+const seen = new Set(); // use a durable store in production
+
+// express.raw, not express.json: `verify` needs the exact bytes we signed.
+app.post(
+  "/casexchange",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const signature = req.get("X-CaseXchange-Signature");
+    if (!signature || !verify(req.body.toString("utf8"), signature, SECRET)) {
+      return res.status(401).send("bad signature");
+    }
+
+    const deliveryId = req.get("X-CaseXchange-Delivery");
+    if (seen.has(deliveryId)) return res.sendStatus(200); // a retry
+    seen.add(deliveryId);
+
+    enqueue(JSON.parse(req.body.toString("utf8"))); // process asynchronously
+    res.sendStatus(200); // acknowledge first, work later
+  }
+);
+
+app.listen(3000);
+```
+
+<Tip>
+  Developing locally? `localhost` and private addresses are rejected. Use an HTTPS tunnel, a hosted request-capture service, or [echo mode](/webhooks/testing), which needs no endpoint of your own at all.
+</Tip>
+
+</Step>
+
+<Step title="Create the subscription">
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://hooks.yourfirm.com/casexchange",
+    "description": "Production intake"
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "data": {
+    "id": "9c1f2a44-7e83-4b6d-9a15-0c3e8f7b2d61",
+    "url": "https://hooks.yourfirm.com/casexchange",
+    "description": "Production intake",
+    "isActive": true,
+    "isEchoActive": false,
+    "originalUrl": null,
+    "createdAt": "2026-09-10T14:02:11.204Z",
+    "updatedAt": "2026-09-10T14:02:11.204Z",
+    "secret": "whsec_4f8a1c7e2b9d6035a1e4c8f27b3d905e6a1c4f8b2d7e930516c8a4f2b7d1e903"
+  },
+  "meta": {
+    "requestId": "req_3c9a1f7b2e8d4056",
+    "timestamp": "2026-09-10T14:02:11.219Z"
+  }
+}
+```
+
+<Warning>
+  `secret` is returned here and in the response to `POST /webhooks/{id}/rotate-secret`, and nowhere else. It cannot be read back. Store it in your secrets manager before you close the terminal.
+</Warning>
+
+There is no `events` field: every active subscription receives every event for your firm. Your firm may hold five active subscriptions at once.
+
+</Step>
+
+<Step title="Send a test event">
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks/9c1f2a44-7e83-4b6d-9a15-0c3e8f7b2d61/test" \
+  -H "X-API-Key: cxp_std_your_key_here"
+```
+
+**Response `200`**
+
+```json
+{
+  "data": {
+    "id": "b403cba7-108b-4ce7-941e-4810b0a46e53",
+    "eventType": "webhook.test",
+    "eventId": "a852e7b7-be07-432d-9c53-43e88d6e57fa",
+    "status": "PENDING",
+    "attempts": 0,
+    "lastStatusCode": null,
+    "lastError": null,
+    "deliveredAt": null,
+    "nextRetryAt": null,
+    "createdAt": "2026-09-10T14:04:02.881Z"
+  },
+  "meta": {
+    "requestId": "req_11ff34b16b98c0f3",
+    "timestamp": "2026-09-10T14:04:02.896Z"
+  }
+}
+```
+
+The body that arrives at your endpoint is **not** the event envelope. `webhook.test` is a synthetic delivery with its own flat shape, and its `eventId` travels only in the `X-CaseXchange-Event-Id` header:
+
+```json
+{
+  "event": "webhook.test",
+  "timestamp": "2026-09-10T14:04:02.784Z",
+  "data": {
+    "message": "This is a test webhook delivery",
+    "subscriptionId": "9c1f2a44-7e83-4b6d-9a15-0c3e8f7b2d61"
+  }
+}
+```
+
+It is signed like any other delivery, so it exercises your verification code end to end.
+
+Confirm it landed:
+
+```bash
+curl "https://api.casexchange.com/api/public/v1/webhooks/9c1f2a44-7e83-4b6d-9a15-0c3e8f7b2d61/deliveries?page=1&limit=20" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+```json
+{
+  "data": [
+    {
+      "id": "b403cba7-108b-4ce7-941e-4810b0a46e53",
+      "eventType": "webhook.test",
+      "eventId": "a852e7b7-be07-432d-9c53-43e88d6e57fa",
+      "status": "DELIVERED",
+      "attempts": 1,
+      "lastStatusCode": 200,
+      "lastError": null,
+      "deliveredAt": "2026-09-10T14:04:03.402Z",
+      "nextRetryAt": null,
+      "createdAt": "2026-09-10T14:04:02.881Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 },
+  "meta": {
+    "requestId": "req_7a2c9e4b1d803f56",
+    "timestamp": "2026-09-10T14:04:12.017Z"
+  }
+}
+```
+
+If it says `FAILED` or `EXHAUSTED` instead, `lastStatusCode` and `lastError` say why — see [Troubleshooting](/webhooks/troubleshooting).
+
+</Step>
+
+<Step title="Receive a real event">
+
+A test delivery proves your transport and your signature check. To exercise your event handling, create a case through the API and move it through a status change: `POST /sent-cases` then `POST /sent-cases/{id}/refer` produces `referral.sent` for your firm. See [Sent Cases examples](/api-reference/examples/sent-cases).
+
+Every firm event envelope carries `isTestCase`, so your handler can route or ignore test traffic — the synthetic `webhook.test` body is not an envelope and has no `isTestCase`. An ordinary referral arrives with `isTestCase: false`. If you would rather not exercise this against live referral traffic, drive a test case through a status change instead — every delivery for it carries `isTestCase: true`, so your handler can route or ignore it. This is an abbreviated envelope — the [event catalog](/webhooks/events) has the full field list and the `data` shape for each event:
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "referral.sent",
+  "eventId": "3f9d2c1e-7b44-4a1c-9e0b-2c5f1a8d6e21",
+  "occurredAt": "2026-09-10T14:19:44.301Z",
+  "perspective": "sent",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000001", "source": "manual" },
+  "data": { "...": "a StatusChangeData object" }
+}
+```
+
+</Step>
+
+</Steps>
+
+## Before you go live
+
+<AccordionGroup>
+
+<Accordion icon="list-check" title="Handler checklist">
+  - Verify `X-CaseXchange-Signature` before parsing the body, using the raw bytes.
+  - Deduplicate on `X-CaseXchange-Delivery`. Retries reuse it; `eventId` is shared across firms and subscriptions and is not unique per delivery.
+  - Answer `2xx` as soon as the body is stored. Anything else is a failed attempt.
+  - Ignore event names your handler does not recognise rather than erroring on them.
+  - Filter on `isTestCase` so test traffic never reaches production records.
+  - Check `piiMasked` before reading client fields; a masked snapshot omits them entirely rather than sending nulls. See [Client data and masking](/webhooks/privacy).
+  - Apply the delivery with the greatest `occurredAt`; there is no ordering guarantee.
+</Accordion>
+
+<Accordion icon="lock" title="Operational checklist">
+  - Store the secret in a secrets manager. Never log it.
+  - Plan for rotation: `POST /webhooks/{id}/rotate-secret` takes effect immediately, with no dual-signing window. Deploy a verifier that accepts both secrets, rotate, then drop the old one.
+  - Reconcile periodically against `GET /status-updates` and the case read endpoints. Webhooks are a signal, not a complete change feed — see [Known gaps](/webhooks/known-gaps).
+  - Monitor `GET /webhooks/{id}/deliveries` for `EXHAUSTED` runs. Ten consecutive exhausted deliveries deactivate the subscription; see [Reliability](/webhooks/reliability).
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Managing subscriptions" icon="gear" href="/webhooks/subscriptions">
+    Every endpoint, the URL rules, the five-subscription limit, and the error codes.
+  </Card>
+  <Card title="Anatomy of a delivery" icon="inbox" href="/webhooks/deliveries">
+    Headers, the envelope, idempotency and ordering.
+  </Card>
+  <Card title="Verify signatures" icon="shield-check" href="/webhooks/verify-signatures">
+    The reference implementations and the rotation procedure.
+  </Card>
+  <Card title="Testing" icon="flask" href="/webhooks/testing">
+    Test deliveries, echo mode, and local development.
+  </Card>
+</CardGroup>
