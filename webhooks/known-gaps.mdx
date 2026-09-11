@@ -1,0 +1,51 @@
+---
+title: "Known Gaps"
+description: "Changes that do not produce a webhook event, and how to detect them"
+icon: "triangle-exclamation"
+sidebarTitle: "Known gaps"
+---
+
+## What webhooks do not cover
+
+Webhooks are a signal to reconcile, not a complete change feed. The gaps below are deliberate. Plan for them: keep a periodic reconciliation against `GET /status-updates`, `GET /sent-cases`, and `GET /received-referrals` -- those endpoints remain the authority on the state of a case. See [Reliability](/webhooks/reliability) for delivery guarantees and [Event catalog](/webhooks/events) for what each event carries.
+
+## Subscription features
+
+| Gap | What to do instead |
+|---|---|
+| No per-subscription event filter. Every active subscription receives every event for your firm. | Branch on the `event` field (or the `X-CaseXchange-Event` header) and return `2xx` for names you do not handle. |
+| No replay or redeliver endpoint. `GET /webhooks/{id}/deliveries` reports status, attempts, and the last error, never the payload. | Treat a `FAILED` or `EXHAUSTED` delivery as a prompt to re-read the case from the API. Retries happen only on the automatic ladder described in [Reliability](/webhooks/reliability). |
+| No backfill. A subscription receives only events that occur after it is created. | Seed your initial state from `GET /sent-cases`, `GET /received-referrals`, and `GET /status-updates` before you start consuming events. |
+
+## Changes that produce no event, or fewer than you expect
+
+| Change | What happens | How to detect it |
+|---|---|---|
+| Historical CSV import | Creating a case by CSV import is silent -- no events; an imported case is history, not news. Updating an existing case by CSV import is not silent: the row's field diff arrives as `case.updated`, and a status move arrives as the matching status event. A bulk status update by CSV also emits, one event per row. | Reconcile with `GET /sent-cases` and `GET /received-referrals` for the rows that were created. |
+| Status changes written by the Clio Manage pull | No event. | Reconcile with `GET /status-updates`. |
+| Status changes written by the DearLegal inbound webhook | No event. These changes also do not count as the receiving firm's acknowledgement, so they do not unmask PII. | Reconcile with `GET /status-updates`. |
+| Notes written automatically alongside a status transition, a case creation, or a CSV import | Not published as `note.created`. A note supplied to `PATCH /sent-cases/{id}` is a real note and does emit. | For a status transition, the free text recorded with it arrives as `data.message` on the status event itself -- except while the delivery is masked (`piiMasked: true`), where `data.message` is `null`. |
+| Note removal | There is no `note.deleted` event. `note.*` covers creation and body edits only. | There is no signal. Do not rely on webhooks to keep a mirror of notes consistent. |
+| Partner messages | No event. | There is no webhook signal for messages. |
+| Document metadata edits | No event. `document.uploaded` and `document.deleted` are the only document events. | Reconcile with `GET /cases/{caseId}/documents`. |
+
+## Events that stop without notice
+
+| Situation | What happens | How to detect it |
+|---|---|---|
+| A case or referral is archived | All events for it stop. No event announces the archive. Unarchiving resumes them. | A case that goes quiet is not necessarily idle. An archived case leaves the public API entirely: `GET /sent-cases/{id}` and `GET /received-referrals/{id}` return `404`, and the case disappears from the list endpoints, so its silence and its absence look the same. |
+| Your firm's Public API integration is revoked, or your firm is deactivated | Deliveries are no longer created for any subscription. | Every Public API call with your firm's key starts returning `403 public_api_not_enabled` (or `403 api_key_firm_inactive` if the firm was deactivated). The subscription itself is not deactivated and deliveries resume once access is restored. |
+
+<Warning>
+  `isActive` is not a health check. It means only that you have not disabled the subscription and that the circuit breaker has not tripped -- it does not prove your firm is currently a webhook recipient. And you cannot read it back while your firm's access is revoked, because the same condition stops your keys from authenticating. Contact `help@casexchange.com` if you cannot explain a silence.
+</Warning>
+
+## `changedFields` is not a value diff
+
+`PATCH /sent-cases/{id}` reports the columns it wrote in `changedFields`, not the columns whose values changed. Re-sending an identical value can still produce a `case.updated` naming that column.
+
+Compare the delivered snapshot with the state you last stored before you act on a `case.updated`. This also handles your own writes, which come back to you as events -- see [Anatomy of a delivery](/webhooks/deliveries).
+
+<Note>
+  Reconciliation calls such as `GET /status-updates` count toward your key's rate limit like any other call; deliveries to your endpoint do not. See [Troubleshooting](/webhooks/troubleshooting) if deliveries stop unexpectedly.
+</Note>

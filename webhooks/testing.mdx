@@ -1,0 +1,323 @@
+---
+title: "Testing Webhooks"
+description: "Send test events, capture deliveries in echo mode, develop locally, and verify real business events end to end"
+icon: "flask"
+sidebarTitle: "Testing"
+---
+
+## Overview
+
+There are three ways to exercise a subscription before and after you go live, from cheapest to most realistic:
+
+| Method | What it proves | Endpoint needed |
+|---|---|---|
+| Test event | CaseXchange can reach your URL and you can verify a signature | Yes |
+| Echo mode | Exactly what CaseXchange sends, byte for byte, without running anything | No |
+| Real business events | Your handler processes real envelopes, deduplicates, and orders correctly | Yes |
+
+All three need an existing subscription. If you do not have one yet, start with the [Webhooks quickstart](/webhooks/quickstart). Test events and echo mode are mutations and need a `standard` or `full` key; reading deliveries and captures works with `read_only`.
+
+## Send a test event
+
+`POST /webhooks/{id}/test` queues a synthetic `webhook.test` delivery to the subscription. The subscription must be active — an inactive one returns `409` with `error.code` `subscription_inactive`; reactivate it with `PATCH /webhooks/{id}` and `{ "isActive": true }` first.
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks/{id}/test" \
+  -H "X-API-Key: cxp_std_your_key_here"
+```
+
+The `200` response is the delivery record, not the result of the attempt. It is the record as it stood before the first attempt ran — the attempt is dispatched immediately, in the background, so a poll a moment later may already show `DELIVERED`.
+
+```json
+{
+  "data": {
+    "id": "9c7e5b21-3a4d-4f68-b1c2-7d8e9f0a1b2c",
+    "eventType": "webhook.test",
+    "eventId": "3f9d2c1e-7b44-4a1c-9e0b-2c5f1a8d6e21",
+    "status": "PENDING",
+    "attempts": 0,
+    "lastStatusCode": null,
+    "lastError": null,
+    "deliveredAt": null,
+    "nextRetryAt": null,
+    "createdAt": "2026-09-08T18:02:03.784Z"
+  },
+  "meta": {
+    "requestId": "req_f2dbe1d3f6ad4a7bb5b4c9f2",
+    "timestamp": "2026-09-08T18:02:03.790Z"
+  }
+}
+```
+
+### What your endpoint receives
+
+The test delivery carries the same four headers as every other delivery and is signed the same way, so it is a complete rehearsal of [Verifying signatures](/webhooks/verify-signatures).
+
+| Header | Value on a test delivery |
+|---|---|
+| `X-CaseXchange-Event` | `webhook.test` |
+| `X-CaseXchange-Event-Id` | The `eventId` from the delivery record |
+| `X-CaseXchange-Delivery` | The `id` from the delivery record; stable across retries |
+| `X-CaseXchange-Signature` | `t=<unix-seconds>,v1=<hex>` computed over the exact body below |
+
+The body is **not** the standard event envelope. It is exactly:
+
+```json
+{
+  "event": "webhook.test",
+  "timestamp": "2026-09-08T18:02:03.784Z",
+  "data": {
+    "message": "This is a test webhook delivery",
+    "subscriptionId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c"
+  }
+}
+```
+
+<Note>
+  There is no `eventId`, `schemaVersion`, `perspective`, or `referralId` in the test body. The `eventId` travels only in the `X-CaseXchange-Event-Id` header. Branch on `event === "webhook.test"` before your envelope parser runs, or the missing fields will fail validation.
+</Note>
+
+### Poll the delivery log
+
+Follow the outcome with `GET /webhooks/{id}/deliveries`. The test delivery is retried on the same schedule as a real one, so a failing endpoint shows `FAILED` with a `nextRetryAt` rather than `EXHAUSTED` right away.
+
+```bash
+curl "https://api.casexchange.com/api/public/v1/webhooks/{id}/deliveries?page=1&limit=20" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+A successful round trip looks like this once the attempt has run:
+
+```json
+{
+  "data": [
+    {
+      "id": "9c7e5b21-3a4d-4f68-b1c2-7d8e9f0a1b2c",
+      "eventType": "webhook.test",
+      "eventId": "3f9d2c1e-7b44-4a1c-9e0b-2c5f1a8d6e21",
+      "status": "DELIVERED",
+      "attempts": 1,
+      "lastStatusCode": 200,
+      "lastError": null,
+      "deliveredAt": "2026-09-08T18:02:04.112Z",
+      "nextRetryAt": null,
+      "createdAt": "2026-09-08T18:02:03.784Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 },
+  "meta": {
+    "requestId": "req_0b1c2d3e4f5a6b7c8d9e0f1a",
+    "timestamp": "2026-09-08T18:02:10.004Z"
+  }
+}
+```
+
+The log never includes the payload. To see the body CaseXchange sent, use echo mode.
+
+## Echo mode
+
+Echo mode diverts deliveries for one subscription to a capture endpoint hosted by CaseXchange, then lets you read back what was sent — headers, the exact signed bytes, and whether the signature verifies against your current secret. Nothing reaches your URL while it is on, and you do not need an endpoint of your own.
+
+<Steps>
+  <Step title="Enable echo mode">
+    The subscription must be active; an inactive one returns `400` with `error.code` `echo_requires_active`.
+
+    ```bash
+    curl -X POST "https://api.casexchange.com/api/public/v1/webhooks/{id}/echo/enable" \
+      -H "X-API-Key: cxp_std_your_key_here"
+    ```
+
+    The `200` response contains exactly two fields and nothing else:
+
+    ```json
+    {
+      "data": {
+        "echoUrl": "https://api.casexchange.com/api/v1/webhooks/echo/6b1f2c8d9e0a4b7c3d5e6f1a2b8c9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8e3a",
+        "echoToken": "6b1f2c8d9e0a4b7c3d5e6f1a2b8c9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8e3a"
+      },
+      "meta": {
+        "requestId": "req_7a8b9c0d1e2f3a4b5c6d7e8f",
+        "timestamp": "2026-09-08T18:05:41.220Z"
+      }
+    }
+    ```
+
+    This is the only place `echoUrl` and `echoToken` are ever returned — `GET /webhooks/{id}` does not expose them. The call is idempotent: calling it again on a subscription that is already in echo mode returns the same values, so use that if you need to see them again.
+  </Step>
+
+  <Step title="Understand what changed">
+    While echo mode is on:
+
+    | What | Behaviour |
+    |---|---|
+    | `isEchoActive` on the subscription | `true` — this flag, not `url`, tells you echo mode is on |
+    | `url` on the subscription | Unchanged; it always shows your endpoint |
+    | Deliveries | Sent to the capture endpoint instead of your URL |
+    | `url` changes via `PATCH` | Rejected with `400` `echo_mode_active` — disable echo mode first |
+
+    Now trigger something to capture: `POST /webhooks/{id}/test` is the quickest, or wait for a real event.
+  </Step>
+
+  <Step title="Read the captures">
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/webhooks/{id}/echo/captures?page=1&limit=20" \
+      -H "X-API-Key: cxp_ro_your_key_here"
+    ```
+
+    Each capture is one delivery as CaseXchange sent it:
+
+    | Field | Meaning |
+    |---|---|
+    | `id` | Capture id |
+    | `subscriptionId` | The subscription the delivery belonged to |
+    | `headers` | Every request header the capture endpoint received — the five CaseXchange sets, plus transport headers such as `host` and `content-length`, keyed in lower case |
+    | `body` | The payload, parsed as JSON |
+    | `rawBody` | The exact bytes that were signed — use this, not `body`, to reproduce the signature |
+    | `signatureValid` | Whether the `X-CaseXchange-Signature` that was sent verifies against your subscription secret |
+    | `signatureDetails` | `received` (the header value), `timestamp` (the integer `t` from the header), `match` (boolean) |
+    | `receivedAt` | When the capture endpoint received it |
+
+    ```json
+    {
+      "data": [
+        {
+          "id": "c2d3e4f5-6a7b-4c8d-9e0f-1a2b3c4d5e6f",
+          "subscriptionId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+          "headers": {
+            "content-type": "application/json",
+            "x-casexchange-event": "webhook.test",
+            "x-casexchange-event-id": "3f9d2c1e-7b44-4a1c-9e0b-2c5f1a8d6e21",
+            "x-casexchange-delivery": "9c7e5b21-3a4d-4f68-b1c2-7d8e9f0a1b2c",
+            "x-casexchange-signature": "t=1788890523,v1=5f1c9e2b7a4d8c3e6b0f9a2d4c7e1b8f3a6d9c2e5b8f1a4d7c0e3b6f9a2d5c8e",
+            "...": "..."
+          },
+          "body": {
+            "event": "webhook.test",
+            "timestamp": "2026-09-08T18:02:03.784Z",
+            "data": {
+              "message": "This is a test webhook delivery",
+              "subscriptionId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c"
+            }
+          },
+          "rawBody": "{\"event\":\"webhook.test\",\"timestamp\":\"2026-09-08T18:02:03.784Z\",\"data\":{\"message\":\"This is a test webhook delivery\",\"subscriptionId\":\"6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c\"}}",
+          "signatureValid": true,
+          "signatureDetails": {
+            "received": "t=1788890523,v1=5f1c9e2b7a4d8c3e6b0f9a2d4c7e1b8f3a6d9c2e5b8f1a4d7c0e3b6f9a2d5c8e",
+            "timestamp": 1788890523,
+            "match": true
+          },
+          "receivedAt": "2026-09-08T18:02:03.902Z"
+        }
+      ],
+      "pagination": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 },
+      "meta": {
+        "requestId": "req_1a2b3c4d5e6f7a8b9c0d1e2f",
+        "timestamp": "2026-09-08T18:06:12.331Z"
+      }
+    }
+    ```
+
+    Key order in the body is not part of the contract — always hash the `rawBody` you received rather than rebuilding it.
+
+    Run your own verifier over `rawBody` and `headers["x-casexchange-signature"]` with your secret and compare your result with `signatureValid`. If they disagree, check first that you are hashing the raw bytes — verifying a re-serialised body is the most common cause of a mismatch.
+
+    Reading captures on a subscription whose echo mode is off returns `400` with `error.code` `echo_not_active`.
+  </Step>
+
+  <Step title="Know the limits">
+    - CaseXchange keeps the **50 most recent** captures per subscription; older ones are evicted as new ones arrive.
+    - Captures **expire after 1 hour**. Read them promptly.
+    - A delivery body larger than **16 KB** is rejected by the capture endpoint with `413`; it is not captured, and the delivery is recorded as a failed attempt and retried.
+    - Pagination on the captures list uses `page` (default 1) and `limit` (default 20, maximum 100), like the other webhook lists.
+  </Step>
+
+  <Step title="Disable echo mode">
+    ```bash
+    curl -X POST "https://api.casexchange.com/api/public/v1/webhooks/{id}/echo/disable" \
+      -H "X-API-Key: cxp_std_your_key_here"
+    ```
+
+    The `200` response has `"data": null`. Disabling restores delivery to your URL, sets `isEchoActive` back to `false`, and **deletes every capture** for the subscription. Copy anything you still need out of the captures before you disable.
+  </Step>
+</Steps>
+
+<Warning>
+  The echo token is a credential. The capture endpoint accepts unauthenticated posts on that token, so anyone who has it can inject fake captures into your subscription. Do not share it, log it, or commit it. Captures also contain the full delivered payload, including client details on unmasked events — treat echo mode with the same care as the payload itself, and disable it when you are done.
+</Warning>
+
+<Note>
+  For 24 hours after a rotation, `signatureValid` on a capture also accepts the previous secret — a read-back convenience for captures, not a grace window for your endpoint, which must move to the new secret immediately, as [Verifying signatures](/webhooks/verify-signatures) explains.
+</Note>
+
+### Echo mode error reference
+
+| HTTP | `error.code` | When |
+|---|---|---|
+| 400 | `echo_requires_active` | `POST .../echo/enable` on an inactive subscription |
+| 400 | `echo_mode_active` | `PATCH /webhooks/{id}` tried to change `url` while echo mode is on |
+| 400 | `echo_not_active` | `GET .../echo/captures` on a subscription whose echo mode is off |
+
+## Local development
+
+A subscription URL must be public HTTPS on port 443. CaseXchange resolves the hostname when you create or update the subscription and again at every delivery, and rejects any address that is not publicly routable — `localhost`, `127.0.0.1`, and private LAN ranges all fail with `400` `invalid_webhook_url`. You cannot point a subscription at a development machine directly.
+
+Pick one of these instead:
+
+<CardGroup cols={2}>
+  <Card title="HTTPS tunnel" icon="circle-nodes">
+    Expose your local server through a tunnel such as ngrok or Cloudflare Tunnel and subscribe to the public `https://` hostname it gives you. Deliveries hit your real handler code.
+  </Card>
+  <Card title="Hosted request capture" icon="inbox">
+    Subscribe to a hosted request-capture service and inspect deliveries there. Useful for a first look at real payloads before you have written any handler.
+  </Card>
+  <Card title="Echo mode" icon="flask" href="#echo-mode">
+    Needs no endpoint at all. Best for checking exact bytes and signature handling without any network setup.
+  </Card>
+  <Card title="Delivery log" icon="clock-rotate-left" href="#reading-the-delivery-log">
+    Whichever option you choose, `GET /webhooks/{id}/deliveries` shows the status code and error of every attempt.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Tunnel hostnames often change between sessions. Update the subscription with `PATCH /webhooks/{id}` and `{ "url": "https://new-host.example/casexchange" }` rather than creating a new one each time — a new subscription only receives events that happen after it is created, and only five can be active per firm.
+</Tip>
+
+## Real business events
+
+Test events prove connectivity; they do not exercise your envelope parsing, masking logic, deduplication, or ordering. For that, drive a real referral through a status change and watch the deliveries arrive.
+
+Use a test case for this. A test case shows `isTestCase: true` on `GET /sent-cases/{id}`, and every delivery for it carries `isTestCase: true` in the envelope. That lets you run the end-to-end check on a production subscription and have your handler ignore or route those deliveries separately. You can create a test case from the Test Case section of your account settings, and `help@casexchange.com` can help if you do not have access to it.
+
+### End-to-end checklist
+
+1. **Subscribe and confirm reachability.** Create the subscription, send a test event, and confirm `DELIVERED` in the delivery log.
+2. **Receive `referral.sent`.** When the test case is sent, your subscription receives `referral.sent` with `perspective: "sent"` and `isTestCase: true`. (Referring an ordinary, non-test case with `POST /sent-cases/{id}/refer` behaves the same way but carries `isTestCase: false` — the flag comes from the case itself, not from who you refer it to.) On a referral between two live firms, the receiving firm gets `referral.received` for the same fact with the same `X-CaseXchange-Event-Id`; a test case referred to another real firm delivers to that firm exactly as a live one does, so both sides can rehearse against it.
+3. **Acknowledge on the receiving side.** Until the receiving firm acknowledges the referral itself, its deliveries carry `piiMasked: true` and a reduced `data.case`. Acknowledge it as that firm — in the app, from the acknowledgment email, or through its own connected system — and confirm the next delivery to that firm arrives with `piiMasked: false` and the full snapshot. Only the receiving firm's own action unmasks; see [Client data and masking](/webhooks/privacy).
+4. **Receive `case.status_changed`.** Make a further transition on the referral, such as closing or withdrawing it, and confirm `case.status_changed` arrives with `data.previousStatus` and `data.status` describing the move. If the receiving firm accepts it first, you see `referral.accepted` instead.
+5. **Verify the signature on every delivery.** Compute the HMAC over the raw body before parsing, check the `t` window, and compare in constant time. Return a non-`2xx` status when verification fails.
+6. **Deduplicate.** Send a test event to an endpoint that returns `500` once and then `200`; confirm the retry carries the same `X-CaseXchange-Delivery` and that your handler applies it once.
+7. **Order by `occurredAt`.** Deliveries can arrive out of order. Confirm that your handler applies the delivery with the greatest `occurredAt` and chains same-timestamp status rows through `data.previousStatus` to `data.status`.
+8. **Reconcile.** Compare what your handler stored against `GET /status-updates` or `GET /sent-cases/{id}` — the API remains the authority, and webhooks are the signal to go and check.
+
+See the [Event catalog](/webhooks/events) for the envelope of each event and [Status Updates examples](/api-reference/examples/status-updates) for the reconciliation calls.
+
+## Reading the delivery log
+
+`GET /webhooks/{id}/deliveries` is your main debugging tool once traffic is flowing: each record carries the delivery's `status`, how many of its attempts have run, the HTTP code your endpoint returned on the last one, and a short `lastError` when that attempt failed. [Reliability](/webhooks/reliability) documents the delivery record field by field, the full list of statuses, and what each `lastError` string means; [Troubleshooting](/webhooks/troubleshooting) maps the common symptoms to fixes.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Verifying signatures" icon="signature" href="/webhooks/verify-signatures">
+    Reference verifiers and the rules your implementation must follow.
+  </Card>
+  <Card title="Reliability" icon="arrows-rotate" href="/webhooks/reliability">
+    Retries, deactivation after repeated failures, and how long records are kept.
+  </Card>
+  <Card title="Event catalog" icon="book" href="/webhooks/events">
+    Every event, its perspectives, and its `data` shape.
+  </Card>
+  <Card title="Troubleshooting" icon="bug" href="/webhooks/troubleshooting">
+    Symptoms, causes, and fixes for deliveries that do not land.
+  </Card>
+</CardGroup>

@@ -1,0 +1,666 @@
+---
+title: "Event Catalog"
+description: "Every event a firm webhook subscription can receive, with the exact data schema behind each one"
+icon: "list"
+sidebarTitle: "Event catalog"
+---
+
+## How to read this page
+
+A firm subscription receives 13 business events plus one synthetic `webhook.test` event. There is no per-subscription event filter: every active subscription receives every event your firm is entitled to, so branch on the `event` field (or the `X-CaseXchange-Event` header) and route from there.
+
+Every business event arrives inside the same envelope. The envelope fields (`eventId`, `occurredAt`, `perspective`, `piiMasked`, `referralId`, `baseCaseId`, `actor`, and so on) are documented on [Anatomy of a delivery](/webhooks/deliveries). This page covers what changes from event to event: the `data` object and who receives it.
+
+The `data` schema names below (`CaseSnapshot`, `StatusChangeData`, `NoteData`, ...) are the component names the API reference uses for the same shapes, and the case snapshot uses the same field vocabulary as `GET /cases`, so a push and a poll line up field for field there.
+
+<Note>
+  Ignore event names you do not recognise. An unknown `event` value is not an error and must not fail your handler.
+</Note>
+
+## Catalog
+
+| Event | Perspectives | Can be masked | `changedFields` | `data` schema | Who receives |
+|---|---|---|---|---|---|
+| `case.created` | `sent` | no | never | `CaseSnapshot` | Sending firm only. |
+| `case.updated` | `sent`, `received` | no | always (intersected with what you may see) | `CaseSnapshot` | Sending firm, plus each receiving firm that has acknowledged its hop and is in a working state; hop-level fields go only to the two parties of that hop. |
+| `case.deleted` | `sent` | no | never | `CaseTombstone` | Sending firm only (a draft has no receiver). |
+| `referral.sent` | `sent` | no | never | `StatusChangeData` | Sending firm; the receiver gets `referral.received` for the same fact and `eventId`. |
+| `referral.received` | `received` | yes | never | `StatusChangeData` or `MaskedStatusChangeData` | Receiving firm; masked until it acknowledges. |
+| `referral.accepted` | `sent`, `received` | yes | never | `StatusChangeData` or `MaskedStatusChangeData` | Both firms, when the referral leaves `sent` into `under_evaluation` or `investigating`. |
+| `referral.rejected` | `sent`, `received` | yes | never | `StatusChangeData` or `MaskedStatusChangeData` | Both firms; rejected before acknowledgment stays masked forever. |
+| `case.status_changed` | `sent`, `received` | yes | never | `StatusChangeData` or `MaskedStatusChangeData` | Both firms, for every other transition (withdrawal, closing, and so on). |
+| `note.created` | `sent`, `received` | no | never | `NoteData` | The firm that owns the note, always; the counterparty once entitled to content. |
+| `note.updated` | `sent`, `received` | no | always `["body"]` | `NoteData` | Same as `note.created`. |
+| `document.uploaded` | `sent`, `received` | no | never | `DocumentData` | The case's sending firm (the case owner) — not necessarily the uploader — plus each counterparty whose hop still grants document access. |
+| `document.deleted` | `sent`, `received` | no | never | `DocumentTombstone` | The case's sending firm (the case owner) — not necessarily the uploader — plus each counterparty whose hop still grants document access. |
+| `case.rated` | `sent` | no | never | `CaseRatingData` | Owning firm only, always. |
+| `webhook.test` | n/a | n/a | n/a | none (not an envelope) | The subscription you called `POST /webhooks/{id}/test` on. |
+
+Notes on the table:
+
+- **Can be masked** means the event can arrive with `piiMasked: true`. Only the status family can. Before a receiving firm acknowledges a referral it receives the status family (`referral.received`, `referral.accepted`, `referral.rejected`, `case.status_changed`) and, in addition, `note.created` and `note.updated` for notes its own firm owns: a note is that firm's own content, and it can write notes while the referral is still in `sent`. What is withheld from an unacknowledged receiving firm is `case.updated`, `document.uploaded`, `document.deleted`, and the counterparty's notes. The full rules are on [Client data and masking](/webhooks/privacy).
+- **`changedFields`** is present only on `case.updated` and `note.updated`. On `case.updated` it is already intersected with what your firm may see; a recipient whose intersection is empty is not delivered the event at all. The sentinel value `customFields` means your custom field values changed and you should re-`GET` the case; a masked recipient never receives it.
+- `referral.accepted` is normally the first unmasked delivery a receiving firm gets. If an administrator or an integration made the transition without the receiving firm acknowledging, it stays masked. An administrator override such as `sent` to `signed` arrives as `case.status_changed`, not `referral.accepted`, and does not unmask.
+- `document.uploaded` and `document.deleted` are stricter than case content: document access ends at `closed`, where `case.updated` and `note.*` keep flowing. Fee-agreement documents produce no event.
+- `case.rated` is the only way to observe a tier. The case snapshot carries no `tier` field, and a receiving firm never receives this event.
+
+## Status vocabulary
+
+Every `status` and `previousStatus` value, in the envelope's `data` and inside a case snapshot, uses the same normalized lower-case vocabulary as `GET /cases`:
+
+`draft`, `sent`, `received`, `under_evaluation`, `investigating`, `signed`, `in_litigation`, `closing`, `won`, `lost`, `closed`, `rejected`, `withdrawn`, `pending_spin_off`
+
+Two normalizations apply:
+
+- The legacy `received` status is published as `under_evaluation`.
+- Private terminated and exhausted categorizations are published as `rejected`.
+
+See [Case Lifecycle](/concepts/cases) for what each status means and which transitions are allowed.
+
+## `StatusChangeData`
+
+Delivered as `data` on `referral.sent`, `referral.received`, `referral.accepted`, `referral.rejected` and `case.status_changed`. One shape for all five, so you can point them at a single handler.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | uuid | The status-update record this event describes. |
+| `referralId` | uuid | The referral the transition belongs to. |
+| `referenceNumber` | string, nullable | System-generated case identifier, for example `ACME-0042-BLF`. |
+| `status` | string | The status the referral moved into (normalized). |
+| `previousStatus` | string, nullable | The status the referral moved out of (normalized); `null` on a birth row. |
+| `message` | string, nullable | Free text recorded with the transition. |
+| `isMessage` | boolean | Always `false`. Partner messages do not produce webhook events. |
+| `source` | string | The system that recorded the transition: `manual`, `case_status`, `salesforce`, `smartadvocate`, `system`, `dearlegal`, `api`, `filemaker`. `api` covers both the public API and the CaseXchange UI; they are not distinguished. |
+| `createdAt` | date-time | Identical to the envelope `occurredAt`. |
+| `createdByName` | string, nullable | Display name of the person who made the change; never a user id. |
+| `case` | `CaseSnapshot` | The referral as reread after the transition committed. `MaskedCaseSnapshot` when `piiMasked` is `true`. |
+
+<Tip>
+  One transaction can commit two status rows (for example `closing` then `closed`) with a byte-identical `occurredAt`. There is deliberately no tiebreaker: chain them by `previousStatus` to `status`.
+</Tip>
+
+### Example: `referral.accepted`, sending firm's copy
+
+The receiving firm acknowledged the referral. This delivery went to the sending firm (`perspective: "sent"`), so the snapshot is complete.
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "referral.accepted",
+  "eventId": "3f9d2c1e-7b44-4a1c-9e0b-2c5f1a8d6e21",
+  "occurredAt": "2026-09-03T14:12:09.401Z",
+  "perspective": "sent",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000002", "source": "manual" },
+  "data": {
+    "id": "9c4e7a12-5b6d-4e8f-a1b2-c3d4e5f6a7b8",
+    "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+    "referenceNumber": "ACME-0042-BLF",
+    "status": "under_evaluation",
+    "previousStatus": "sent",
+    "message": "Acknowledged. Intake call scheduled for Thursday.",
+    "isMessage": false,
+    "source": "manual",
+    "createdAt": "2026-09-03T14:12:09.401Z",
+    "createdByName": "Dana Whitfield",
+    "case": {
+      "id": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+      "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+      "referenceNumber": "ACME-0042-BLF",
+      "status": "under_evaluation",
+      "closingStatus": null,
+      "payoutType": null,
+      "closureReason": null,
+      "referringFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+      "referentFirmId": "a1b2c3d4-0000-4000-8000-000000000002",
+      "title": "Doe v. Smith - Auto Accident",
+      "description": "Rear-end collision on I-95, client treated at Bayview General.",
+      "caseType": "Personal Injury",
+      "jurisdiction": "NY",
+      "county": "Kings",
+      "clientFirstName": "Jane",
+      "clientLastName": "Doe",
+      "clientEmail": "jane.doe@example.com",
+      "clientPhone": "+1-555-010-2233",
+      "clientDateOfBirth": "1988-04-17",
+      "incidentDate": "2026-07-22",
+      "settlementAmount": null,
+      "attorneyFees": null,
+      "leadAttorneyName": null,
+      "warmTransferSuccessful": true,
+      "warmTransferUnsuccessfulReason": null,
+      "warmTransferUnsuccessfulReasonType": null,
+      "clientFeeAgreementPercentage": 0.3333,
+      "sendingFirmPercentage": 25,
+      "netFeeToSendingFirm": null,
+      "netFeeToHandlingFirm": null,
+      "resolutionDate": null,
+      "closedDate": null,
+      "projectedSettlementAmount": 150000,
+      "estimatedDateOfResolution": "2027-03-31T00:00:00.000Z",
+      "estimatedDistributionDate": null,
+      "statuteOfLimitationsExpiration": "2029-07-22T00:00:00.000Z",
+      "phase": null,
+      "isRetainerSigned": false,
+      "sentDate": "2026-09-01T16:40:12.118Z",
+      "createdAt": "2026-08-28T09:15:44.002Z",
+      "updatedAt": "2026-09-03T14:12:09.401Z"
+    }
+  }
+}
+```
+
+## `MaskedStatusChangeData`
+
+The status-family `data` delivered to a receiving firm that has not acknowledged the referral. Same keys as `StatusChangeData`, with two differences:
+
+- `case` is a `MaskedCaseSnapshot` (14 keys; everything else absent, not null).
+- `message` is forced to `null`.
+
+The envelope carries `piiMasked: true`. Check that flag before reading any client field.
+
+### Example: masked `referral.received`
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "referral.received",
+  "eventId": "b7e1a9c3-2d4f-4e6a-8b0c-1d2e3f4a5b6c",
+  "occurredAt": "2026-09-01T16:40:12.118Z",
+  "perspective": "received",
+  "piiMasked": true,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000002",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000001", "source": "api" },
+  "data": {
+    "id": "d2f6b8a0-4c1e-4a3b-9d5f-7e8a9b0c1d2e",
+    "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+    "referenceNumber": "ACME-0042-BLF",
+    "status": "sent",
+    "previousStatus": "draft",
+    "message": null,
+    "isMessage": false,
+    "source": "api",
+    "createdAt": "2026-09-01T16:40:12.118Z",
+    "createdByName": "Marcus Lee",
+    "case": {
+      "id": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+      "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+      "referenceNumber": "ACME-0042-BLF",
+      "status": "sent",
+      "closingStatus": null,
+      "referringFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+      "referentFirmId": "a1b2c3d4-0000-4000-8000-000000000002",
+      "caseType": "Personal Injury",
+      "jurisdiction": "NY",
+      "county": "Kings",
+      "sentDate": "2026-09-01T16:40:12.118Z",
+      "isRetainerSigned": false,
+      "createdAt": "2026-08-28T09:15:44.002Z",
+      "updatedAt": "2026-09-01T16:40:12.118Z"
+    }
+  }
+}
+```
+
+<Warning>
+  A referral that is withdrawn or rejected before the receiving firm ever acknowledges it never unmasks. Do not build a flow that waits for client fields to appear on such a referral.
+</Warning>
+
+## `CaseSnapshot`
+
+The referral as it stands after the change committed, using the same vocabulary as `GET /cases`. It appears in two places:
+
+- Directly as `data` on `case.created` and `case.updated`.
+- Nested as `data.case` on the status family (`StatusChangeData`).
+
+It never contains `tier`, `source`, or custom field values. Custom field changes surface only as the `customFields` sentinel in `changedFields`; re-`GET` the case to read them.
+
+### Identity
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | uuid | Referral id. The public API calls a referral a "case". |
+| `baseCaseId` | uuid | The case behind the referral; stable across re-referrals. |
+| `referenceNumber` | string, nullable | System-generated case identifier. |
+| `referringFirmId` | uuid | Sending firm on this hop. |
+| `referentFirmId` | uuid, nullable | Receiving firm; `null` on a draft. |
+
+### Status and outcome
+
+| Field | Type | Meaning |
+|---|---|---|
+| `status` | string | Normalized status (see [Status vocabulary](#status-vocabulary)). |
+| `closingStatus` | string, nullable | `won_settled`, `lost` or `no_longer_pursuing`; `null` until the closing workflow starts. |
+| `payoutType` | string, nullable | `lump_sum`, `structured`, `hybrid` or `other`; `null` until set during closing. |
+| `closureReason` | string, nullable | |
+| `phase` | string, nullable | Hop-level, like the fee, settlement and `leadAttorneyName` fields: the value is always your own hop's, and a change to it is announced only to the two parties of the hop that changed. |
+| `isRetainerSigned` | boolean | Whether the retainer has been signed. |
+
+### Descriptors
+
+| Field | Type | Meaning |
+|---|---|---|
+| `title` | string, nullable | Case title. |
+| `description` | string, nullable | Case description. |
+| `caseType` | string, nullable | |
+| `jurisdiction` | string, nullable | |
+| `county` | string, nullable | County. |
+| `leadAttorneyName` | string, nullable | Lead attorney at the receiving firm; `null` until set. |
+
+### Client
+
+These fields are absent from the masked snapshot.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `clientFirstName` | string, nullable | |
+| `clientLastName` | string, nullable | |
+| `clientEmail` | string, nullable | |
+| `clientPhone` | string, nullable | |
+| `clientDateOfBirth` | date, nullable | `YYYY-MM-DD`. |
+| `incidentDate` | date, nullable | `YYYY-MM-DD`. |
+
+### Warm transfer
+
+| Field | Type | Meaning |
+|---|---|---|
+| `warmTransferSuccessful` | boolean | Whether the warm transfer to the receiving firm succeeded. |
+| `warmTransferUnsuccessfulReason` | string, nullable | Free text; populated only when the reason type is `OTHER`. |
+| `warmTransferUnsuccessfulReasonType` | string, nullable | `FIRM_UNABLE_TO_ANSWER`, `CLIENT_UNABLE_TO_CONTINUE` or `OTHER`. |
+
+### Money
+
+| Field | Type | Meaning |
+|---|---|---|
+| `settlementAmount` | number, nullable | Final settlement amount in dollars; `null` until recorded. |
+| `attorneyFees` | number, nullable | Total attorney fees in dollars; `null` until recorded. |
+| `projectedSettlementAmount` | number, nullable | Projected settlement in dollars while the case is open. |
+| `clientFeeAgreementPercentage` | number, nullable | Fraction between 0 and 1. |
+| `sendingFirmPercentage` | number, nullable | Percentage between 0 and 100. |
+| `netFeeToSendingFirm` | number, nullable | `attorneyFees` multiplied by `sendingFirmPercentage` divided by 100, rounded to cents; `null` when either input is missing or zero. |
+| `netFeeToHandlingFirm` | number, nullable | `attorneyFees` minus `netFeeToSendingFirm`; `null` when `netFeeToSendingFirm` is `null`. |
+
+### Dates
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sentDate` | date-time, nullable | When the referral was sent; `null` on a draft. |
+| `resolutionDate` | date-time, nullable | When the outcome was recorded. |
+| `closedDate` | date-time, nullable | The most recent transition into `closed`. |
+| `estimatedDateOfResolution` | date-time, nullable | |
+| `estimatedDistributionDate` | date-time, nullable | |
+| `statuteOfLimitationsExpiration` | date-time, nullable | |
+| `createdAt` | date-time | |
+| `updatedAt` | date-time | |
+
+### Example: `case.updated`
+
+`data` is the full snapshot; `changedFields` sits on the envelope. Here the sending firm updated the projected settlement and a custom field, and the delivery went to the sending firm itself. To ignore your own writes, compare the delivered state with what you last wrote; `actor.firmId` tells you which firm acted, not which channel.
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "case.updated",
+  "eventId": "0c8d5e2f-6a7b-4c9d-8e1f-2a3b4c5d6e7f",
+  "occurredAt": "2026-09-04T10:03:51.220Z",
+  "perspective": "sent",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000001", "source": "api" },
+  "changedFields": ["projectedSettlementAmount", "customFields"],
+  "data": {
+    "id": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+    "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+    "referenceNumber": "ACME-0042-BLF",
+    "status": "under_evaluation",
+    "closingStatus": null,
+    "payoutType": null,
+    "closureReason": null,
+    "referringFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+    "referentFirmId": "a1b2c3d4-0000-4000-8000-000000000002",
+    "title": "Doe v. Smith - Auto Accident",
+    "description": "Rear-end collision on I-95, client treated at Bayview General.",
+    "caseType": "Personal Injury",
+    "jurisdiction": "NY",
+    "county": "Kings",
+    "clientFirstName": "Jane",
+    "clientLastName": "Doe",
+    "clientEmail": "jane.doe@example.com",
+    "clientPhone": "+1-555-010-2233",
+    "clientDateOfBirth": "1988-04-17",
+    "incidentDate": "2026-07-22",
+    "settlementAmount": null,
+    "attorneyFees": null,
+    "leadAttorneyName": null,
+    "warmTransferSuccessful": true,
+    "warmTransferUnsuccessfulReason": null,
+    "warmTransferUnsuccessfulReasonType": null,
+    "clientFeeAgreementPercentage": 0.3333,
+    "sendingFirmPercentage": 25,
+    "netFeeToSendingFirm": null,
+    "netFeeToHandlingFirm": null,
+    "resolutionDate": null,
+    "closedDate": null,
+    "projectedSettlementAmount": 175000,
+    "estimatedDateOfResolution": "2027-03-31T00:00:00.000Z",
+    "estimatedDistributionDate": null,
+    "statuteOfLimitationsExpiration": "2029-07-22T00:00:00.000Z",
+    "phase": null,
+    "isRetainerSigned": false,
+    "sentDate": "2026-09-01T16:40:12.118Z",
+    "createdAt": "2026-08-28T09:15:44.002Z",
+    "updatedAt": "2026-09-04T10:03:51.220Z"
+  }
+}
+```
+
+<Note>
+  `PATCH /sent-cases/{id}` reports the columns it wrote in `changedFields`, not a value diff. Re-sending an identical value can still produce a `case.updated` naming that column.
+</Note>
+
+## `MaskedCaseSnapshot`
+
+The pre-acknowledgment snapshot: ids, the shared status, and non-personal descriptors only. It contains exactly these 14 keys and nothing else. Omitted fields are absent from the object, not present with a `null` value, so code that reads `data.case.clientLastName` will find `undefined`, not `null`.
+
+| Field | Type |
+|---|---|
+| `id` | uuid |
+| `baseCaseId` | uuid |
+| `referenceNumber` | string, nullable |
+| `status` | string |
+| `closingStatus` | string, nullable |
+| `referringFirmId` | uuid |
+| `referentFirmId` | uuid, nullable |
+| `caseType` | string, nullable |
+| `jurisdiction` | string, nullable |
+| `county` | string, nullable |
+| `sentDate` | date-time, nullable |
+| `isRetainerSigned` | boolean |
+| `createdAt` | date-time |
+| `updatedAt` | date-time |
+
+The masked `referral.received` example earlier on this page shows a full masked delivery; it is the canonical one, and other pages point here for it.
+
+## `NoteData`
+
+Delivered as `data` on `note.created` and `note.updated`. Notes carry no case snapshot: ids and the note body only. Notes are per-firm; each side of a referral keeps its own.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | uuid | Note id. |
+| `referralId` | uuid | |
+| `baseCaseId` | uuid | |
+| `firmId` | uuid | The firm that owns the note. |
+| `authorId` | uuid, nullable | The author's user id, sent only to the firm that owns the note; `null` for the counterparty. |
+| `authorName` | string, nullable | The author's display name. |
+| `body` | string | The note text. |
+| `origin` | string | `casexchange`, or `clio` when the note was pulled from Clio Manage. |
+| `createdAt` | date-time | |
+| `updatedAt` | date-time | |
+
+### Example: `note.updated`
+
+`changedFields` is always `["body"]`: the body is the only editable field.
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "note.updated",
+  "eventId": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+  "occurredAt": "2026-09-05T08:41:07.930Z",
+  "perspective": "received",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000002",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000002", "source": "api" },
+  "changedFields": ["body"],
+  "data": {
+    "id": "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b",
+    "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+    "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+    "firmId": "a1b2c3d4-0000-4000-8000-000000000002",
+    "authorId": "7d8e9f0a-1b2c-4d3e-9f4a-5b6c7d8e9f0a",
+    "authorName": "Dana Whitfield",
+    "body": "Intake call completed. Client confirmed treatment dates; requesting ER records.",
+    "origin": "casexchange",
+    "createdAt": "2026-09-04T15:22:40.115Z",
+    "updatedAt": "2026-09-05T08:41:07.930Z"
+  }
+}
+```
+
+In this example the receiving firm owns the note, so `authorId` is present. The same fact delivered to the sending firm carries `authorId: null`.
+
+<Note>
+  There is no `note.deleted` event. Notes written automatically alongside a status transition, a case creation or a CSV import are not published as `note.created`; a note supplied to `PATCH /sent-cases/{id}` is a real note and is. See [Known gaps](/webhooks/known-gaps).
+</Note>
+
+## `DocumentData`
+
+Delivered as `data` on `document.uploaded`. It goes to the case's sending firm (the case owner), which is not necessarily whoever uploaded the file, and to each counterparty whose hop still grants document access. Metadata only: there is no download URL in the event, because the signed download URL expires. To fetch the bytes, call `GET /cases/{referralId}/documents/{id}/download` using the envelope's `referralId` — always present, unlike `data.referralId` — together with `data.id`, then follow the pre-signed URL it returns. See [Documents examples](/api-reference/examples/documents).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | uuid | Document id. |
+| `baseCaseId` | uuid | Base case the document belongs to. Always present. |
+| `referralId` | uuid, nullable | Referral the document was attached to; `null` for case-level uploads. |
+| `fileName` | string | |
+| `fileType` | string | |
+| `fileSize` | integer | Size in bytes. |
+| `contentType` | string | |
+| `isPublic` | boolean | |
+| `uploadedById` | uuid, nullable | The uploader's user id, sent only to the uploader's own firm; `null` for the counterparty. |
+| `uploadedAt` | date-time | |
+| `origin` | string | `casexchange`, or `clio` when the file arrived through the Clio Manage document sync. |
+| `uploadedByName` | string, nullable | The uploader's display name. |
+
+### Example: `document.uploaded`
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "document.uploaded",
+  "eventId": "8b9c0d1e-2f3a-4b4c-9d5e-6f7a8b9c0d1e",
+  "occurredAt": "2026-09-05T11:18:26.507Z",
+  "perspective": "sent",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000002", "source": "api" },
+  "data": {
+    "id": "f4a5b6c7-d8e9-4f0a-8b1c-2d3e4f5a6b7c",
+    "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+    "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+    "fileName": "medical-records.pdf",
+    "fileType": "pdf",
+    "fileSize": 482113,
+    "contentType": "application/pdf",
+    "isPublic": true,
+    "uploadedById": null,
+    "uploadedAt": "2026-09-05T11:18:26.507Z",
+    "origin": "casexchange",
+    "uploadedByName": "Dana Whitfield"
+  }
+}
+```
+
+Here the receiving firm uploaded the file and this copy went to the sending firm, so `uploadedById` is `null`.
+
+```bash
+# Fetch the bytes: the event gives you referralId and id
+curl "https://api.casexchange.com/api/public/v1/cases/6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c/documents/f4a5b6c7-d8e9-4f0a-8b1c-2d3e4f5a6b7c/download" \
+  -H "X-API-Key: cxp_ro_your_key_here"
+```
+
+## `DocumentTombstone`
+
+Delivered as `data` on `document.deleted`. Ids only.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | uuid | The deleted document's id. |
+| `baseCaseId` | uuid, nullable | Base case the deleted document belonged to. |
+| `referralId` | uuid, nullable | Referral the deleted document was attached to. |
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "document.deleted",
+  "eventId": "1d2e3f4a-5b6c-4d7e-8f9a-0b1c2d3e4f5a",
+  "occurredAt": "2026-09-06T09:02:13.884Z",
+  "perspective": "sent",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000002", "source": "api" },
+  "data": {
+    "id": "f4a5b6c7-d8e9-4f0a-8b1c-2d3e4f5a6b7c",
+    "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+    "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c"
+  }
+}
+```
+
+## `CaseTombstone`
+
+Delivered as `data` on `case.deleted`, which announces a deleted draft. A draft has no receiving firm, so this event goes to the sending firm alone and `referentFirm` on the envelope is `null`. The ids were captured before the row was removed; the envelope fields describe the state before the delete.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | uuid | Referral id of the deleted draft. |
+| `baseCaseId` | uuid | |
+| `referenceNumber` | string, nullable | |
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "case.deleted",
+  "eventId": "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
+  "occurredAt": "2026-09-02T13:27:45.610Z",
+  "perspective": "sent",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+  "referralId": "c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f",
+  "baseCaseId": "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e",
+  "referenceNumber": "ACME-0043-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": null,
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000001", "source": "api" },
+  "data": {
+    "id": "c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f",
+    "baseCaseId": "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e",
+    "referenceNumber": "ACME-0043-BLF"
+  }
+}
+```
+
+## `CaseRatingData`
+
+Delivered as `data` on `case.rated`. A tier is the sending firm's private appraisal of its own case, so this event goes to the owning firm only, whether or not the receiving firm has acknowledged. The case snapshot carries no `tier`, which makes this event the only way to observe one. `ratingNotes` is never published.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `tier` | integer 1 to 5, nullable | The case tier after the write. |
+| `previousTier` | integer 1 to 5, nullable | The case tier before the write; `null` when the case was just created. |
+| `ratedTier` | integer 1 to 5, nullable | The tier the AI classifier assigned, when one ran. |
+| `caseRatingTier` | integer 1 to 5, nullable | The referral-level rating on the case's current referral. |
+| `ratingSource` | string | `manual` for a user write (UI or public API alike); `ai` for the classifier. |
+
+```json
+{
+  "schemaVersion": 1,
+  "event": "case.rated",
+  "eventId": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+  "occurredAt": "2026-09-02T17:55:30.072Z",
+  "perspective": "sent",
+  "piiMasked": false,
+  "recipientFirmId": "a1b2c3d4-0000-4000-8000-000000000001",
+  "referralId": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+  "baseCaseId": "2a91c4d6-8e7f-4a1b-9c2d-3e4f5a6b7c8d",
+  "referenceNumber": "ACME-0042-BLF",
+  "referringFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000001", "name": "Acme Injury Law" },
+  "referentFirm": { "id": "a1b2c3d4-0000-4000-8000-000000000002", "name": "Bay Legal Firm" },
+  "isTestCase": false,
+  "actor": { "firmId": "a1b2c3d4-0000-4000-8000-000000000001", "source": "api" },
+  "data": {
+    "tier": 3,
+    "previousTier": 2,
+    "ratedTier": 3,
+    "caseRatingTier": 3,
+    "ratingSource": "manual"
+  }
+}
+```
+
+## `webhook.test`
+
+Queued by `POST /webhooks/{id}/test`. It is not an envelope: none of the fields above are present. This is the canonical `webhook.test` body; other pages link here rather than repeating it. The body is exactly:
+
+```json
+{
+  "event": "webhook.test",
+  "timestamp": "2026-09-08T18:02:03.784Z",
+  "data": {
+    "message": "This is a test webhook delivery",
+    "subscriptionId": "0f1e2d3c-4b5a-4968-8776-655443322110"
+  }
+}
+```
+
+Its `eventId` travels only in the `X-CaseXchange-Event-Id` header, and it is signed like any other delivery, so it is a good first check of your verifier. See [Testing webhooks](/webhooks/testing) for the full test flow and echo mode.
+
+<Tip>
+  For an end-to-end test with real business events, create a test case and drive it through a status change. Every delivery for it carries `isTestCase: true` in the envelope, so your handler can ignore or route it.
+</Tip>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Anatomy of a delivery" icon="paper-plane" href="/webhooks/deliveries">
+    Envelope fields, headers, ordering and deduplication.
+  </Card>
+  <Card title="Client data and masking" icon="eye-slash" href="/webhooks/privacy">
+    The full rules for who receives what, and when a receiving firm unmasks.
+  </Card>
+  <Card title="Verifying signatures" icon="shield-check" href="/webhooks/verify-signatures">
+    Check `X-CaseXchange-Signature` before you trust any body on this page.
+  </Card>
+  <Card title="Known gaps" icon="list-check" href="/webhooks/known-gaps">
+    Writes that produce no event, and how to reconcile around them.
+  </Card>
+</CardGroup>

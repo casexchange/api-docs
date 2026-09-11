@@ -1,6 +1,8 @@
 ---
 title: "CaseXchange Public API"
 description: "Everything you need to build with the CaseXchange platform"
+icon: "house"
+sidebarTitle: "Introduction"
 ---
 
 ## Build with Confidence
@@ -18,7 +20,7 @@ CaseXchange connects law firms with the referrals, routing logic, and case data 
   <Card
     title="API Reference"
     icon="terminal"
-    href="/api-reference"
+    href="/api-reference/overview"
   >
     Explore every endpoint with request/response examples.
   </Card>
@@ -81,9 +83,17 @@ The Public API uses `X-API-Key` authentication with three access levels:
   </Card>
 </CardGroup>
 
-The API also covers **documents** (upload, download via pre-signed URLs), **routing rules** (automatic case assignment), **analytics** (dashboard and case-level), **users** (invite, update, deactivate), **medical referrals**, **notifications** (email preferences), **bulk CSV import/update**, and **API key management**.
+<Card
+  title="Webhooks"
+  icon="bell"
+  href="/webhooks"
+>
+  Get referral lifecycle events pushed to your endpoint — signed, retried, and documented event by event — instead of polling.
+</Card>
 
-See the [API Reference](/api-reference) for the complete endpoint list, or explore every request in the [Postman Collection](/quickstart#3-set-up-postman-optional).
+The API also covers **documents** (upload, download via pre-signed URLs), **routing rules** (automatic case assignment), **analytics** (dashboard and case-level), **users** (invite, update, deactivate), **medical referrals**, **notifications** (email preferences), **bulk CSV import/update**, **webhooks** (outbound event subscriptions), and **API key management**.
+
+See the [API Reference](/api-reference/overview) for the complete endpoint list, or explore every request in the [Postman Collection](/quickstart#3-set-up-postman-optional).
 
 <Card
   title="Need help?"

@@ -2,13 +2,12 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "CaseXchange Public API",
-  "openapi": "api-reference/openapi.yml",
   "colors": {
-    "primary": "#1E40AF",
-    "light": "#60A5FA",
-    "dark": "#1E3A8A"
+    "primary": "#EA4E00",
+    "light": "#FF8142",
+    "dark": "#EA4E00"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/logo/favicon.png",
   "navigation": {
     "tabs": [
       {
@@ -37,15 +36,6 @@
             ]
           },
           {
-            "group": "Integration Guides",
-            "pages": [
-              "api-reference/index",
-              "api-reference/response-format",
-              "api-reference/error-handling",
-              "api-reference/workflows"
-            ]
-          },
-          {
             "group": "Core Examples",
             "pages": [
               "api-reference/examples/reference-data",
@@ -69,14 +59,364 @@
         ]
       },
       {
-        "tab": "API reference",
-        "openapi": "api-reference/openapi.yml"
+        "tab": "API",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/response-format",
+              "api-reference/error-handling",
+              "api-reference/workflows"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              {
+                "group": "Account",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /me"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Analytics",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /analytics/dashboard",
+                  "GET /analytics/cases",
+                  "GET /analytics/sent",
+                  "GET /analytics/received",
+                  "GET /analytics/homepage",
+                  "GET /analytics/cases-by-status",
+                  "GET /analytics/revenue-received",
+                  "GET /analytics/revenue-sent",
+                  "GET /analytics/referrals"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Cases",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /cases",
+                  "POST /cases",
+                  "GET /cases/{id}",
+                  "PUT /cases/{id}",
+                  "DELETE /cases/{id}",
+                  "GET /cases/{id}/status-history",
+                  "POST /cases/{id}/acknowledge",
+                  "POST /cases/{id}/status",
+                  "POST /cases/{id}/close"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Documents",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /cases/{caseId}/documents",
+                  "POST /cases/{caseId}/documents",
+                  "GET /cases/{caseId}/documents/{docId}/download",
+                  "DELETE /cases/{caseId}/documents/{docId}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Export",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /analytics/export",
+                  "GET /analytics/{category}/export",
+                  "GET /cases/export"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Extension",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "POST /extension/telemetry/selector-miss"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "External Links",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /external-links/list",
+                  "GET /external-links",
+                  "POST /external-links",
+                  "POST /external-links/{id}/replace",
+                  "DELETE /external-links/{id}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Firms",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /firms/directory",
+                  "GET /firms/me",
+                  "PUT /firms/me",
+                  "GET /firms/available",
+                  "GET /firms/{id}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Health",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /health"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Import",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "POST /import/cases",
+                  "POST /import/cases/update",
+                  "GET /import/cases/update/jobs/{jobId}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Med Cases",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /med-cases",
+                  "POST /med-cases",
+                  "GET /med-cases/{id}",
+                  "PUT /med-cases/{id}",
+                  "DELETE /med-cases/{id}",
+                  "GET /med-cases/{id}/referrals",
+                  "POST /med-cases/{id}/referrals",
+                  "GET /med-cases/{id}/referrals/{referralId}",
+                  "PUT /med-cases/{id}/referrals/{referralId}",
+                  "POST /med-cases/{id}/referrals/{referralId}/acknowledge",
+                  "POST /med-cases/{id}/referrals/{referralId}/accept",
+                  "POST /med-cases/{id}/referrals/{referralId}/reject",
+                  "POST /med-cases/{id}/referrals/{referralId}/start-treatment",
+                  "POST /med-cases/{id}/referrals/{referralId}/complete-treatment",
+                  "POST /med-cases/{id}/referrals/{referralId}/withdraw",
+                  "POST /med-cases/{id}/referrals/{referralId}/close",
+                  "GET /insurances",
+                  "GET /insurances/{id}",
+                  "GET /med-cases/{id}/insurances"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "MedEx Documents",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /med-cases/{caseId}/documents",
+                  "GET /med-cases/{caseId}/documents/{documentId}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Messages",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "POST /messages/send"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Network",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /network/pending",
+                  "GET /network/outbound/{firmId}",
+                  "PUT /network/outbound/{firmId}",
+                  "PATCH /network/outbound/{firmId}",
+                  "GET /network/inbound/{firmId}",
+                  "PATCH /network/inbound/{firmId}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Notifications",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /notifications/preferences",
+                  "PUT /notifications/preferences",
+                  "GET /notifications/emails",
+                  "POST /notifications/emails"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Received Referrals",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /received-referrals",
+                  "GET /received-referrals/{id}/available-statuses",
+                  "GET /received-referrals/{id}",
+                  "PATCH /received-referrals/{id}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Reference Data",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /case-types",
+                  "GET /case-types/{id}/fields",
+                  "GET /jurisdictions",
+                  "GET /counties"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Referrals",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /referrals",
+                  "POST /referrals/match",
+                  "GET /referrals/{id}/status-history",
+                  "GET /referrals/{id}/available-statuses",
+                  "GET /referrals/{id}",
+                  "PUT /referrals/{id}",
+                  "DELETE /referrals/{id}",
+                  "POST /referrals/{id}/send",
+                  "POST /referrals/{id}/acknowledge",
+                  "POST /referrals/{id}/begin-investigating",
+                  "POST /referrals/{id}/sign",
+                  "POST /referrals/{id}/start-litigation",
+                  "POST /referrals/{id}/begin-closing",
+                  "POST /referrals/{id}/close",
+                  "POST /referrals/{id}/reject",
+                  "POST /referrals/{id}/withdraw"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Routing",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /routing/evaluate",
+                  "GET /routing/re-refer",
+                  "GET /routing/rules",
+                  "POST /routing/rules",
+                  "PUT /routing/rules/{id}",
+                  "DELETE /routing/rules/{id}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Salesforce",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /salesforce/send-mapping",
+                  "POST /salesforce/interactive-sends"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Sent Cases",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /sent-cases",
+                  "POST /sent-cases",
+                  "GET /sent-cases/{id}",
+                  "PATCH /sent-cases/{id}",
+                  "GET /sent-cases/{id}/available-statuses",
+                  "POST /sent-cases/{id}/refer"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "SSO",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "POST /sso-links"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Status Updates",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /status-updates/lookup",
+                  "GET /status-updates"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Users",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /users",
+                  "POST /users",
+                  "PUT /users/{id}",
+                  "DELETE /users/{id}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Webhooks",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /webhooks",
+                  "POST /webhooks",
+                  "GET /webhooks/{id}",
+                  "PATCH /webhooks/{id}",
+                  "DELETE /webhooks/{id}",
+                  "GET /webhooks/{id}/deliveries",
+                  "POST /webhooks/{id}/test",
+                  "POST /webhooks/{id}/rotate-secret",
+                  "POST /webhooks/{id}/echo/enable",
+                  "POST /webhooks/{id}/echo/disable",
+                  "GET /webhooks/{id}/echo/captures"
+                ],
+                "expanded": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Webhooks",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "webhooks/index",
+              "webhooks/quickstart"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "webhooks/subscriptions",
+              "webhooks/deliveries",
+              "webhooks/events",
+              "webhooks/verify-signatures"
+            ]
+          },
+          {
+            "group": "Operate",
+            "pages": [
+              "webhooks/reliability",
+              "webhooks/testing",
+              "webhooks/privacy",
+              "webhooks/troubleshooting",
+              "webhooks/known-gaps"
+            ]
+          }
+        ]
       }
     ]
   },
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "/logo/light.png",
+    "dark": "/logo/dark.png"
   },
   "navbar": {
     "links": [

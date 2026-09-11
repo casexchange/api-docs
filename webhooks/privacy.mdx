@@ -1,0 +1,153 @@
+---
+title: "Client Data and Masking"
+description: "What a receiving firm sees in webhook payloads before and after it acknowledges a referral, and which fields never leave the owning firm"
+icon: "eye-slash"
+sidebarTitle: "Client data and masking"
+---
+
+## The principle
+
+Webhook payloads apply their own client-information rules, and they are stricter than the REST endpoints': a masked webhook snapshot omits `title` and custom field values that `GET /received-referrals` still returns, and it stays masked until the receiving firm itself acknowledges rather than simply until the referral leaves `sent`. A firm that is **sent** a referral sees a masked snapshot of the case until **it** acknowledges receipt. The sending firm always sees the full snapshot for its own hop.
+
+Until the receiving firm acknowledges, every status-family delivery it receives for that referral (`referral.received`, `referral.accepted`, `referral.rejected`, `case.status_changed`) carries:
+
+| Envelope or data field | Value while masked |
+|---|---|
+| `piiMasked` | `true` |
+| `perspective` | `received` |
+| `data.case` | A `MaskedCaseSnapshot`, not a `CaseSnapshot` (see below) |
+| `data.message` | Forced to `null` |
+
+`piiMasked` is `true` only for a receiving firm that has not acknowledged the referral. It is never `true` on a `sent`-perspective delivery. Masking applies to the status family only. The one other thing an unacknowledged receiving firm is delivered -- `note.created` and `note.updated` for notes its own firm owns -- is its own content, so it arrives in full, with `piiMasked` `false` and no case snapshot to mask.
+
+## The masked snapshot
+
+While a referral is masked, `data.case` is a `MaskedCaseSnapshot`: a 14-key subset of the full `CaseSnapshot`, carrying only referral identifiers, `status`, `closingStatus`, the two firm ids, `caseType`, `jurisdiction`, `county`, `sentDate`, `isRetainerSigned` and timestamps. Every other key is **absent from the object** -- not present with a `null` value. The [Event catalog](/webhooks/events) lists the exact keys and shows a full masked `referral.received` delivery.
+
+Client name, contact details, date of birth, incident date, title, description, lead attorney, warm-transfer text, the money fields and custom field values are not in the object at all. A masked recipient also never receives the `customFields` sentinel in `changedFields`, because it never receives `case.updated` in the first place (see below).
+
+`data.message` is `null` on a masked delivery even when the sender attached a message to the referral. Do not read an absent message as "the sender sent none".
+
+## What unmasks a referral
+
+Only an action taken by the receiving firm itself:
+
+- One of its users acknowledging the referral in the app.
+- The acknowledgment email sent to the firm.
+- A bulk status update the firm uploads itself.
+- Its connected case-management system.
+- Its own Salesforce org.
+- Its own Public API key calling `POST /referrals/{id}/acknowledge` -- see [Integration Workflows](/api-reference/workflows).
+
+What does **not** unmask, even though the status may move on:
+
+- A platform administrator forcing a status. An override such as `sent` to `signed` arrives as `case.status_changed`, not `referral.accepted`, and the receiving firm stays masked.
+- A historical CSV import.
+- The sending firm acting on the receiving firm's behalf.
+
+In the normal flow, `referral.accepted` is the first unmasked delivery the receiving firm sees: the referral leaves `sent` into `under_evaluation` or `investigating`. If a transition is made by an administrator or integration without the receiving firm acknowledging, `referral.accepted` can still arrive masked -- so check `piiMasked` on every delivery rather than assuming the event name implies unmasked data.
+
+<Warning>
+  A referral withdrawn or rejected before it was ever acknowledged never unmasks. Deliveries already made are not retracted, so your store may permanently hold a masked snapshot for that referral. Design for it.
+</Warning>
+
+## What an unacknowledged receiving firm receives
+
+Until it acknowledges, the receiving firm gets the status family, plus `note.created` / `note.updated` for notes its own firm owns:
+
+| Event | Delivered before acknowledgement? |
+|---|---|
+| `referral.received` | Yes, masked |
+| `referral.accepted` | Yes, masked (see above) |
+| `referral.rejected` | Yes, masked |
+| `case.status_changed` | Yes, masked |
+| `case.updated` | No -- withheld entirely |
+| `note.created`, `note.updated` | Only for notes your own firm owns -- a note owned by the sending firm is withheld |
+| `document.uploaded`, `document.deleted` | No -- withheld entirely |
+
+"Withheld" means the delivery is not created for your firm at all, and there is no backfill or replay: nothing is sent later once you acknowledge. Reconcile with `GET /received-referrals/{id}` after acknowledging if you need the state you missed.
+
+## What a receiving firm never receives
+
+Regardless of acknowledgement, a receiving firm never gets:
+
+- `case.created` -- the sending firm only.
+- `case.rated` and any tier field -- a tier is the owning firm's private appraisal. The case snapshot carries no `tier`, so a receiving firm cannot observe one through webhooks.
+- The sending firm's case `source`. The case snapshot carries no `source` field; `actor.source` and `data.source` describe the action that produced the event.
+
+## Content and document access after acknowledgement
+
+Once you have acknowledged, `case.updated` and `note.*` are delivered while the referral is in a working status. Document events are stricter.
+
+| Referral status | `case.updated`, `note.*` | `document.uploaded`, `document.deleted` |
+|---|---|---|
+| `under_evaluation`, `investigating`, `signed`, `in_litigation`, `closing`, `won`, `lost` | Delivered | Delivered |
+| `closed` | Delivered | Stopped |
+| `pending_spin_off` | Stopped for the counterparty's content; notes your own firm owns are still delivered to you | Stopped |
+| `rejected`, `withdrawn` | Stopped for the counterparty's content; notes your own firm owns are still delivered to you | Stopped |
+
+Statuses that CaseXchange records privately as terminated or exhausted are published as `rejected` and follow the `rejected` row. Fee-agreement documents never produce an event for either firm.
+
+<Note>
+  `case.updated` is only delivered when `changedFields` is non-empty for your firm. `changedFields` is already intersected with what your firm may see, so a change limited to fields you are not entitled to is not delivered at all.
+</Note>
+
+## Multi-hop cases
+
+One `baseCaseId` can carry several referrals over time -- for example, a case referred to firm B, rejected by B, and then re-referred by the same sending firm to firm C. Each referral is a hop with its own `referralId`.
+
+- You see your own hop. `referralId` identifies it; `referringFirm` and `referentFirm` are the two parties of that hop.
+- Hop-level fields -- fees, settlement, lead attorney, phase -- go only to the two parties of the hop that changed.
+- Other firms on the same case receive case-level changes only, and only when something they can see changed. If nothing visible to them changed, they are not delivered the event.
+- `referral.sent` and `referral.received` for the same hop share one `eventId`; they are two views of the same fact, one per party.
+
+Key on `referralId` for your side of the case. Use `baseCaseId` only to correlate hops you are a party to, never to infer the state of a hop you are not on. Ownership and re-referral rules are covered in [Case Lifecycle](/concepts/cases).
+
+## Identities in payloads
+
+No delivery ever contains a user id for a person at the other firm. What you get instead:
+
+| Field | Sent to | Value |
+|---|---|---|
+| `actor.firmId` | Everyone | The firm that caused the event; `null` for platform administrators and system jobs |
+| `actor.source` | Everyone | The channel that caused it (`manual`, `api`, `salesforce`, ...); `api` covers both the Public API and the CaseXchange UI |
+| `data.createdByName` | Everyone | Display name of the person who recorded a status change, or `null` |
+| `data.authorName` | Everyone entitled to the note | Display name of the note's author |
+| `data.uploadedByName` | Everyone entitled to the document | Display name of the uploader |
+| `data.authorId` | The firm that owns the note only | User id; `null` to the counterparty |
+| `data.uploadedById` | The firm that uploaded the document only | User id; `null` to the counterparty |
+
+Display names are the only identity you receive about the counterparty's people. Do not build lookups that expect a stable user id from the other firm.
+
+## Echo captures
+
+Echo mode diverts deliveries to a CaseXchange-hosted capture endpoint that you read back with `GET /webhooks/{id}/echo/captures`. Each capture contains the **full delivered body** (`body` and `rawBody`), exactly as your endpoint would have received it -- including unmasked client information when your firm is entitled to it.
+
+Treat echo mode like the payload itself: the echo token is a credential, captures are readable by any key of your firm with `read_only` tier or higher, and `POST /webhooks/{id}/echo/disable` deletes every capture. Do not leave echo mode on in production longer than a debugging session needs. See [Testing webhooks](/webhooks/testing).
+
+## What this means for your code
+
+- **Branch on `piiMasked` before reading client fields.** A masked delivery has no `clientFirstName`, `clientLastName`, `clientEmail`, `clientPhone` or `clientDateOfBirth` key at all; accessing them yields `undefined`, not `null`.
+- **Never assume a case snapshot is there, or that it lives at `data.case`.** `data.case` exists only on the status family (`referral.received`, `referral.accepted`, `referral.rejected`, `case.status_changed`); validate it against the masked shape when `piiMasked` is `true` and the full shape otherwise, and reject anything that does not match. On `case.created` and `case.updated` the snapshot is `data` itself, not `data.case`. `NoteData`, `DocumentData`, `DocumentTombstone`, `CaseTombstone` and `CaseRatingData` carry no case snapshot at all -- do not reach for one.
+- **Use `referralId` as your primary key for a case**, not `baseCaseId`. Several hops share a `baseCaseId`; your firm is a party to some of them, not all.
+- **Expect to be told less than the sender.** As a receiving firm you will not see `case.created`, `case.rated`, tier fields, the sender's `source`, or -- before you acknowledge -- any content event other than `note.created` / `note.updated` for notes your own firm wrote. Do not treat a missing event as a delivery failure.
+- **Do not wait for a retroactive unmask.** Nothing is redelivered when you acknowledge. Call `GET /received-referrals/{id}` after acknowledging to load the full record.
+- **Do not persist a masked snapshot over an unmasked one.** Apply the delivery with the greatest `occurredAt`, and never let a masked `case` object overwrite fields you already hold from a later unmasked delivery or from the REST API.
+- **Store `authorId` and `uploadedById` as nullable.** They are `null` on every note and document the other firm owns.
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Event catalog" icon="list-check" href="/webhooks/events">
+    Every event, its perspectives, and the full `CaseSnapshot` and `StatusChangeData` field lists.
+  </Card>
+  <Card title="Case Lifecycle" icon="folder-open" href="/concepts/cases">
+    Referral states, ownership, and re-referrals.
+  </Card>
+  <Card title="Received Referrals" icon="inbox" href="/api-reference/examples/received-referrals">
+    Masking as it appears on the REST endpoints, and the acknowledge flow.
+  </Card>
+  <Card title="Known gaps" icon="triangle-exclamation" href="/webhooks/known-gaps">
+    Actions that produce no event, including the ones that do not count as acknowledgement.
+  </Card>
+</CardGroup>

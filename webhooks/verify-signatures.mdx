@@ -1,0 +1,287 @@
+---
+title: "Verifying Signatures"
+description: "Authenticate every webhook delivery with the X-CaseXchange-Signature header before you trust the body"
+icon: "shield-halved"
+sidebarTitle: "Verifying signatures"
+---
+
+## Why you must verify
+
+Your webhook URL is a public HTTPS endpoint. Anyone who learns it can send it a well-formed JSON body that looks exactly like a CaseXchange event. The `X-CaseXchange-Signature` header is the only thing that proves a delivery came from CaseXchange and arrived unaltered, so verify it on every request — including `webhook.test` deliveries — before you read a single field of the body.
+
+The signing secret is per subscription. It is returned exactly once, by the call that generates it: the response to `POST /webhooks`, and thereafter the response to each `POST /webhooks/{id}/rotate-secret` — which returns a new secret, never the old one. It can never be read back, so store it the moment you receive it. See [Managing subscriptions](/webhooks/subscriptions) for the create flow.
+
+## The signature header
+
+Every delivery carries one signature header:
+
+```text
+X-CaseXchange-Signature: t=1788890523,v1=5f1c0b3a9e2d7c4b8a6f0e1d2c3b4a59687f6e5d4c3b2a190807f6e5d4c3b2a1
+```
+
+| Part | Value |
+|---|---|
+| `t` | Unix time in seconds (an integer) at which the delivery was signed. |
+| `v1` | Lower-case hex of `HMAC-SHA256(key = secret, message = "<t>.<rawBody>")`. |
+| `rawBody` | The exact bytes of the request body — not a re-serialised copy. |
+| `secret` | Your subscription's `whsec_` secret: `whsec_` followed by 64 hex characters. The whole string, prefix included, is the HMAC key. |
+
+Only one `v1` value is ever sent per delivery — there is no dual signing. The signed message is the timestamp, a literal `.`, and the body, in that order, with nothing else in between.
+
+The same header format is used on every delivery, including the synthetic `webhook.test` body and the retries of a failed delivery. A retried delivery is signed afresh on every attempt, so `t` and `v1` change between attempts while `X-CaseXchange-Delivery` stays the same.
+
+## Verification steps
+
+<Steps>
+  <Step title="Read the raw body bytes">
+    Capture the request body exactly as it arrived, before any JSON middleware touches it. In Express use `express.raw({ type: 'application/json' })` on the webhook route; in Django read `request.body`. If your framework has already turned the body into an object, you no longer have the bytes that were signed.
+  </Step>
+  <Step title="Parse t and v1 from the header">
+    Split `X-CaseXchange-Signature` on `,`, then each part on the first `=`. Look the header up case-insensitively — HTTP header names are not case-sensitive, and most frameworks normalise them to lower case.
+  </Step>
+  <Step title="Reject a stale timestamp">
+    Reject the delivery if `t` is not a finite number or is more than about 300 seconds away from your current clock. This blunts replay of a captured delivery.
+  </Step>
+  <Step title="Compute the expected signature">
+    Compute `HMAC-SHA256` over the string `"<t>.<rawBody>"` using the secret as the key, and hex-encode the result.
+  </Step>
+  <Step title="Compare in constant time">
+    Compare your value with `v1` using a constant-time function — `crypto.timingSafeEqual` in Node, `hmac.compare_digest` in Python. Check the lengths first where the function requires it. Never compare with `==`.
+  </Step>
+  <Step title="Only then parse the JSON">
+    Once the signature matches, parse the body, deduplicate on `X-CaseXchange-Delivery`, store it, and return `2xx`. Do the real work asynchronously.
+  </Step>
+</Steps>
+
+<Warning>
+  If verification fails, do not process the body. Return a non-`2xx` status so the delivery is recorded as failed and retried — see [Reliability](/webhooks/reliability) for the retry schedule. A silently accepted forged request looks identical to a real one in your system.
+</Warning>
+
+## Reference implementations
+
+### Node.js
+
+This is the reference verifier. `rawBody` must be the exact bytes CaseXchange sent — a `Buffer` or the undecoded body string — and the function must run before any `JSON.parse`.
+
+```javascript
+const crypto = require("crypto");
+
+// `rawBody` MUST be the exact bytes we sent — verify before any JSON.parse.
+function verify(rawBody, signatureHeader, secret) {
+  const parts = Object.fromEntries(
+    signatureHeader.split(",").map((p) => p.split("=", 2))
+  );
+  const t = Number(parts.t);
+  if (!Number.isFinite(t) || Math.abs(Date.now() / 1000 - t) > 300) return false;
+
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(`${t}.${rawBody}`)
+    .digest("hex");
+
+  const a = Buffer.from(expected, "hex");
+  const b = Buffer.from(parts.v1 ?? "", "hex");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+```
+
+### Express wiring
+
+Mount `express.raw` on the webhook route so `req.body` is a `Buffer`, not a parsed object. Keep `express.json()` for the rest of your app, but make sure it does not run first on this path.
+
+```javascript
+const express = require("express");
+const app = express();
+
+const WEBHOOK_SECRET = process.env.CASEXCHANGE_WEBHOOK_SECRET; // whsec_...
+
+app.post(
+  "/casexchange",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const signature = req.get("X-CaseXchange-Signature") || "";
+
+    if (!verify(req.body, signature, WEBHOOK_SECRET)) {
+      return res.status(401).end();
+    }
+
+    const deliveryId = req.get("X-CaseXchange-Delivery");
+    const envelope = JSON.parse(req.body.toString("utf8"));
+
+    // Store { deliveryId, envelope } durably and deduplicate on deliveryId,
+    // then hand off to a queue. Do not do the real work before responding.
+    res.status(200).end();
+  }
+);
+```
+
+### Python
+
+The same rules in Python. `raw_body` must be `bytes`: `request.body` in Django, `request.get_data()` in Flask.
+
+```python
+import hashlib
+import hmac
+import time
+
+TOLERANCE_SECONDS = 300
+
+
+def verify(raw_body: bytes, signature_header: str, secret: str) -> bool:
+    """Return True only if `raw_body` was signed by `secret` within the last ~5 minutes."""
+    parts = dict(
+        part.split("=", 1)
+        for part in signature_header.split(",")
+        if "=" in part
+    )
+
+    try:
+        t = int(parts["t"])
+    except (KeyError, ValueError):
+        return False
+    if abs(time.time() - t) > TOLERANCE_SECONDS:
+        return False
+
+    message = f"{t}.".encode("utf-8") + raw_body
+    expected = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    received = parts.get("v1", "")
+
+    return hmac.compare_digest(expected.encode("utf-8"), received.encode("utf-8"))
+```
+
+Call `verify` before `json.loads`. Once it returns `True`, parse the body, deduplicate on the `X-CaseXchange-Delivery` header, persist, and respond `2xx`.
+
+### Computing a signature by hand
+
+To check your implementation against a known input, compute `v1` from the shell. Use `printf` rather than `echo` so no trailing newline is added to the signed message.
+
+```bash
+SECRET="whsec_your_secret_here"
+T=1788890523
+BODY='{"event":"webhook.test","timestamp":"2026-09-08T18:02:03.784Z","data":{"message":"This is a test webhook delivery","subscriptionId":"6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c"}}'
+
+printf '%s.%s' "$T" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $NF}'
+```
+
+The output is the `v1` value for that timestamp and body. Any byte difference in `BODY` — a space, a reordered key, a different number format — produces a different digest, which is why you must sign the raw bytes and never a re-serialised copy.
+
+<Tip>
+  Echo mode gives you real inputs to test against. Each capture from `GET /webhooks/{id}/echo/captures` includes `rawBody` (the exact signed bytes), the signature header under `headers`, and `signatureDetails.timestamp`. Feed those into the one-liner above or into your verifier and confirm you get a match. See [Testing webhooks](/webhooks/testing).
+</Tip>
+
+## Common mistakes
+
+| Mistake | What goes wrong | Fix |
+|---|---|---|
+| Re-serialising the body (`JSON.stringify(JSON.parse(body))`) before signing | Whitespace, key order or number formatting change, so the bytes no longer match. | Sign the raw bytes exactly as received. |
+| A JSON body parser runs before your route | You receive an object, not bytes; the original bytes are gone. | Use `express.raw` (or your framework's raw-body accessor) on the webhook path only. |
+| Comparing `v1` with `==` or `===` | String comparison exits early on the first mismatch, leaking timing information. | Use `crypto.timingSafeEqual` or `hmac.compare_digest`, checking lengths first. |
+| Stripping the `whsec_` prefix | The key is wrong, so every signature fails. | Use the full secret string, prefix included, as the HMAC key. |
+| Still using the old secret after a rotation | Every delivery fails verification from the moment you rotate; there is no dual signing. | Deploy a verifier that accepts old and new before you rotate (see below). |
+| Using one secret for several subscriptions | Each subscription has its own secret; deliveries from another subscription fail. | Keep one secret per subscription, and give each subscription its own URL or path. |
+| Clock skew on your server | A valid `t` looks stale (or from the future) and is rejected. | Keep your servers on NTP. Widen the window only slightly if you must; never remove the check. |
+| Looking the header up case-sensitively | The lookup misses, `signatureHeader` is empty, and verification fails. | HTTP header names are case-insensitive; use `req.get()` or a lower-cased key such as `x-casexchange-signature`. |
+| Routing on `event` before verifying | A forged body can drive your handler, or trigger side effects, without ever being signed. | Verify first. Read `event` or `X-CaseXchange-Event` only after the signature matches. |
+| Doing the work before responding | Slow handlers hit the 10-second idle timeout or the 30-second per-attempt deadline and are retried. | Verify, store, respond `2xx`, then process asynchronously. |
+
+## Rotating the secret
+
+`POST /webhooks/{id}/rotate-secret` generates a new secret for the subscription and returns it. It requires a `standard` or `full` key.
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks/{id}/rotate-secret" \
+  -H "X-API-Key: cxp_std_your_key_here"
+```
+
+The `200` response is the subscription object with its new `secret` — the only time this secret is ever returned:
+
+```json
+{
+  "data": {
+    "id": "6f0b8c2a-1d3e-4f5a-8b7c-9d0e1f2a3b4c",
+    "url": "https://hooks.yourfirm.com/casexchange",
+    "description": "Production intake",
+    "isActive": true,
+    "isEchoActive": false,
+    "originalUrl": null,
+    "secret": "whsec_9c1e7b4a2f5d8e3c6b0a9f1d4e7c2b5a8d3f6e9c1b4a7d0e3f6c9b2a5d8e1f4c",
+    "createdAt": "2026-09-01T09:14:22.000Z",
+    "updatedAt": "2026-09-10T15:03:41.000Z"
+  },
+  "meta": {
+    "requestId": "req_f2dbe1d3f6ad4a7bb5b4c9f2",
+    "timestamp": "2026-09-10T15:03:41.019Z"
+  }
+}
+```
+
+### What rotation does
+
+<Warning>
+  Rotation takes effect immediately. There is no grace window and no dual signing: from the moment the call returns, every outbound delivery — including retries of deliveries that were created before the rotation — is signed with the new secret alone. The previous secret never signs again.
+</Warning>
+
+Because there is no overlap on the CaseXchange side, the overlap has to live in your verifier.
+
+### Recommended procedure
+
+<Steps>
+  <Step title="Deploy a verifier that accepts both secrets">
+    Change your endpoint so it tries the current secret first and, on failure, a second "incoming" secret slot. Deploy this before you rotate, while the second slot is still empty — the point is that the handler can hold two secrets by the time the new one exists.
+  </Step>
+  <Step title="Rotate and store the new secret">
+    Call `POST /webhooks/{id}/rotate-secret`, then write the returned `secret` into the second slot in your secrets manager. Deliveries signed with the new secret now verify on the second attempt; any in-flight retries also carry the new signature.
+  </Step>
+  <Step title="Confirm deliveries verify with the new secret">
+    Watch `GET /webhooks/{id}/deliveries` — or trigger `POST /webhooks/{id}/test` — and confirm new deliveries land as `DELIVERED`. Check your own logs that they matched on the new secret, not the old one.
+  </Step>
+  <Step title="Drop the old secret">
+    Once you are satisfied, remove the old value and promote the new one to the primary slot. A few minutes is enough; the old secret never signs another delivery after the rotation.
+  </Step>
+</Steps>
+
+### If you forget to update your verifier
+
+Your endpoint keeps computing signatures with the old secret, so every delivery fails verification. Provided your handler returns a non-`2xx` status on a bad signature, this is recoverable:
+
+1. Each failed delivery is retried after 30 s, 2 min, 10 min and 30 min — about 43 minutes end to end.
+2. Every retry is re-signed with the current secret. As soon as your verifier is updated, the next attempt succeeds.
+3. After the fifth failed attempt a delivery is `EXHAUSTED` and is never retried. The event is lost as a push; reconcile it from `GET /status-updates` or the case lists.
+4. After 10 consecutive exhausted deliveries the subscription is deactivated (`isActive: false`). Update your secret, then re-enable it with `PATCH /webhooks/{id}` and `{ "isActive": true }`.
+
+See [Reliability](/webhooks/reliability) for the full retry and deactivation behaviour.
+
+### Echo captures and the 24-hour read-back window
+
+Echo-mode captures report a `signatureValid` flag. For 24 hours after a rotation, that read-back check also accepts the previous secret, so a capture whose delivery was signed just before you rotated still reads as `signatureValid: true` rather than looking like a broken signature.
+
+<Warning>
+  The 24 hours applies only to the capture read-back check. Outbound deliveries — to your URL or to the echo endpoint — are always signed with the current secret alone, from the moment the rotation call returns. Do not read the 24 hours as a grace window for your endpoint; there is none.
+</Warning>
+
+The practical consequence: after a rotation, a capture that reads as valid does not prove your endpoint would have accepted the delivery. To check your own verifier, take the capture's `rawBody` and signature header and run them through your code with the secret your endpoint currently holds. See [Testing webhooks](/webhooks/testing) for how to enable echo mode and read captures.
+
+## Handling the secret
+
+- Store it in a secrets manager, the same way you store the API key. Never commit it to source control or bake it into an image.
+- Never log it. Scrub it from error reports, request dumps and crash traces the same way you scrub the API key.
+- Keep one secret per subscription. If you run several subscriptions, key your secret store by subscription `id`.
+- Rotate on any suspicion of exposure — a leaked log, a departed contractor, a compromised host — using the procedure above. Rotation needs a `standard` or `full` key.
+- If the secret is lost, rotate. There is no endpoint that reads it back.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Anatomy of a delivery" icon="paper-plane" href="/webhooks/deliveries">
+    Headers, the envelope, and how to deduplicate and order what you receive.
+  </Card>
+  <Card title="Reliability" icon="arrows-rotate" href="/webhooks/reliability">
+    Retry schedule, delivery statuses, and how a subscription gets deactivated.
+  </Card>
+  <Card title="Testing webhooks" icon="flask" href="/webhooks/testing">
+    Test deliveries and echo mode for checking your verifier against real signed bytes.
+  </Card>
+  <Card title="Managing subscriptions" icon="webhook" href="/webhooks/subscriptions">
+    Create, update and delete subscriptions; where the secret comes from.
+  </Card>
+</CardGroup>

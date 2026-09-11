@@ -51,6 +51,7 @@ See the [JWT Guide](/auth/jwt) in the docs site for details on JWT session authe
 - **Notifications** — Preferences, email recipients
 - **Medical Referrals** — CRUD operations
 - **Bulk Import** — CSV import and bulk update
+- **Webhooks** — Outbound event subscriptions: create, list, update, delete, deliveries, test, rotate secret, echo mode (see the Webhooks tab)
 - **Key Management** — Create, list, usage, revoke (via internal API)
 
 ## Postman Collection

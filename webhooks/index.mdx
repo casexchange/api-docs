@@ -1,0 +1,111 @@
+---
+title: "Webhooks"
+description: "Receive signed referral lifecycle events at your own HTTPS endpoint instead of polling"
+icon: "bell"
+---
+
+## What webhooks are
+
+CaseXchange pushes referral lifecycle events to an HTTPS endpoint you control. Instead of polling `GET /sent-cases` or `GET /received-referrals` on a timer to notice that something changed, you register a URL once and CaseXchange sends an HTTPS `POST` to it each time an event happens for your firm.
+
+Webhooks are a signal to reconcile, not a sync feed: the read endpoints (`GET /status-updates`, `GET /referrals`, `GET /sent-cases`, `GET /received-referrals`) remain the authority, and a subscription only receives events that happen after it is created — there is no backfill and no replay.
+
+## What you receive
+
+Every active subscription receives every event for your firm. There is no per-subscription filter, so branch on the event name (the `event` field in the body, also sent as the `X-CaseXchange-Event` header) and ignore names you do not handle.
+
+| Family | Event | Meaning |
+|---|---|---|
+| `case.*` | `case.created` | Your firm created a case. |
+| | `case.updated` | Fields on a case you can see changed; `changedFields` lists which. |
+| | `case.deleted` | Your firm deleted a draft case. |
+| | `case.status_changed` | Every status transition not covered by a `referral.*` event (withdrawal, closing, and so on). |
+| | `case.rated` | A case your firm owns received a rating tier. |
+| `referral.*` | `referral.sent` | You sent a referral to another firm. |
+| | `referral.received` | A firm referred a case to you. |
+| | `referral.accepted` | The referral was accepted and left `sent`. |
+| | `referral.rejected` | The referral was rejected. |
+| `note.*` | `note.created` | A note was added. Notes your own firm wrote always reach you, and the sending firm always receives the receiving firm's notes as well; a receiving firm gets the sending firm's notes only once it has content access. |
+| | `note.updated` | The body of a note was edited. |
+| `document.*` | `document.uploaded` | A document was uploaded. The case's sending firm always receives this; as a counterparty you receive it only while your hop still grants document access. |
+| | `document.deleted` | A document was removed. |
+
+A receiving firm gets `case.updated` and the sending firm's notes only once it has acknowledged the referral and while the referral is in a working status — which still includes `closed`. `document.*` is stricter: document access also ends at `closed`. Notes its own firm wrote always reach it, acknowledged or not. See [Client data and masking](/webhooks/privacy).
+
+The [Event catalog](/webhooks/events) has the envelope, the `data` shape and the recipient rules for each event.
+
+## What you can rely on
+
+| Guarantee | Detail |
+|---|---|
+| Signed | Every delivery carries `X-CaseXchange-Signature`, an HMAC-SHA256 of the timestamp and the raw body. See [Verifying signatures](/webhooks/verify-signatures). |
+| At-least-once | A failed delivery is retried, up to 5 attempts in total over about 43 minutes, until your endpoint answers `2xx`. See [Reliability](/webhooks/reliability). |
+| No ordering | Deliveries are dispatched concurrently and a retry can trail a later event. Apply the delivery with the greatest `occurredAt`. |
+| Deduplicable | Retries reuse the same `X-CaseXchange-Delivery` value. Deduplicate on it. |
+| PII masked | A receiving firm gets a masked case snapshot (`piiMasked: true`) until it acknowledges the referral. See [Client data and masking](/webhooks/privacy). |
+
+<Warning>
+  Answer `2xx` as soon as you have durably stored the body and do the real work asynchronously. Any other response — `3xx`, `4xx`, `5xx`, a timeout or a TLS failure — counts as a failed attempt.
+</Warning>
+
+## Before you start
+
+You need three things:
+
+| Prerequisite | Detail |
+|---|---|
+| A firm-scoped API key | A `cxp_` key at the `standard` tier or above. A `read_only` key can list and inspect subscriptions and deliveries but cannot create, change, test or delete them. Generate keys from **Settings > API Keys** — see the [Quickstart](/quickstart). |
+| The Public API integration | It must be enabled on your firm's account. Without it no deliveries are created — and the same condition stops your firm's keys authenticating, so every Public API call fails with `403 public_api_not_enabled` (or `403 api_key_firm_inactive` if the firm itself is deactivated). Email `help@casexchange.com` if you are unsure. |
+| A public HTTPS endpoint | `https://` on port 443 with a hostname that resolves to a public address. `localhost`, `127.0.0.1` and private or LAN addresses are rejected with `400 invalid_webhook_url`. |
+
+Subscriptions are created and managed through the API only — `POST /webhooks`, `PATCH /webhooks/{id}`, `DELETE /webhooks/{id}` and the other endpoints on the [Managing subscriptions](/webhooks/subscriptions) page. There is no dashboard page for firm webhooks.
+
+```bash
+# Create a subscription — the response includes the signing secret, shown only this once
+curl -X POST "https://api.casexchange.com/api/public/v1/webhooks" \
+  -H "X-API-Key: cxp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://hooks.yourfirm.com/casexchange",
+    "description": "Production intake"
+  }'
+```
+
+<Note>
+  Provider (Med Xchange) keys manage their own subscriptions through the same endpoints with a different payload. This tab documents firm webhooks only.
+</Note>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Webhooks quickstart" icon="rocket" href="/webhooks/quickstart">
+    Create a subscription, send a test delivery and verify your first signature.
+  </Card>
+  <Card title="Managing subscriptions" icon="gear" href="/webhooks/subscriptions">
+    Create, list, update, rotate, deactivate and delete subscriptions, and the limits that apply.
+  </Card>
+  <Card title="Anatomy of a delivery" icon="paper-plane" href="/webhooks/deliveries">
+    The headers, the envelope fields and how to deduplicate and order what arrives.
+  </Card>
+  <Card title="Event catalog" icon="bell" href="/webhooks/events">
+    The envelope, every event, its `data` shape and who receives it.
+  </Card>
+  <Card title="Verifying signatures" icon="shield-check" href="/webhooks/verify-signatures">
+    Check `X-CaseXchange-Signature` before you trust a body; rotate secrets safely.
+  </Card>
+  <Card title="Reliability" icon="arrows-rotate" href="/webhooks/reliability">
+    Retries, delivery statuses, automatic deactivation of a failing endpoint, and retention.
+  </Card>
+  <Card title="Testing webhooks" icon="flask" href="/webhooks/testing">
+    Test deliveries, echo mode and local development without a public endpoint.
+  </Card>
+  <Card title="Client data and masking" icon="eye-slash" href="/webhooks/privacy">
+    What a masked snapshot contains, what unmasks it and what each side is entitled to see.
+  </Card>
+  <Card title="Troubleshooting" icon="bug" href="/webhooks/troubleshooting">
+    Error codes, `lastError` values and what to do about them.
+  </Card>
+  <Card title="Known gaps" icon="triangle-exclamation" href="/webhooks/known-gaps">
+    Actions that deliberately produce no event, so you know what to reconcile instead.
+  </Card>
+</CardGroup>
