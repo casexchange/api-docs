@@ -77,7 +77,9 @@
                 "group": "Account",
                 "openapi": "api-reference/openapi.yml",
                 "pages": [
-                  "GET /me"
+                  "GET /me",
+                  "GET /me/doctors",
+                  "GET /me/locations"
                 ],
                 "expanded": false
               },
@@ -207,6 +209,29 @@
                   "GET /insurances",
                   "GET /insurances/{id}",
                   "GET /med-cases/{id}/insurances"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Med Appointments",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /med-cases/{caseId}/appointments",
+                  "POST /med-cases/{caseId}/appointments",
+                  "GET /med-cases/{caseId}/appointments/{appointmentId}",
+                  "PUT /med-cases/{caseId}/appointments/{appointmentId}",
+                  "DELETE /med-cases/{caseId}/appointments/{appointmentId}"
+                ],
+                "expanded": false
+              },
+              {
+                "group": "Med Billing",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /med-cases/{caseId}/appointments/{appointmentId}/billable-events",
+                  "POST /med-cases/{caseId}/appointments/{appointmentId}/billable-events",
+                  "PATCH /med-cases/{caseId}/appointments/{appointmentId}/billable-events/{eventId}",
+                  "DELETE /med-cases/{caseId}/appointments/{appointmentId}/billable-events/{eventId}"
                 ],
                 "expanded": false
               },
