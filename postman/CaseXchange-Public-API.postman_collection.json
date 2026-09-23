@@ -2603,6 +2603,547 @@
       ]
     },
     {
+      "name": "Med Appointments & Billing",
+      "description": "Appointments on a Med Xchange case and the billing lines attached to them. Provider keys write; firm keys read.",
+      "item": [
+        {
+          "name": "List Appointments on Med Case",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default 1)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page, max 100 (default 20)",
+                  "disabled": true
+                },
+                {
+                  "key": "medReferralId",
+                  "value": "",
+                  "description": "Filter to one referral (UUID, optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "attended",
+                  "value": "true",
+                  "description": "Filter by outcome: true | false | null (optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "cancelled",
+                  "value": "true",
+                  "description": "Filter by cancellation: true | false (optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "source",
+                  "value": "manual",
+                  "description": "Filter by source: manual | premier (optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "",
+                  "description": "Inclusive start date, YYYY-MM-DD (optional)",
+                  "disabled": true
+                },
+                {
+                  "key": "dateTo",
+                  "value": "",
+                  "description": "Inclusive end date, YYYY-MM-DD (optional)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns appointments on the specified med case, newest date first. Firm keys read their own cases; provider keys read appointments on their own referrals plus unlinked Premier-synced rows. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns appointments array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "  if (json.data.length > 0) {",
+                  "    pm.environment.set('appointment_id', json.data[0].id);",
+                  "    console.log('Saved first appointment ID: ' + json.data[0].id);",
+                  "  }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Appointment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctorId\": \"00000000-0000-0000-0000-000000000001\",\n  \"providerLocationId\": \"00000000-0000-0000-0000-000000000002\",\n  \"appointmentDate\": \"2026-09-23\",\n  \"appointmentTime\": \"09:30:00\",\n  \"category\": \"initial\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments"
+              ]
+            },
+            "description": "Adds an appointment. doctorId and providerLocationId are required (from GET /me/doctors and GET /me/locations). Provider-scoped key only. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 - Appointment created', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns created appointment', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.be.a('string');",
+                  "  pm.environment.set('appointment_id', json.data.id);",
+                  "  console.log('Saved appointment ID: ' + json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Appointment by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments/{{appointment_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments",
+                "{{appointment_id}}"
+              ]
+            },
+            "description": "Returns a single appointment by UUID. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns appointment object', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.equal(pm.environment.get('appointment_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Appointment",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctorId\": \"00000000-0000-0000-0000-000000000001\",\n  \"providerLocationId\": \"00000000-0000-0000-0000-000000000002\",\n  \"appointmentDate\": \"2026-09-23\",\n  \"appointmentTime\": \"10:00:00\",\n  \"category\": \"follow_up\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments/{{appointment_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments",
+                "{{appointment_id}}"
+              ]
+            },
+            "description": "Full-object update. doctorId and providerLocationId are required. On a Premier-synced appointment, omit appointmentDate, appointmentTime, attended and cancelled — sending any of them returns 400 premier_owned_field. Provider-scoped key only. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns updated appointment', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.equal(pm.environment.get('appointment_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Appointment",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments/{{appointment_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments",
+                "{{appointment_id}}"
+              ]
+            },
+            "description": "Removes an appointment. Premier-synced appointments cannot be deleted (400 premier_managed). Provider-scoped key only. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Billing Lines on Appointment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments/{{appointment_id}}/billable-events",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments",
+                "{{appointment_id}}",
+                "billable-events"
+              ]
+            },
+            "description": "Returns the billing lines on the specified appointment. Not paginated; meta.totals carries totalBilled/totalPaid. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns billing lines array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "  if (json.data.length > 0) {",
+                  "    pm.environment.set('event_id', json.data[0].id);",
+                  "    console.log('Saved first billing line ID: ' + json.data[0].id);",
+                  "  }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Billing Line",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"VISIT_FEE\",\n  \"description\": \"Initial evaluation\",\n  \"costBilled\": \"150.00\",\n  \"amountPaid\": \"0.00\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments/{{appointment_id}}/billable-events",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments",
+                "{{appointment_id}}",
+                "billable-events"
+              ]
+            },
+            "description": "Adds a billing line. kind and description are required. PRESCRIPTION_COST lines cannot be posted directly. Provider-scoped key only. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 - Billing line created', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns created billing line', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.be.a('string');",
+                  "  pm.environment.set('event_id', json.data.id);",
+                  "  console.log('Saved billing line ID: ' + json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Billing Line",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountPaid\": \"150.00\",\n  \"paidDate\": \"2026-09-23\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments/{{appointment_id}}/billable-events/{{event_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments",
+                "{{appointment_id}}",
+                "billable-events",
+                "{{event_id}}"
+              ]
+            },
+            "description": "Partial update. kind is immutable. Provider-scoped key only. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns updated billing line', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data.id).to.equal(pm.environment.get('event_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Billing Line",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/appointments/{{appointment_id}}/billable-events/{{event_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "appointments",
+                "{{appointment_id}}",
+                "billable-events",
+                "{{event_id}}"
+              ]
+            },
+            "description": "Removes a billing line. Provider-scoped key only. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List My Doctors",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/me/doctors",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "me",
+                "doctors"
+              ]
+            },
+            "description": "Provider keys only. Active DOCTOR and PROVIDER_ADMIN users of the key's practice, one page of up to 200. Use the ids as doctorId when creating appointments. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns doctors array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List My Locations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/me/locations",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "me",
+                "locations"
+              ]
+            },
+            "description": "Provider keys only. Use the ids as providerLocationId when creating appointments. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns locations array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.be.an('object');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Insurance",
       "item": [
         {
@@ -4740,7 +5281,7 @@
     },
     {
       "name": "Webhooks",
-      "description": "Webhook subscription management for real-time event delivery. Providers can subscribe to 35 event types across 10 categories (case, referral, appointment, prescription, insurance, injury, note, diagnosis, billing, document). Each delivery is signed with HMAC-SHA256; verify the X-CaseXchange-Signature header using your subscription secret.\n\n**Supported event types:**\n- case.created, case.updated, case.archived\n- referral.sent, referral.accepted, referral.rejected, referral.withdrawn, referral.in_treatment, referral.treatment_complete\n- appointment.created, appointment.updated, appointment.deleted\n- prescription.created, prescription.updated, prescription.deleted\n- insurance.created, insurance.updated, insurance.deleted\n- injury.created, injury.updated, injury.deleted\n- note.created, note.updated, note.deleted\n- diagnosis.created, diagnosis.updated, diagnosis.deleted\n- billing.created, billing.updated, billing.deleted\n- document.uploaded, document.deleted\n- webhook.test\n\n**Example payloads by category:**\n\ncase.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440000\",\"eventType\":\"case.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"referenceNumber\":\"MED-0042\",\"patientFirstName\":\"John\",\"patientLastName\":\"Doe\",\"patientEmail\":\"john.doe@example.com\",\"patientPhone\":\"312-555-0100\",\"patientDateOfBirth\":\"1985-06-15\",\"patientZipCode\":\"60601\",\"description\":\"Auto accident on I-90\",\"incidentDate\":\"2026-04-01\",\"caseType\":\"PI\",\"jurisdiction\":\"IL\",\"handlingFirmId\":\"c3d4e5f6-a7b8-9012-cdef-123456789012\"}}\n```\n\ncase.updated (includes changedFields):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440001\",\"eventType\":\"case.updated\",\"timestamp\":\"2026-05-19T13:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"referenceNumber\":\"MED-0042\",\"patientFirstName\":\"John\",\"patientLastName\":\"Doe\",\"description\":\"Auto accident on I-90 \u2014 updated notes\",\"incidentDate\":\"2026-04-01\",\"caseType\":\"PI\",\"jurisdiction\":\"IL\",\"handlingFirmId\":\"c3d4e5f6-a7b8-9012-cdef-123456789012\",\"changedFields\":[\"description\"]}}\n```\n\ncase.archived (tombstone \u2014 minimal payload):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440002\",\"eventType\":\"case.archived\",\"timestamp\":\"2026-05-19T14:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"referenceNumber\":\"MED-0042\"}}\n```\n\nreferral.sent:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440010\",\"eventType\":\"referral.sent\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"referralId\":\"d4e5f6a7-b8c9-0123-defa-234567890123\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\nreferral.accepted (lifecycle event \u2014 includes fromStatuses + toStatus):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440011\",\"eventType\":\"referral.accepted\",\"timestamp\":\"2026-05-19T12:30:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"referralId\":\"d4e5f6a7-b8c9-0123-defa-234567890123\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"fromStatuses\":[\"sent\"],\"toStatus\":\"accepted\"}}\n```\n\ninsurance.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440020\",\"eventType\":\"insurance.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"e5f6a7b8-c9d0-1234-efab-345678901234\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"insuranceCarrier\":\"State Farm\",\"policyNumber\":\"SF-12345\",\"claimNumber\":\"CLM-2026-001\",\"insuranceType\":\"AUTO\",\"isPrimary\":true,\"adjusterName\":\"Jane Smith\",\"adjusterPhone\":\"800-555-0200\",\"adjusterEmail\":\"jsmith@statefarm.example.com\",\"insuranceAddress\":\"123 Insurance Blvd, Bloomington IL 61701\",\"insurancePhone\":\"800-555-0199\"}}\n```\n\ninsurance.deleted (tombstone):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440021\",\"eventType\":\"insurance.deleted\",\"timestamp\":\"2026-05-19T15:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"e5f6a7b8-c9d0-1234-efab-345678901234\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\ninjury.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440030\",\"eventType\":\"injury.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"f6a7b8c9-d0e1-2345-fabc-456789012345\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"natureOfInjury\":\"FRACTURE\",\"description\":\"Fracture of left radius \u2014 distal end\",\"severity\":\"MODERATE\",\"isAccepted\":true,\"treatingProviderId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"}}\n```\n\nnote.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440040\",\"eventType\":\"note.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"a7b8c9d0-e1f2-3456-abcd-567890123456\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"appointmentId\":\"b8c9d0e1-f2a3-4567-bcde-678901234567\",\"authorId\":\"c9d0e1f2-a3b4-5678-cdef-789012345678\",\"body\":\"Patient reports reduced pain in wrist. Range of motion improving.\",\"createdAt\":\"2026-05-19T12:00:00.000Z\"}}\n```\n\ndiagnosis.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440050\",\"eventType\":\"diagnosis.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"d0e1f2a3-b4c5-6789-defa-890123456789\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"appointmentId\":\"b8c9d0e1-f2a3-4567-bcde-678901234567\",\"icd10Code\":\"S52.501A\",\"description\":\"Fracture of lower end of radius, initial encounter\",\"isPrimary\":true,\"createdAt\":\"2026-05-19T12:00:00.000Z\"}}\n```\n\nbilling.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440060\",\"eventType\":\"billing.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"e1f2a3b4-c5d6-7890-efab-901234567890\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"kind\":\"VISIT_FEE\"}}\n```\n\nbilling.deleted (tombstone):\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440061\",\"eventType\":\"billing.deleted\",\"timestamp\":\"2026-05-19T15:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"e1f2a3b4-c5d6-7890-efab-901234567890\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\"kind\":\"VISIT_FEE\"}}\n```\n\nappointment.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440070\",\"eventType\":\"appointment.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"appointmentId\":\"b8c9d0e1-f2a3-4567-bcde-678901234567\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\nprescription.created:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440080\",\"eventType\":\"prescription.created\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"prescriptionId\":\"f2a3b4c5-d6e7-8901-fabc-012345678901\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\ndocument.uploaded:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440090\",\"eventType\":\"document.uploaded\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"id\":\"a3b4c5d6-e7f8-9012-abcd-123456789012\",\"medCaseId\":\"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}}\n```\n\nwebhook.test:\n```json\n{\"eventId\":\"550e8400-e29b-41d4-a716-446655440099\",\"eventType\":\"webhook.test\",\"timestamp\":\"2026-05-19T12:00:00Z\",\"providerId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"data\":{\"message\":\"This is a test delivery from CaseXchange.\"}}\n```\n\n**Signature verification (Node.js example):**\n```js\nconst crypto = require('crypto');\nfunction verifySignature(rawBody, secret, signatureHeader) {\n  // Header format: t=<timestamp>,v1=<hmac_hex>\n  const parts = Object.fromEntries(\n    signatureHeader.split(',').map(p => p.split('=', 2))\n  );\n  const timestamp = parts.t;\n  const expected = crypto.createHmac('sha256', secret)\n    .update(timestamp + '.' + rawBody)\n    .digest('hex');\n  if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1))) {\n    throw new Error('Invalid signature');\n  }\n  // Reject replays older than 5 minutes\n  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {\n    throw new Error('Timestamp too old');\n  }\n}\n```",
+      "description": "Webhook subscription management for real-time event delivery. A subscription belongs to whichever kind of key created it: a firm-scoped `cxp_` key (CaseXchange referral lifecycle) or a provider-scoped `cxpp_` key (Med Xchange case lifecycle). Each delivery is signed with HMAC-SHA256; verify the X-CaseXchange-Signature header using your subscription secret.\n\n**Every delivery carries these headers:**\n```\nX-CaseXchange-Event:     <event name>\nX-CaseXchange-Event-Id:  uuid identifying the event (shared by every delivery of the same fact)\nX-CaseXchange-Delivery:  uuid identifying this delivery, stable across retries \u2014 dedupe on this\nX-CaseXchange-Signature: t=<unix-seconds>,v1=<hex>\n```\n\n**Firm subscriptions (`cxp_`)** receive the self-describing `CasexWebhookEnvelope` body \u2014 `{schemaVersion, event, eventId, occurredAt, perspective, piiMasked, recipientFirmId, referralId, baseCaseId, referenceNumber, referringFirm, referentFirm, isTestCase, actor, data}`. The 13 CaseX events, their `data` schemas and the PII rules are catalogued in the `x-webhook-events` extension at the root of `docs/api/public-openapi.yml`, with the narrative in that document's `## Webhooks` section.\n\n**Provider subscriptions (`cxpp_`)** receive the examples below: the event's own fields as the whole body, with no wrapper object around them. 34 event types across 10 categories (case, referral, appointment, prescription, insurance, injury, note, diagnosis, billing, document), plus the synthetic `webhook.test`.\n\n**Supported event types:**\n- case.created, case.updated, case.archived\n- referral.sent, referral.under_review, referral.accepted, referral.rejected, referral.withdrawn, referral.in_treatment, referral.treatment_complete, referral.closed\n- appointment.created, appointment.updated, appointment.deleted\n- prescription.created, prescription.updated, prescription.deleted\n- insurance.created, insurance.updated, insurance.deleted\n- injury.created, injury.updated, injury.deleted\n- note.created, note.updated, note.deleted\n- diagnosis.created, diagnosis.updated, diagnosis.deleted\n- billing.created, billing.updated, billing.deleted\n- document.uploaded, document.deleted\n- webhook.test\n\n**Example payloads by category (provider subscriptions \u2014 the body is exactly this, no wrapper):**\n\ncase.created:\n```json\n{\"id\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"referenceNumber\": \"MED-0042\", \"patientFirstName\": \"John\", \"patientLastName\": \"Doe\", \"patientEmail\": \"john.doe@example.com\", \"patientPhone\": \"312-555-0100\", \"patientDateOfBirth\": \"1985-06-15\", \"patientZipCode\": \"60601\", \"description\": \"Auto accident on I-90\", \"incidentDate\": \"2026-04-01\", \"caseType\": \"PI\", \"jurisdiction\": \"IL\", \"handlingFirmId\": \"c3d4e5f6-a7b8-9012-cdef-123456789012\"}\n```\n\ncase.updated (includes changedFields):\n```json\n{\"id\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"referenceNumber\": \"MED-0042\", \"patientFirstName\": \"John\", \"patientLastName\": \"Doe\", \"description\": \"Auto accident on I-90 \u2014 updated notes\", \"incidentDate\": \"2026-04-01\", \"caseType\": \"PI\", \"jurisdiction\": \"IL\", \"handlingFirmId\": \"c3d4e5f6-a7b8-9012-cdef-123456789012\", \"changedFields\": [\"description\"]}\n```\n\ncase.archived (tombstone \u2014 minimal payload):\n```json\n{\"id\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"referenceNumber\": \"MED-0042\"}\n```\n\nreferral.sent:\n```json\n{\"referralId\": \"d4e5f6a7-b8c9-0123-defa-234567890123\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}\n```\n\nreferral.accepted (lifecycle event \u2014 includes fromStatuses + toStatus):\n```json\n{\"referralId\": \"d4e5f6a7-b8c9-0123-defa-234567890123\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"fromStatuses\": [\"sent\"], \"toStatus\": \"accepted\"}\n```\n\ninsurance.created:\n```json\n{\"id\": \"e5f6a7b8-c9d0-1234-efab-345678901234\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"insuranceCarrier\": \"State Farm\", \"policyNumber\": \"SF-12345\", \"claimNumber\": \"CLM-2026-001\", \"insuranceType\": \"AUTO\", \"isPrimary\": true, \"adjusterName\": \"Jane Smith\", \"adjusterPhone\": \"800-555-0200\", \"adjusterEmail\": \"jsmith@statefarm.example.com\", \"insuranceAddress\": \"123 Insurance Blvd, Bloomington IL 61701\", \"insurancePhone\": \"800-555-0199\"}\n```\n\ninsurance.deleted (tombstone):\n```json\n{\"id\": \"e5f6a7b8-c9d0-1234-efab-345678901234\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}\n```\n\ninjury.created:\n```json\n{\"id\": \"f6a7b8c9-d0e1-2345-fabc-456789012345\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"natureOfInjury\": \"FRACTURE\", \"description\": \"Fracture of left radius \u2014 distal end\", \"severity\": \"MODERATE\", \"isAccepted\": true, \"treatingProviderId\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"}\n```\n\nnote.created:\n```json\n{\"id\": \"a7b8c9d0-e1f2-3456-abcd-567890123456\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"appointmentId\": \"b8c9d0e1-f2a3-4567-bcde-678901234567\", \"authorId\": \"c9d0e1f2-a3b4-5678-cdef-789012345678\", \"body\": \"Patient reports reduced pain in wrist. Range of motion improving.\", \"createdAt\": \"2026-05-19T12:00:00.000Z\"}\n```\n\ndiagnosis.created:\n```json\n{\"id\": \"d0e1f2a3-b4c5-6789-defa-890123456789\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"appointmentId\": \"b8c9d0e1-f2a3-4567-bcde-678901234567\", \"icd10Code\": \"S52.501A\", \"description\": \"Fracture of lower end of radius, initial encounter\", \"isPrimary\": true, \"createdAt\": \"2026-05-19T12:00:00.000Z\"}\n```\n\nbilling.created:\n```json\n{\"id\": \"e1f2a3b4-c5d6-7890-efab-901234567890\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"kind\": \"VISIT_FEE\"}\n```\n\nbilling.deleted (tombstone):\n```json\n{\"id\": \"e1f2a3b4-c5d6-7890-efab-901234567890\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\", \"kind\": \"VISIT_FEE\"}\n```\n\nappointment.created:\n```json\n{\"appointmentId\": \"b8c9d0e1-f2a3-4567-bcde-678901234567\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}\n```\n\nprescription.created:\n```json\n{\"prescriptionId\": \"f2a3b4c5-d6e7-8901-fabc-012345678901\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}\n```\n\ndocument.uploaded:\n```json\n{\"id\": \"a3b4c5d6-e7f8-9012-abcd-123456789012\", \"medCaseId\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\"}\n```\n\nwebhook.test (the one event whose body IS wrapped, in `{event, timestamp, data}`; its event id travels only in the header):\n```json\n{\"event\": \"webhook.test\", \"timestamp\": \"2026-05-19T12:00:00Z\", \"data\": {\"subscriptionId\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\", \"message\": \"This is a test webhook delivery\"}}\n```\n\n**Signature verification (Node.js example):**\n```js\nconst crypto = require('crypto');\nfunction verifySignature(rawBody, secret, signatureHeader) {\n  // Header format: t=<timestamp>,v1=<hmac_hex>\n  const parts = Object.fromEntries(\n    signatureHeader.split(',').map(p => p.split('=', 2))\n  );\n  const timestamp = parts.t;\n  const expected = crypto.createHmac('sha256', secret)\n    .update(timestamp + '.' + rawBody)\n    .digest('hex');\n  if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1))) {\n    throw new Error('Invalid signature');\n  }\n  // Reject replays older than 5 minutes\n  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {\n    throw new Error('Timestamp too old');\n  }\n}\n```",
       "item": [
         {
           "name": "Create Webhook Subscription",
@@ -4769,7 +5310,7 @@
                 "webhooks"
               ]
             },
-            "description": "Creates a new webhook subscription for the authenticated provider. Returns the subscription record including the plaintext secret \u2014 store it securely, it is never shown again. Tier: STANDARD.\n\nCreates a new webhook subscription. All active subscriptions receive every event for the provider \u2014 event-type filtering is a planned future feature."
+            "description": "Creates a new webhook subscription owned by the calling key (a firm `cxp_` key or a Med Xchange provider `cxpp_` key). The response includes the plaintext `secret` \u2014 store it securely, it is returned only here and from Rotate Webhook Secret. Tier: STANDARD.\n\nEvery active subscription receives every event for its owner \u2014 per-subscription event filtering is a planned future feature, so branch on the `event` field."
           },
           "event": [
             {
@@ -4777,14 +5318,13 @@
               "script": {
                 "exec": [
                   "pm.test('Status 201 - Subscription created', () => pm.response.to.have.status(201));",
-                  "pm.test('Returns subscription with plainSecret', () => {",
+                  "pm.test('Returns subscription with secret', () => {",
                   "  const json = pm.response.json();",
-                  "  pm.expect(json.success).to.equal(true);",
                   "  pm.expect(json.data).to.be.an('object');",
                   "  pm.expect(json.data.id).to.be.a('string');",
-                  "  pm.expect(json.data.plainSecret).to.be.a('string');",
+                  "  pm.expect(json.data.secret).to.be.a('string');",
                   "  pm.environment.set('webhook_id', json.data.id);",
-                  "  pm.environment.set('webhook_secret', json.data.plainSecret);",
+                  "  pm.environment.set('webhook_secret', json.data.secret);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -4937,7 +5477,7 @@
                 "rotate-secret"
               ]
             },
-            "description": "Generates a new HMAC signing secret for this subscription. The previous secret remains valid for a grace period (typically 24 h) so you can update your verification logic without downtime. Returns the new plaintext secret \u2014 store it securely. Tier: STANDARD."
+            "description": "Generates a new HMAC signing secret for this subscription and returns it. Deliveries are signed with the new secret immediately, including retries of deliveries created before the rotation \u2014 there is no dual-signing window, so switch your verifier over at the same time. Tier: STANDARD."
           },
           "event": [
             {
@@ -4945,11 +5485,10 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Returns new plainSecret', () => {",
+                  "pm.test('Returns the new secret', () => {",
                   "  const json = pm.response.json();",
-                  "  pm.expect(json.success).to.equal(true);",
-                  "  pm.expect(json.data.plainSecret).to.be.a('string');",
-                  "  pm.environment.set('webhook_secret', json.data.plainSecret);",
+                  "  pm.expect(json.data.secret).to.be.a('string');",
+                  "  pm.environment.set('webhook_secret', json.data.secret);",
                   "});"
                 ],
                 "type": "text/javascript"
