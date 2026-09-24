@@ -385,7 +385,7 @@ tags:
   - name: External Links
     description: >-
       Links between a CaseXchange referral and a record in an external case-management system. Supported systems:
-      `cloudlex`, `morgan_morgan`. Requires a firm-scoped API key.
+      `cloudlex`, `morgan_morgan`, `litify`. Requires a firm-scoped API key.
   - name: Webhooks
     description: >-
       Outbound event subscriptions. Available to both firm-scoped (`cxp_*`) and provider-scoped (`cxpp_*`) API keys — a
@@ -1289,6 +1289,18 @@ components:
         patientZipCode:
           type: string
           nullable: true
+        patientAddress1:
+          type: string
+          nullable: true
+        patientAddress2:
+          type: string
+          nullable: true
+        patientCity:
+          type: string
+          nullable: true
+        patientState:
+          type: string
+          nullable: true
         handlingFirmId:
           type: string
           format: uuid
@@ -1358,6 +1370,18 @@ components:
         patientZipCode:
           type: string
           maxLength: 20
+        patientAddress1:
+          type: string
+          maxLength: 255
+        patientAddress2:
+          type: string
+          maxLength: 255
+        patientCity:
+          type: string
+          maxLength: 255
+        patientState:
+          type: string
+          maxLength: 50
         attorneyName:
           type: string
           maxLength: 255
@@ -1407,6 +1431,18 @@ components:
         patientZipCode:
           type: string
           maxLength: 20
+        patientAddress1:
+          type: string
+          maxLength: 255
+        patientAddress2:
+          type: string
+          maxLength: 255
+        patientCity:
+          type: string
+          maxLength: 255
+        patientState:
+          type: string
+          maxLength: 50
         attorneyName:
           type: string
           maxLength: 255
@@ -2098,6 +2134,7 @@ components:
             - dearlegal
             - api
             - filemaker
+            - morgan_morgan
         createdAt:
           type: string
           format: date-time
@@ -2155,6 +2192,7 @@ components:
             - dearlegal
             - api
             - filemaker
+            - morgan_morgan
         createdAt:
           type: string
           format: date-time
@@ -3173,6 +3211,7 @@ components:
                 - dearlegal
                 - api
                 - filemaker
+                - morgan_morgan
                 - clio
                 - admin
                 - ai
@@ -3614,6 +3653,7 @@ components:
             - dearlegal
             - api
             - filemaker
+            - morgan_morgan
           description: >-
             The system that recorded the transition. `api` covers both the public API and the CaseXchange UI — the two
             are not distinguished today.
@@ -3716,6 +3756,7 @@ components:
             - dearlegal
             - api
             - filemaker
+            - morgan_morgan
           description: >-
             The system that recorded the transition. `api` covers both the public API and the CaseXchange UI — the two
             are not distinguished today.
@@ -4027,6 +4068,7 @@ components:
           enum: &ref_44
             - cloudlex
             - morgan_morgan
+            - litify
         externalId:
           type: string
           maxLength: 255
@@ -5572,6 +5614,7 @@ paths:
               - dearlegal
               - api
               - filemaker
+              - morgan_morgan
           description: Filter by the system that recorded the update (case-insensitive)
       responses:
         "200":
