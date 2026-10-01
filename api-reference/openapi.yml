@@ -385,7 +385,7 @@ tags:
   - name: External Links
     description: >-
       Links between a CaseXchange referral and a record in an external case-management system. Supported systems:
-      `cloudlex`, `morgan_morgan`. Requires a firm-scoped API key.
+      `cloudlex`, `morgan_morgan`, `litify`. Requires a firm-scoped API key.
   - name: Webhooks
     description: >-
       Outbound event subscriptions. Available to both firm-scoped (`cxp_*`) and provider-scoped (`cxpp_*`) API keys — a
@@ -1154,6 +1154,40 @@ components:
             - network
             - directory
           description: Whether the firm is in your private network or only in the public directory.
+        warmTransfer:
+          $ref: "#/components/schemas/WarmTransfer"
+    WarmTransfer:
+      type: object
+      nullable: true
+      description: >-
+        How to warm-transfer a caller to this firm: its published phone, backup phone, office locations and
+        instructions, with your firm's relationship overrides applied field by field. Returned only when the firm is in
+        your active network (an ACTIVE relationship from your firm to it) or is visible in the public directory;
+        otherwise null, as when the firm has published none of these. An explicitly empty office-locations list on a
+        relationship override hides the firm's default office locations rather than inheriting them.
+      properties:
+        phone:
+          type: string
+          nullable: true
+        backupPhone:
+          type: string
+          nullable: true
+        officeLocations:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              address:
+                type: string
+            required:
+              - name
+              - address
+        instructions:
+          type: string
+          nullable: true
     BulkUpdateJob:
       type: object
       properties:
@@ -1249,6 +1283,8 @@ components:
               referralInstructions:
                 type: string
                 nullable: true
+              warmTransfer:
+                $ref: "#/components/schemas/WarmTransfer"
     Pagination:
       type: object
       properties:
@@ -1287,6 +1323,18 @@ components:
           format: date
           nullable: true
         patientZipCode:
+          type: string
+          nullable: true
+        patientAddress1:
+          type: string
+          nullable: true
+        patientAddress2:
+          type: string
+          nullable: true
+        patientCity:
+          type: string
+          nullable: true
+        patientState:
           type: string
           nullable: true
         handlingFirmId:
@@ -1358,6 +1406,18 @@ components:
         patientZipCode:
           type: string
           maxLength: 20
+        patientAddress1:
+          type: string
+          maxLength: 255
+        patientAddress2:
+          type: string
+          maxLength: 255
+        patientCity:
+          type: string
+          maxLength: 255
+        patientState:
+          type: string
+          maxLength: 50
         attorneyName:
           type: string
           maxLength: 255
@@ -1407,6 +1467,18 @@ components:
         patientZipCode:
           type: string
           maxLength: 20
+        patientAddress1:
+          type: string
+          maxLength: 255
+        patientAddress2:
+          type: string
+          maxLength: 255
+        patientCity:
+          type: string
+          maxLength: 255
+        patientState:
+          type: string
+          maxLength: 50
         attorneyName:
           type: string
           maxLength: 255
@@ -2098,6 +2170,7 @@ components:
             - dearlegal
             - api
             - filemaker
+            - morgan_morgan
         createdAt:
           type: string
           format: date-time
@@ -2155,6 +2228,7 @@ components:
             - dearlegal
             - api
             - filemaker
+            - morgan_morgan
         createdAt:
           type: string
           format: date-time
@@ -3173,6 +3247,7 @@ components:
                 - dearlegal
                 - api
                 - filemaker
+                - morgan_morgan
                 - clio
                 - admin
                 - ai
@@ -3614,6 +3689,7 @@ components:
             - dearlegal
             - api
             - filemaker
+            - morgan_morgan
           description: >-
             The system that recorded the transition. `api` covers both the public API and the CaseXchange UI — the two
             are not distinguished today.
@@ -3716,6 +3792,7 @@ components:
             - dearlegal
             - api
             - filemaker
+            - morgan_morgan
           description: >-
             The system that recorded the transition. `api` covers both the public API and the CaseXchange UI — the two
             are not distinguished today.
@@ -4024,9 +4101,10 @@ components:
           format: uuid
         externalSystem:
           type: string
-          enum: &ref_44
+          enum: &ref_45
             - cloudlex
             - morgan_morgan
+            - litify
         externalId:
           type: string
           maxLength: 255
@@ -4676,7 +4754,7 @@ paths:
           in: path
           name: id
           required: true
-          schema: &ref_45
+          schema: &ref_46
             type: string
             format: uuid
           description: Resource UUID
@@ -4840,7 +4918,7 @@ paths:
                   nullable: true
                 isRetainerSigned:
                   type: boolean
-                customFields: &ref_38
+                customFields: &ref_39
                   type: array
                   description: >-
                     Custom field values to set. Custom fields can only be updated by the receiving firm once the
@@ -5343,10 +5421,17 @@ paths:
             minLength: 1
           description: >-
             Flexible identifier. Accepts a referral UUID, a base-case UUID, a CaseXchange reference number (e.g.
-            PREFIX-0001, exact match), or a CMS id: DearLegal case id, Neos intake id, Clio matter id, SmartAdvocate
-            case id, or Salesforce intake record id (a Salesforce record id, Case Status user-entered id, or numeric
-            Case Status internal id on the underlying case also resolves). Resolution order is UUID, then reference
-            number, then CMS ids; the match must be a referral received by the calling firm or the request returns 404.
+            PREFIX-0001, exact match), or one of the calling firm's own integration ids: a case-management id it holds
+            on a referral it received (DearLegal case id, Neos intake id, Clio matter id, SmartAdvocate case id,
+            Salesforce intake record id, Case Status user-entered id, or numeric Case Status internal id), or the
+            Salesforce record id of a case it sent. An integration id belongs to the firm whose system it points to:
+            another firm's ids never resolve, not even on a case both firms share. Resolution order is UUID, then
+            reference number, then integration ids; the match must be a referral received by the calling firm or the
+            request returns 404. A case-management or Case Status id that matches more than one of the calling firm's
+            cases returns 409 `ambiguous_external_id`; one that matches several referrals of a single case (the firm
+            received the case again) resolves to the live referral. The Salesforce record id of cases the firm sent
+            resolves to the one still being referred (latest referral not rejected, withdrawn or closed), or to the
+            newest when none is, and returns 409 only when more than one is still being referred.
       responses:
         "200":
           description: Available transitions
@@ -5365,6 +5450,13 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+        "409": &ref_38
+          description: >-
+            The id is one of the calling firm's integration ids and it matches more than one of its cases
+            (`ambiguous_external_id`). For the Salesforce record id of cases the firm sent, only when more than one of
+            them is still being referred: otherwise the one whose latest referral is not rejected, withdrawn or closed
+            is returned, or the newest when none is. Use the case or referral UUID, or the reference number, instead.
+          content: *ref_19
   /received-referrals/{id}:
     get:
       operationId: getReceivedReferral
@@ -5397,6 +5489,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+        "409": *ref_38
     patch:
       operationId: updateReceivedReferral
       summary: Update a received referral
@@ -5467,7 +5560,7 @@ paths:
                   type: string
                   maxLength: 10000
                   nullable: true
-                customFields: *ref_38
+                customFields: *ref_39
       responses:
         "200":
           description: Updated received referral
@@ -5486,6 +5579,7 @@ paths:
         "401": *ref_23
         "403": *ref_27
         "404": *ref_26
+        "409": *ref_38
   /status-updates/lookup:
     get:
       operationId: lookupStatusUpdates
@@ -5507,11 +5601,17 @@ paths:
             minLength: 1
           description: >-
             Flexible identifier. Accepts a referral UUID, a base-case UUID, a CaseXchange reference number (e.g.
-            PREFIX-0001, exact match), or a CMS id: DearLegal case id, Neos intake id, Clio matter id, SmartAdvocate
-            case id, or Salesforce intake record id (a Salesforce record id, Case Status user-entered id, or numeric
-            Case Status internal id on the underlying case also resolves). Resolution order is UUID, then reference
-            number, then CMS ids; the calling firm must be a party to the match (sender or receiver) or the request
-            returns 404.
+            PREFIX-0001, exact match), or one of the calling firm's own integration ids: a case-management id it holds
+            on a referral it received (DearLegal case id, Neos intake id, Clio matter id, SmartAdvocate case id,
+            Salesforce intake record id, Case Status user-entered id, or numeric Case Status internal id), or the
+            Salesforce record id of a case it sent. An integration id belongs to the firm whose system it points to:
+            another firm's ids never resolve, not even on a case both firms share. Resolution order is UUID, then
+            reference number, then integration ids; the calling firm must be a party to the match (sender or receiver)
+            or the request returns 404. A case-management or Case Status id that matches more than one of the calling
+            firm's cases returns 409 `ambiguous_external_id`; one that matches several referrals of a single case (the
+            firm received the case again) resolves to the live referral. The Salesforce record id of cases the firm sent
+            resolves to the one still being referred (latest referral not rejected, withdrawn or closed), or to the
+            newest when none is, and returns 409 only when more than one is still being referred.
       responses:
         "200":
           description: Status updates
@@ -5532,6 +5632,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+        "409": *ref_38
   /status-updates:
     get:
       operationId: listStatusUpdates
@@ -5572,6 +5673,7 @@ paths:
               - dearlegal
               - api
               - filemaker
+              - morgan_morgan
           description: Filter by the system that recorded the update (case-insensitive)
       responses:
         "200":
@@ -5624,11 +5726,18 @@ paths:
                   minLength: 1
                   description: >-
                     Flexible identifier. Accepts a referral UUID, a base-case UUID, a CaseXchange reference number (e.g.
-                    PREFIX-0001, exact match), or a CMS id: DearLegal case id, Neos intake id, Clio matter id,
-                    SmartAdvocate case id, or Salesforce intake record id (a Salesforce record id, Case Status
-                    user-entered id, or numeric Case Status internal id on the underlying case also resolves).
-                    Resolution order is UUID, then reference number, then CMS ids; the calling firm must be a party to
-                    the match (sender or receiver) or the request returns 404.
+                    PREFIX-0001, exact match), or one of the calling firm's own integration ids: a case-management id it
+                    holds on a referral it received (DearLegal case id, Neos intake id, Clio matter id, SmartAdvocate
+                    case id, Salesforce intake record id, Case Status user-entered id, or numeric Case Status internal
+                    id), or the Salesforce record id of a case it sent. An integration id belongs to the firm whose
+                    system it points to: another firm's ids never resolve, not even on a case both firms share.
+                    Resolution order is UUID, then reference number, then integration ids; the calling firm must be a
+                    party to the match (sender or receiver) or the request returns 404. A case-management or Case Status
+                    id that matches more than one of the calling firm's cases returns 409 `ambiguous_external_id`; one
+                    that matches several referrals of a single case (the firm received the case again) resolves to the
+                    live referral. The Salesforce record id of cases the firm sent resolves to the one still being
+                    referred (latest referral not rejected, withdrawn or closed), or to the newest when none is, and
+                    returns 409 only when more than one is still being referred.
                 message:
                   type: string
                   minLength: 1
@@ -5671,6 +5780,7 @@ paths:
         "401": *ref_23
         "403": *ref_27
         "404": *ref_26
+        "409": *ref_38
   /webhooks:
     post:
       operationId: createWebhook
@@ -5686,7 +5796,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: &ref_39
+      x-key-scope: &ref_40
         - firm
         - provider
       requestBody:
@@ -5729,7 +5839,7 @@ paths:
             already has 5 active subscriptions (`subscription_limit_reached`)
           content: *ref_19
         "401": *ref_23
-        "403": &ref_41
+        "403": &ref_42
           description: >-
             Either the key's tier is below `standard` (`insufficient_tier`), or the key cannot manage webhooks: an admin
             key, a Salesforce `cxsf_*` token, or an MCP-issued key (`wrong_scope`)
@@ -5746,7 +5856,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: read_only
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_34
         - *ref_35
@@ -5771,7 +5881,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": &ref_40
+        "403": &ref_41
           description: >-
             The key cannot manage webhooks: an admin key, a Salesforce `cxsf_*` token (authenticates as firm context but
             is not webhook-capable), or an MCP-issued key (`wrong_scope`)
@@ -5788,7 +5898,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: read_only
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
       responses:
@@ -5806,7 +5916,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_40
+        "403": *ref_41
         "404": *ref_26
     patch:
       operationId: updateWebhook
@@ -5818,7 +5928,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
       requestBody:
@@ -5863,7 +5973,7 @@ paths:
             `isActive: true` would exceed 5 active subscriptions (`subscription_limit_reached`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_42
         "404": *ref_26
     delete:
       operationId: deleteWebhook
@@ -5875,14 +5985,14 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
       responses:
         "204":
           description: Subscription deleted (no content)
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_42
         "404": *ref_26
   /webhooks/{id}/deliveries:
     get:
@@ -5896,7 +6006,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: read_only
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
         - *ref_34
@@ -5922,7 +6032,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_40
+        "403": *ref_41
         "404": *ref_26
   /webhooks/{id}/test:
     post:
@@ -5937,7 +6047,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
       responses:
@@ -5955,7 +6065,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_42
         "404": *ref_26
         "409":
           description: >-
@@ -5975,7 +6085,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
       responses:
@@ -5993,7 +6103,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_42
         "404": *ref_26
   /webhooks/{id}/echo/enable:
     post:
@@ -6017,7 +6127,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
       responses:
@@ -6038,7 +6148,7 @@ paths:
           description: Subscription is inactive (`echo_requires_active`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_42
         "404": *ref_26
   /webhooks/{id}/echo/disable:
     post:
@@ -6051,7 +6161,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
       responses:
@@ -6071,7 +6181,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_42
         "404": *ref_26
   /webhooks/{id}/echo/captures:
     get:
@@ -6084,7 +6194,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: read_only
-      x-key-scope: *ref_39
+      x-key-scope: *ref_40
       parameters:
         - *ref_25
         - *ref_34
@@ -6112,7 +6222,7 @@ paths:
           description: Request validation failed, or echo mode is not active for this subscription (`echo_not_active`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_40
+        "403": *ref_41
         "404": *ref_26
   /network/pending:
     get:
@@ -6143,7 +6253,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": &ref_42
+        "403": &ref_43
           description: API key tier does not permit this action, or the key is not firm-scoped (`wrong_scope`)
           content: *ref_19
   /network/outbound/{firmId}:
@@ -6159,7 +6269,7 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - &ref_43
+        - &ref_44
           in: path
           name: firmId
           required: true
@@ -6183,7 +6293,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404":
           description: Firm not found (`firm_not_found`)
           content: *ref_19
@@ -6202,7 +6312,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_43
+        - *ref_44
       requestBody:
         required: true
         content:
@@ -6243,7 +6353,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404":
           description: Firm not found (`firm_not_found`)
           content: *ref_19
@@ -6258,7 +6368,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_43
+        - *ref_44
       requestBody:
         required: true
         content:
@@ -6300,7 +6410,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404":
           description: Firm or relationship not found (`firm_not_found`, `relationship_not_found`)
           content: *ref_19
@@ -6317,7 +6427,7 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_43
+        - *ref_44
       responses:
         "200":
           description: Firm detail with inbound relationship
@@ -6334,7 +6444,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404":
           description: Firm not found (`firm_not_found`)
           content: *ref_19
@@ -6350,7 +6460,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_43
+        - *ref_44
       requestBody:
         required: true
         content:
@@ -6389,7 +6499,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404":
           description: Firm or relationship not found (`firm_not_found`, `relationship_not_found`)
           content: *ref_19
@@ -6399,7 +6509,9 @@ paths:
       summary: List external links for a system
       description: >-
         Returns the caller firm's active links for one external system, each with a summary of the linked referral and
-        the status transitions the caller may perform. Requires a firm-scoped API key.
+        the status transitions the caller may perform. Only links whose referral the caller is still a party to (sender
+        or receiver) are listed: a referral since re-pointed to another receiving firm drops out. Requires a firm-scoped
+        API key.
       tags:
         - External Links
       security: *ref_21
@@ -6410,7 +6522,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: *ref_44
+            enum: *ref_45
           description: External system to list links for
         - *ref_34
         - *ref_35
@@ -6435,7 +6547,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
   /external-links:
     get:
       operationId: lookupExternalLink
@@ -6445,8 +6557,9 @@ paths:
         summary. Note: this response is not wrapped in `data` — the link fields sit at the top level next to `meta`.
 
 
-        Returns `404 external_link_not_found` (or `referral_not_found` if the link is orphaned). Requires a firm-scoped
-        API key.
+        Returns `404 external_link_not_found` when there is no such link, or when the caller is no longer a party
+        (sender or receiver) of the linked referral — e.g. it was re-pointed to another receiving firm — and `404
+        referral_not_found` if the link is orphaned. Requires a firm-scoped API key.
       tags:
         - External Links
       security: *ref_21
@@ -6457,7 +6570,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: *ref_44
+            enum: *ref_45
         - in: query
           name: externalId
           required: true
@@ -6481,7 +6594,7 @@ paths:
                       - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404": *ref_26
     post:
       operationId: createExternalLink
@@ -6515,7 +6628,7 @@ paths:
                   format: uuid
                 externalSystem:
                   type: string
-                  enum: *ref_44
+                  enum: *ref_45
                 externalId:
                   type: string
                   minLength: 1
@@ -6539,7 +6652,7 @@ paths:
                       - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404": *ref_26
         "409":
           description: Referral already has an active link for this system (`external_link_conflict`)
@@ -6574,9 +6687,10 @@ paths:
       operationId: replaceExternalLink
       summary: Replace an external link
       description: >-
-        Retires the existing link identified by `id` and creates a new one from the body in a single operation. Returns
-        the new link. Note: this response is not wrapped in `data` — the link fields sit at the top level next to
-        `meta`. Requires a firm-scoped API key and STANDARD tier.
+        Retires the existing link identified by `id` and creates a new one from the body in a single operation. As on
+        create, the new link's referral must be one the caller participates in (`404 referral_not_found` otherwise, and
+        the existing link is kept). Returns the new link. Note: this response is not wrapped in `data` — the link fields
+        sit at the top level next to `meta`. Requires a firm-scoped API key and STANDARD tier.
       tags:
         - External Links
       security: *ref_21
@@ -6585,7 +6699,7 @@ paths:
         - in: path
           name: id
           required: true
-          schema: *ref_45
+          schema: *ref_46
           description: UUID of the link being replaced
       requestBody:
         required: true
@@ -6604,7 +6718,7 @@ paths:
                   format: uuid
                 externalSystem:
                   type: string
-                  enum: *ref_44
+                  enum: *ref_45
                 externalId:
                   type: string
                   minLength: 1
@@ -6628,7 +6742,7 @@ paths:
                       - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404": *ref_26
   /external-links/{id}:
     delete:
@@ -6645,7 +6759,7 @@ paths:
         "204":
           description: Link deleted (no content)
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404": *ref_26
   /me:
     get:
@@ -6673,7 +6787,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
         "404":
           description: The firm the key belongs to no longer exists (`firm_not_found`)
           content: *ref_19
@@ -6790,7 +6904,7 @@ paths:
           description: Recorded (no content)
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_43
   /analytics/export:
     get:
       operationId: exportAllAnalytics
@@ -6881,8 +6995,8 @@ paths:
                 format: binary
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_42
-        "429": &ref_46
+        "403": *ref_43
+        "429": &ref_47
           description: >-
             Export rate limit exceeded (`export_rate_limit_exceeded`) — at most 10 export requests per API key per
             sliding 60-second window. `Retry-After` carries the seconds until the window frees up.
@@ -6999,8 +7113,8 @@ paths:
           description: Request validation failed or unknown category (`invalid_category`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_42
-        "429": *ref_46
+        "403": *ref_43
+        "429": *ref_47
   /cases/export:
     get:
       operationId: exportCases
@@ -7120,8 +7234,8 @@ paths:
           description: Request validation failed or result set exceeds 50,000 rows (`export_row_limit_exceeded`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_42
-        "429": *ref_46
+        "403": *ref_43
+        "429": *ref_47
   /health:
     get:
       operationId: getPublicApiHealth
@@ -7154,7 +7268,7 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - &ref_47
+        - &ref_48
           in: path
           name: caseId
           required: true
@@ -7211,7 +7325,7 @@ paths:
                 properties:
                   data:
                     type: array
-                    items: &ref_48
+                    items: &ref_49
                       $ref: "#/components/schemas/MedAppointment"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
@@ -7237,7 +7351,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_47
+        - *ref_48
       requestBody:
         required: true
         content:
@@ -7252,7 +7366,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_48
+                  data: *ref_49
                   meta: *ref_17
                 required:
                   - data
@@ -7277,8 +7391,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_47
-        - &ref_49
+        - *ref_48
+        - &ref_50
           in: path
           name: appointmentId
           required: true
@@ -7292,7 +7406,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_48
+                  data: *ref_49
                   meta: *ref_17
                 required:
                   - data
@@ -7316,8 +7430,8 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_47
-        - *ref_49
+        - *ref_48
+        - *ref_50
       requestBody:
         required: true
         content:
@@ -7332,7 +7446,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_48
+                  data: *ref_49
                   meta: *ref_17
                 required:
                   - data
@@ -7353,8 +7467,8 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_47
-        - *ref_49
+        - *ref_48
+        - *ref_50
       responses:
         "204":
           description: Deleted
@@ -7375,8 +7489,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_47
-        - *ref_49
+        - *ref_48
+        - *ref_50
       responses:
         "200":
           description: Billing lines
@@ -7387,7 +7501,7 @@ paths:
                 properties:
                   data:
                     type: array
-                    items: &ref_50
+                    items: &ref_51
                       $ref: "#/components/schemas/MedBillableEvent"
                   meta:
                     allOf:
@@ -7419,8 +7533,8 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_47
-        - *ref_49
+        - *ref_48
+        - *ref_50
       requestBody:
         required: true
         content:
@@ -7435,7 +7549,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_50
+                  data: *ref_51
                   meta: *ref_17
                 required:
                   - data
@@ -7457,9 +7571,9 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_47
-        - *ref_49
-        - &ref_51
+        - *ref_48
+        - *ref_50
+        - &ref_52
           in: path
           name: eventId
           required: true
@@ -7479,7 +7593,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_50
+                  data: *ref_51
                   meta: *ref_17
                 required:
                   - data
@@ -7500,9 +7614,9 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_47
-        - *ref_49
-        - *ref_51
+        - *ref_48
+        - *ref_50
+        - *ref_52
       responses:
         "204":
           description: Deleted
@@ -7605,7 +7719,7 @@ paths:
         - in: path
           name: id
           required: true
-          schema: *ref_45
+          schema: *ref_46
           description: Case type UUID
       responses:
         "200":
@@ -8867,7 +8981,12 @@ paths:
       summary: Get a sent case
       description: >-
         Full detail (including all referrals) for a case owned by the caller's firm. Accepts a case id, referral id,
-        reference number, or Salesforce id.
+        reference number, or one of the firm's own Salesforce ids: the case's Salesforce record id, or — for a case the
+        firm also received itself — the Salesforce intake record id of that referral (another firm's intake id never
+        resolves). A Salesforce record id on several of the firm's cases (e.g. the record was sent again after a
+        rejection) resolves to the case still being referred — its latest referral not rejected, withdrawn or closed —
+        or to the newest case when none is; it returns 409 `ambiguous_external_id` only when more than one is still
+        being referred. An intake record id on self-referrals of more than one case returns 409 `ambiguous_external_id`.
       tags:
         - Sent Cases
       security: *ref_21
@@ -8891,6 +9010,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+        "409": *ref_38
     patch:
       operationId: updateSentCase
       summary: Update a sent case
@@ -8972,6 +9092,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+        "409": *ref_38
   /sent-cases/{id}/available-statuses:
     get:
       operationId: getSentCaseAvailableStatuses
@@ -9010,6 +9131,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+        "409": *ref_38
   /sent-cases/{id}/refer:
     post:
       operationId: referSentCase
@@ -9068,6 +9190,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+        "409": *ref_38
   /routing/evaluate:
     get:
       operationId: evaluateRouting
@@ -9145,7 +9268,7 @@ paths:
           required: true
           schema:
             type: string
-          description: Case id, referral id, or reference number
+          description: Case id, referral id, reference number, or the Salesforce record id of a case you sent
         - name: tier
           in: query
           schema:
@@ -9170,6 +9293,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+        "409": *ref_38
   /routing/rules:
     get:
       operationId: listRoutingRules
@@ -9578,7 +9702,7 @@ paths:
         - Analytics
       security: *ref_21
       x-access-tier: read_only
-      parameters: &ref_52
+      parameters: &ref_53
         - in: query
           name: referralStartDate
           schema:
@@ -9650,7 +9774,7 @@ paths:
         - Analytics
       security: *ref_21
       x-access-tier: read_only
-      parameters: *ref_52
+      parameters: *ref_53
       responses:
         "200":
           description: Sent-revenue analytics object
@@ -9677,7 +9801,7 @@ paths:
         - Analytics
       security: *ref_21
       x-access-tier: read_only
-      parameters: *ref_52
+      parameters: *ref_53
       responses:
         "200":
           description: Referral analytics object
@@ -10187,7 +10311,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: &ref_53
+      parameters: &ref_54
         - in: path
           name: id
           required: true
@@ -10219,7 +10343,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_53
+      parameters: *ref_54
       responses:
         "401": *ref_23
         "403": *ref_24
@@ -10237,7 +10361,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_53
+      parameters: *ref_54
       responses:
         "401": *ref_23
         "403": *ref_24
@@ -10255,7 +10379,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_53
+      parameters: *ref_54
       responses:
         "401": *ref_23
         "403": *ref_24
@@ -10273,7 +10397,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_53
+      parameters: *ref_54
       responses:
         "401": *ref_23
         "403": *ref_24
@@ -10289,8 +10413,8 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_53
-      requestBody: &ref_54
+      parameters: *ref_54
+      requestBody: &ref_55
         required: false
         content:
           application/json:
@@ -10323,13 +10447,15 @@ paths:
     post:
       operationId: closeMedReferral
       summary: Close a med referral
-      description: "Firm-side: close a completed referral. Requires STANDARD tier."
+      description: >-
+        Firm-side: close a completed referral. Pharmacy referrals (the provider is flagged as a pharmacy) skip the
+        treatment steps, so they can also be closed from accepted or in_treatment. Requires STANDARD tier.
       tags:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_53
-      requestBody: *ref_54
+      parameters: *ref_54
+      requestBody: *ref_55
       responses:
         "200":
           description: Closed med referral
