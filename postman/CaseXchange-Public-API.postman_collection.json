@@ -490,7 +490,7 @@
                 }
               ]
             },
-            "description": "Returns firms available for referrals from the requesting firm's private network and/or the public directory. Includes resolved case type display names and referral instructions. Tier: READ_ONLY."
+            "description": "Returns firms available for referrals from the requesting firm's private network and/or the public directory. Includes resolved case type display names and referral instructions, plus each firm's warmTransfer bundle (its warm-transfer phone, backup phone, office locations and instructions, with your relationship overrides applied; null when none). Tier: READ_ONLY."
           },
           "event": [
             {
@@ -4753,7 +4753,7 @@
                 }
               ]
             },
-            "description": "Evaluates routing rules for the given case type and jurisdiction, returning the ranked list of firms that would receive the referral. Tier: READ_ONLY.\n\nResponse data includes selectedFirmId (the round-robin firm to send to; null for external-contact picks) and roundRobinPosition. Pass rule.id + roundRobinPosition back into POST /sent-cases to advance the pointer. Read-only \u2014 evaluating does NOT advance the pointer."
+            "description": "Evaluates routing rules for the given case type and jurisdiction, returning the ranked list of firms that would receive the referral. Tier: READ_ONLY.\n\nResponse data includes selectedFirmId (the round-robin firm to send to; null for external-contact picks) and roundRobinPosition. Each assignment also includes a warmTransfer bundle for that firm. Pass rule.id + roundRobinPosition back into POST /sent-cases to advance the pointer. Read-only \u2014 evaluating does NOT advance the pointer."
           },
           "event": [
             {
@@ -4805,7 +4805,7 @@
                 }
               ]
             },
-            "description": "Evaluates which firms would receive a re-referral for an existing case, taking into account previous routing attempts. Tier: READ_ONLY.\n\nResponse data includes selectedFirmId and roundRobinPosition. Pass rule.id (as routingRuleId) + roundRobinPosition into POST /sent-cases/{id}/refer to advance the pointer."
+            "description": "Evaluates which firms would receive a re-referral for an existing case, taking into account previous routing attempts. Tier: READ_ONLY.\n\nResponse data includes selectedFirmId and roundRobinPosition. Each assignment also includes a warmTransfer bundle for that firm. Pass rule.id (as routingRuleId) + roundRobinPosition into POST /sent-cases/{id}/refer to advance the pointer."
           },
           "event": [
             {
