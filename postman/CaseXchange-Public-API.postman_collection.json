@@ -490,7 +490,7 @@
                 }
               ]
             },
-            "description": "Returns firms available for referrals from the requesting firm's private network and/or the public directory. Includes resolved case type display names and referral instructions, plus each firm's warmTransfer bundle (its warm-transfer phone, backup phone, office locations and instructions, with your relationship overrides applied; null when none). Tier: READ_ONLY."
+            "description": "Returns firms available for referrals from the requesting firm's private network and/or the firms listed in Network Xchange. Includes resolved case type display names and referral instructions, plus each firm's warmTransfer bundle (its warm-transfer phone, backup phone, office locations and instructions, with your relationship overrides applied; null when none). Tier: READ_ONLY."
           },
           "event": [
             {
