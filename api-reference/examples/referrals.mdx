@@ -4,7 +4,7 @@ description: "Referral sub-resources — lifecycle actions and management"
 icon: "arrows-rotate"
 ---
 
-All referral endpoints are scoped under `/cases/{baseCaseId}/referrals`. A referral represents a single case sent from one firm to another and progresses through a defined lifecycle of statuses.
+All referral endpoints live under `/referrals`. A referral represents a single case sent from one firm to another and progresses through a defined lifecycle of statuses.
 
 **Base URL:** `https://api.casexchange.com/api/public/v1`
 
@@ -32,12 +32,12 @@ draft -> sent -> received -> under_evaluation -> investigating -> signed -> in_l
 
 ## 1. List Referrals
 
-Retrieves all referrals for a base case. Supports pagination and status filtering.
+Retrieves the referrals your firm sent or received. Supports pagination and status filtering.
 
 **Tier:** `read_only`
 
 ```bash
-curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals?page=1&limit=20&status=investigating" \
+curl -X GET "https://api.casexchange.com/api/public/v1/referrals?page=1&limit=20&status=investigating" \
   -H "X-API-Key: cxp_std_your_key_here"
 ```
 
@@ -56,14 +56,14 @@ curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
   "data": [
     {
       "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
-      "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
       "referenceNumber": "CX-MNO456-R1",
-      "sequenceNumber": 1,
       "status": "investigating",
       "closingStatus": null,
       "closureReason": null,
       "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
       "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+      "caseType": "personal_injury",
+      "clientPhone": "215-555-0100",
       "settlementAmount": null,
       "attorneyFees": null,
       "projectedSettlementAmount": 150000.00,
@@ -81,14 +81,14 @@ curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
     },
     {
       "id": "b8c9d0e1-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
-      "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
       "referenceNumber": "CX-MNO456-R2",
-      "sequenceNumber": 2,
       "status": "rejected",
       "closingStatus": null,
       "closureReason": null,
       "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
       "referentFirmId": "33333333-aaaa-bbbb-cccc-333333333333",
+      "caseType": "personal_injury",
+      "clientPhone": "215-555-0100",
       "settlementAmount": null,
       "attorneyFees": null,
       "projectedSettlementAmount": null,
@@ -116,12 +116,14 @@ curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
 
 ## 2. Get Referral
 
-Returns a single referral by UUID.
+Returns a single referral by UUID. Your firm must be the sending or receiving firm.
+
+`caseType` and `clientPhone` come from the referral's parent case. While the referral is `sent` and your firm is the receiving firm, `clientPhone` (along with `notes`, `leadAttorneyName` and the warm-transfer reason) is `null`; [acknowledge](#5-acknowledge-referral) the referral to see it. `GET /cases/{id}` masks the same phone as `***-***-****` instead of `null`.
 
 **Tier:** `read_only`
 
 ```bash
-curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c" \
+curl -X GET "https://api.casexchange.com/api/public/v1/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c" \
   -H "X-API-Key: cxp_std_your_key_here"
 ```
 
@@ -131,14 +133,14 @@ curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
 {
   "data": {
     "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
-    "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "referenceNumber": "CX-MNO456-R1",
-    "sequenceNumber": 1,
     "status": "investigating",
     "closingStatus": null,
     "closureReason": null,
     "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
     "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+    "caseType": "personal_injury",
+    "clientPhone": "215-555-0100",
     "settlementAmount": null,
     "attorneyFees": null,
     "projectedSettlementAmount": 150000.00,
@@ -170,7 +172,7 @@ Updates mutable fields on a referral: notes, phase, financial estimates, dates, 
 **Tier:** `standard`
 
 ```bash
-curl -X PUT "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c" \
+curl -X PUT "https://api.casexchange.com/api/public/v1/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c" \
   -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
@@ -190,14 +192,14 @@ curl -X PUT "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-
 {
   "data": {
     "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
-    "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "referenceNumber": "CX-MNO456-R1",
-    "sequenceNumber": 1,
     "status": "investigating",
     "closingStatus": null,
     "closureReason": null,
     "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
     "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+    "caseType": "personal_injury",
+    "clientPhone": "215-555-0100",
     "settlementAmount": null,
     "attorneyFees": null,
     "projectedSettlementAmount": 175000.00,
@@ -229,7 +231,7 @@ Sends a `draft` referral to the specified receiving firm, transitioning it to `s
 **Tier:** `standard`
 
 ```bash
-curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6/send" \
+curl -X POST "https://api.casexchange.com/api/public/v1/referrals/d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6/send" \
   -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
@@ -243,14 +245,14 @@ curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b
 {
   "data": {
     "id": "d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6",
-    "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "referenceNumber": "CX-MNO456-R3",
-    "sequenceNumber": 3,
     "status": "sent",
     "closingStatus": null,
     "closureReason": null,
     "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
     "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+    "caseType": "personal_injury",
+    "clientPhone": "215-555-0100",
     "settlementAmount": null,
     "attorneyFees": null,
     "projectedSettlementAmount": null,
@@ -282,7 +284,7 @@ Acknowledges a `sent` referral, transitioning it to `received`. Only the receivi
 **Tier:** `standard`
 
 ```bash
-curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/acknowledge" \
+curl -X POST "https://api.casexchange.com/api/public/v1/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/acknowledge" \
   -H "X-API-Key: cxp_std_your_key_here"
 ```
 
@@ -311,7 +313,7 @@ Transitions a `received` referral to `investigating`. Only the receiving firm ma
 **Tier:** `standard`
 
 ```bash
-curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/begin-investigating" \
+curl -X POST "https://api.casexchange.com/api/public/v1/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/begin-investigating" \
   -H "X-API-Key: cxp_std_your_key_here"
 ```
 
@@ -340,7 +342,7 @@ Marks a referral as signed by the client, transitioning it to `signed`. Only the
 **Tier:** `standard`
 
 ```bash
-curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/sign" \
+curl -X POST "https://api.casexchange.com/api/public/v1/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/sign" \
   -H "X-API-Key: cxp_std_your_key_here"
 ```
 
@@ -370,7 +372,7 @@ Transitions a `signed` referral to `in_litigation`. Only the receiving firm may 
 **Tier:** `standard`
 
 ```bash
-curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/start-litigation" \
+curl -X POST "https://api.casexchange.com/api/public/v1/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/start-litigation" \
   -H "X-API-Key: cxp_std_your_key_here"
 ```
 
@@ -401,7 +403,7 @@ Closes a referral with a required `closingStatus` and optional `closureReason`. 
 **Closing status values:** `won_settled` | `lost` | `no_longer_pursuing`
 
 ```bash
-curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/close" \
+curl -X POST "https://api.casexchange.com/api/public/v1/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/close" \
   -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
@@ -418,14 +420,14 @@ curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b
 {
   "data": {
     "id": "f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c",
-    "baseCaseId": "a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "referenceNumber": "CX-MNO456-R1",
-    "sequenceNumber": 1,
     "status": "closed",
     "closingStatus": "won_settled",
     "closureReason": "Settlement reached after mediation.",
     "referringFirmId": "11111111-aaaa-bbbb-cccc-111111111111",
     "referentFirmId": "22222222-dddd-eeee-ffff-222222222222",
+    "caseType": "personal_injury",
+    "clientPhone": "215-555-0100",
     "settlementAmount": 185000.00,
     "attorneyFees": 61650.00,
     "projectedSettlementAmount": 175000.00,
@@ -457,7 +459,7 @@ Rejects an incoming referral. Requires a `reason` in the request body. Only the 
 **Tier:** `standard`
 
 ```bash
-curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/b8c9d0e1-2f3a-4b5c-6d7e-8f9a0b1c2d3e/reject" \
+curl -X POST "https://api.casexchange.com/api/public/v1/referrals/b8c9d0e1-2f3a-4b5c-6d7e-8f9a0b1c2d3e/reject" \
   -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
@@ -490,7 +492,7 @@ Withdraws a previously sent referral. Requires a `reason` in the request body. O
 **Tier:** `standard`
 
 ```bash
-curl -X POST "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6/withdraw" \
+curl -X POST "https://api.casexchange.com/api/public/v1/referrals/d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6/withdraw" \
   -H "X-API-Key: cxp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
@@ -523,7 +525,7 @@ Returns all historical status transitions for a referral, ordered chronologicall
 **Tier:** `read_only`
 
 ```bash
-curl -X GET "https://api.casexchange.com/api/public/v1/cases/a3b2c1d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/status-history" \
+curl -X GET "https://api.casexchange.com/api/public/v1/referrals/f4e5d6c7-8b9a-0f1e-2d3c-4b5a6f7e8d9c/status-history" \
   -H "X-API-Key: cxp_std_your_key_here"
 ```
 
