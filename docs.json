@@ -240,6 +240,7 @@
                 "openapi": "api-reference/openapi.yml",
                 "pages": [
                   "GET /med-cases/{caseId}/documents",
+                  "POST /med-cases/{caseId}/documents",
                   "GET /med-cases/{caseId}/documents/{documentId}"
                 ],
                 "expanded": false
