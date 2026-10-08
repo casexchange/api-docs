@@ -252,7 +252,7 @@ info:
 
     only `id`, `baseCaseId`, `referenceNumber`, `status`, `closingStatus`, `referringFirmId`, `referentFirmId`,
 
-    `caseType`, `jurisdiction`, `county`, `sentDate`, `isRetainerSigned`, `createdAt` and `updatedAt`. Client
+    `caseType`, `jurisdiction`, `caseCounty`, `sentDate`, `isRetainerSigned`, `createdAt` and `updatedAt`. Client
 
     name, contact details, date of birth, incident date, case title, description, lead attorney, warm-transfer
 
@@ -584,9 +584,19 @@ components:
         jurisdiction:
           type: string
           nullable: true
+        caseCounty:
+          type: string
+          nullable: true
+          description: >-
+            The case's county inside its jurisdiction; routing rules match on it. Looked up from casePostalCode, then
+            clientPostalCode, when the sender does not supply it.
         county:
           type: string
           nullable: true
+          description: >-
+            The client's home county, looked up from clientPostalCode when the sender does not supply it. Send
+            caseCounty (or the zips) for routing; this value is used as the case county only when neither gives one.
+            Masked for the receiving firm until it acknowledges.
         clientFirstName:
           type: string
           nullable: true
@@ -597,9 +607,13 @@ components:
           type: string
           format: email
           nullable: true
+          description: >-
+            Masked for the receiving firm until acknowledged: 'hidden@acknowledgereceipt.com' on GET /cases/{id}, null
+            on GET /cases.
         clientPhone:
           type: string
           nullable: true
+          description: "Masked for the receiving firm until acknowledged: '***-***-****' on GET /cases/{id}, null on GET /cases."
         clientDateOfBirth:
           type: string
           format: date
@@ -708,6 +722,11 @@ components:
           type: string
           format: uuid
           description: Document handle (MedCaseDocument junction id)
+        appointmentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The appointment this document is attached to; null for a case-level document.
         fileName:
           type: string
         contentType:
@@ -764,22 +783,84 @@ components:
         id:
           type: string
           format: uuid
-        name:
-          type: string
-        conditions:
-          type: array
-          items:
-            type: object
-        targetFirmId:
-          type: string
-          format: uuid
-        priority:
-          type: integer
-        isActive:
-          type: boolean
         firmId:
           type: string
           format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+          description: Lower runs first; the first matching active rule is used.
+        isActive:
+          type: boolean
+        jurisdictionCode:
+          type: string
+          nullable: true
+          description: Legacy single state; jurisdictionCodes is what matching reads.
+        jurisdictionCodes:
+          type: array
+          items:
+            type: string
+        countyNames:
+          type: array
+          items:
+            type: string
+        caseTypeIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        tierNumbers:
+          type: array
+          items:
+            type: integer
+        typeCategories:
+          type: array
+          items:
+            type: string
+        assignments:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              recipientType:
+                type: string
+                enum:
+                  - casexchange_firm
+                  - external_contact
+              casexchangeFirmId:
+                type: string
+                format: uuid
+                nullable: true
+              externalContactId:
+                type: string
+                format: uuid
+                nullable: true
+              firmName:
+                type: string
+                nullable: true
+                description: The assigned CaseXchange firm; null for an external contact.
+              distributionWeight:
+                type: integer
+              maxCasesPerMonth:
+                type: integer
+                nullable: true
+              assignmentOrder:
+                type: integer
+              firstAttempt:
+                type: integer
+                description: First referral attempt this assignment can take (1 = the first send).
+              lastAttempt:
+                type: integer
+              isActive:
+                type: boolean
+                description: Inactive assignments never take a send.
         createdAt:
           type: string
           format: date-time
@@ -818,9 +899,38 @@ components:
         jurisdiction:
           type: string
           nullable: true
+        caseCounty:
+          type: string
+          nullable: true
+          description: >-
+            The case's county inside its jurisdiction; routing rules match on it. Looked up from casePostalCode, then
+            clientPostalCode, when the sender does not supply it.
+        caseCountySource:
+          type: string
+          nullable: true
+          enum:
+            - sender
+            - case_zip
+            - client_zip
+          description: How caseCounty was filled.
+        casePostalCode:
+          type: string
+          nullable: true
+          description: Zip of the case's own location.
         county:
           type: string
           nullable: true
+          description: >-
+            The client's home county, looked up from clientPostalCode when the sender does not supply it. Send
+            caseCounty (or the zips) for routing; this value is used as the case county only when neither gives one.
+            Masked for the receiving firm until it acknowledges.
+        countySource:
+          type: string
+          nullable: true
+          enum:
+            - sender
+            - client_zip
+          description: How county was filled.
         clientAddress1:
           type: string
           nullable: true
@@ -833,6 +943,10 @@ components:
         clientPostalCode:
           type: string
           nullable: true
+        clientState:
+          type: string
+          nullable: true
+          description: Two-letter state of the client's zip.
         clientFirstName:
           type: string
           nullable: true
@@ -1153,7 +1267,7 @@ components:
           enum:
             - network
             - directory
-          description: Whether the firm is in your private network or only in the public directory.
+          description: Whether the firm is in your private network or only listed in Network Xchange.
         warmTransfer:
           $ref: "#/components/schemas/WarmTransfer"
     WarmTransfer:
@@ -1162,9 +1276,9 @@ components:
       description: >-
         How to warm-transfer a caller to this firm: its published phone, backup phone, office locations and
         instructions, with your firm's relationship overrides applied field by field. Returned only when the firm is in
-        your active network (an ACTIVE relationship from your firm to it) or is visible in the public directory;
-        otherwise null, as when the firm has published none of these. An explicitly empty office-locations list on a
-        relationship override hides the firm's default office locations rather than inheriting them.
+        your active network (an ACTIVE relationship from your firm to it) or is listed in Network Xchange; otherwise
+        null, as when the firm has published none of these. An explicitly empty office-locations list on a relationship
+        override hides the firm's default office locations rather than inheriting them.
       properties:
         phone:
           type: string
@@ -1893,11 +2007,11 @@ components:
         error:
           type: object
           properties:
-            code:
+            code: &ref_29
               type: string
-            message:
+            message: &ref_30
               type: string
-          required:
+          required: &ref_31
             - code
             - message
         meta: &ref_17
@@ -1912,7 +2026,7 @@ components:
           required:
             - requestId
             - timestamp
-      required:
+      required: &ref_32
         - error
         - meta
     CustomFieldValue:
@@ -1941,10 +2055,11 @@ components:
     Referral:
       type: object
       description: >-
-        A referral as seen by either party. Referral-level fields only (financials, resolution, workflow) — client and
-        case details live on the parent case. When the caller is the receiving firm and the referral is still SENT (not
-        yet acknowledged), leadAttorneyName, warmTransferUnsuccessfulReason, warmTransferUnsuccessfulReasonType and
-        notes are null and customFields is empty.
+        A referral as seen by either party. Mostly referral-level fields (financials, resolution, workflow); of the
+        parent case's details only caseType and clientPhone are included — the rest live on the case (GET /cases/{id}).
+        When the caller is the receiving firm and the referral is still SENT (not yet acknowledged), clientPhone,
+        leadAttorneyName, warmTransferUnsuccessfulReason, warmTransferUnsuccessfulReasonType and notes are null and
+        customFields is empty. Acknowledging (POST /referrals/{id}/acknowledge) unmasks them.
       properties:
         id:
           type: string
@@ -1998,6 +2113,16 @@ components:
           format: uuid
           nullable: true
           description: Receiving firm; null while the referral is a DRAFT
+        caseType:
+          type: string
+          nullable: true
+          description: The parent case's case type, as its system name (e.g. 'personal_injury')
+        clientPhone:
+          type: string
+          nullable: true
+          description: >-
+            The client's phone number from the parent case. Masked (null) for the receiving firm while the referral is
+            still SENT. GET /cases/{id} masks the same phone as the placeholder '***-***-****' instead.
         settlementAmount:
           type: number
           minimum: 0
@@ -2110,6 +2235,8 @@ components:
         - closureReason
         - referringFirmId
         - referentFirmId
+        - caseType
+        - clientPhone
         - settlementAmount
         - attorneyFees
         - projectedSettlementAmount
@@ -2623,9 +2750,23 @@ components:
         jurisdiction:
           type: string
           nullable: true
+        caseCounty:
+          type: string
+          nullable: true
+          description: >-
+            The case's county inside its jurisdiction; routing rules match on it. Looked up from casePostalCode, then
+            clientPostalCode, when the sender does not supply it.
         county:
           type: string
           nullable: true
+          description: >-
+            The client's home county, looked up from clientPostalCode when the sender does not supply it. Send
+            caseCounty (or the zips) for routing; this value is used as the case county only when neither gives one.
+            Masked for the receiving firm until it acknowledges.
+        clientState:
+          type: string
+          nullable: true
+          description: Two-letter state of the client's zip. Masked while SENT
         clientFirstName:
           type: string
           nullable: true
@@ -2806,7 +2947,9 @@ components:
         - description
         - caseType
         - jurisdiction
+        - caseCounty
         - county
+        - clientState
         - clientFirstName
         - clientLastName
         - clientEmail
@@ -3363,9 +3506,19 @@ components:
         jurisdiction:
           type: string
           nullable: true
+        caseCounty:
+          type: string
+          nullable: true
+          description: >-
+            The case's county inside its jurisdiction; routing rules match on it. Looked up from casePostalCode, then
+            clientPostalCode, when the sender does not supply it.
         county:
           type: string
           nullable: true
+          description: >-
+            The client's home county, looked up from clientPostalCode when the sender does not supply it. Send
+            caseCounty (or the zips) for routing; this value is used as the case county only when neither gives one.
+            Masked for the receiving firm until it acknowledges.
         clientFirstName:
           type: string
           nullable: true
@@ -3497,6 +3650,7 @@ components:
         - description
         - caseType
         - jurisdiction
+        - caseCounty
         - county
         - clientFirstName
         - clientLastName
@@ -3583,9 +3737,12 @@ components:
         jurisdiction:
           type: string
           nullable: true
-        county:
+        caseCounty:
           type: string
           nullable: true
+          description: >-
+            The case's county inside its jurisdiction; routing rules match on it. Looked up from casePostalCode, then
+            clientPostalCode, when the sender does not supply it.
         sentDate:
           type: string
           format: date-time
@@ -3609,7 +3766,7 @@ components:
         - referentFirmId
         - caseType
         - jurisdiction
-        - county
+        - caseCounty
         - sentDate
         - isRetainerSigned
         - createdAt
@@ -4101,7 +4258,7 @@ components:
           format: uuid
         externalSystem:
           type: string
-          enum: &ref_45
+          enum: &ref_50
             - cloudlex
             - morgan_morgan
             - litify
@@ -4602,7 +4759,7 @@ paths:
         - apiKeyAuth: []
       x-access-tier: read_only
       parameters:
-        - &ref_34
+        - &ref_39
           in: query
           name: page
           schema:
@@ -4610,7 +4767,7 @@ paths:
             default: 1
             minimum: 1
           description: Page number (1-indexed)
-        - &ref_35
+        - &ref_40
           in: query
           name: limit
           schema:
@@ -4619,7 +4776,7 @@ paths:
             minimum: 1
             maximum: 100
           description: Results per page (max 100)
-        - &ref_36
+        - &ref_41
           in: query
           name: status
           schema:
@@ -4754,7 +4911,7 @@ paths:
           in: path
           name: id
           required: true
-          schema: &ref_46
+          schema: &ref_51
             type: string
             format: uuid
           description: Resource UUID
@@ -4918,7 +5075,7 @@ paths:
                   nullable: true
                 isRetainerSigned:
                   type: boolean
-                customFields: &ref_39
+                customFields: &ref_44
                   type: array
                   description: >-
                     Custom field values to set. Custom fields can only be updated by the receiving firm once the
@@ -5006,7 +5163,7 @@ paths:
                   type: string
                   format: uuid
                   description: Receiving firm
-                notes: &ref_31
+                notes: &ref_35
                   type: string
                   maxLength: 10000
                   description: Optional note appended to the referral notes. Line breaks are collapsed to spaces.
@@ -5014,8 +5171,15 @@ paths:
                   type: string
                   maxLength: 5000
                   description: Optional note recorded on the resulting status-history entry. Line breaks are collapsed to spaces.
-      responses: &ref_29
-        "200":
+                allowDuplicateClient: &ref_58
+                  type: boolean
+                  default: false
+                  description: >-
+                    Send even though your firm already referred this client to the same receiving firm from another case
+                    of the same case type (409 `duplicate_client_referral`). Set it only after confirming this is a
+                    separate matter; each override is audited.
+      responses:
+        "200": &ref_33
           description: Updated referral
           content:
             application/json:
@@ -5032,6 +5196,86 @@ paths:
         "401": *ref_23
         "403": *ref_27
         "404": *ref_26
+        "409": &ref_59
+          description: >-
+            `duplicate_client_referral`: your firm already referred this client (same name, plus a matching date of
+            birth, phone or email) to the same receiving firm from another case of the same case type, and that referral
+            is still live or was sent within 7 days of this one. `error.details`: `{ matches, overrideField }`. Re-send
+            with `allowDuplicateClient: true` if this is a separate matter.
+          content: &ref_60
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code: *ref_29
+                      message: *ref_30
+                      details:
+                        type: object
+                        properties:
+                          matches:
+                            type: array
+                            maxItems: 5
+                            items:
+                              type: object
+                              properties:
+                                baseCaseId:
+                                  type: string
+                                  format: uuid
+                                  description: The earlier case.
+                                referenceNumber:
+                                  type: string
+                                  nullable: true
+                                  description: The earlier case's reference number.
+                                referralId:
+                                  type: string
+                                  format: uuid
+                                  description: The matching referral (hop) of the earlier case.
+                                referentFirmName:
+                                  type: string
+                                  description: The receiving firm.
+                                status:
+                                  type: string
+                                  description: Status of the matching referral.
+                                sentAt:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                matchedOn:
+                                  type: array
+                                  items:
+                                    type: string
+                                    enum:
+                                      - name
+                                      - dob
+                                      - phone
+                                      - email
+                                  description: Client fields that matched. Always includes name.
+                              required:
+                                - baseCaseId
+                                - referenceNumber
+                                - referralId
+                                - referentFirmName
+                                - status
+                                - sentAt
+                                - matchedOn
+                            description: >-
+                              Up to 5 matching referrals, newest sentAt first. Never carries the other case's DOB, phone
+                              or email.
+                          overrideField:
+                            type: string
+                            enum:
+                              - allowDuplicateClient
+                            description: The request field that sends anyway.
+                        required:
+                          - matches
+                          - overrideField
+                        description: Present for `duplicate_client_referral`.
+                    required: *ref_31
+                  meta: *ref_17
+                required: *ref_32
   /referrals/{id}/acknowledge:
     post:
       operationId: acknowledgeReferral
@@ -5053,12 +5297,17 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                reason: &ref_30
+                reason: &ref_34
                   type: string
                   minLength: 1
                   maxLength: 5000
                   description: Optional note recorded on the resulting status-history entry. Line breaks are collapsed to spaces.
-      responses: *ref_29
+      responses: &ref_36
+        "200": *ref_33
+        "400": *ref_28
+        "401": *ref_23
+        "403": *ref_27
+        "404": *ref_26
   /referrals/{id}/begin-investigating:
     post:
       operationId: beginInvestigatingReferral
@@ -5079,13 +5328,13 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                reason: *ref_30
-                notes: *ref_31
-                phase: &ref_32
+                reason: *ref_34
+                notes: *ref_35
+                phase: &ref_37
                   type: string
                   maxLength: 100
                   description: Free-text case phase label.
-      responses: *ref_29
+      responses: *ref_36
   /referrals/{id}/sign:
     post:
       operationId: signReferral
@@ -5106,8 +5355,8 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                reason: *ref_30
-                notes: *ref_31
+                reason: *ref_34
+                notes: *ref_35
                 leadAttorneyName:
                   type: string
                   maxLength: 255
@@ -5121,7 +5370,7 @@ paths:
                   format: date
                   nullable: true
                   description: YYYY-MM-DD
-                clientFeeAgreementPercentage: &ref_33
+                clientFeeAgreementPercentage: &ref_38
                   type: number
                   minimum: 0
                   maximum: 1
@@ -5138,8 +5387,8 @@ paths:
                   minimum: 0
                   maximum: 1000000000
                   description: Projected settlement amount in dollars
-                phase: *ref_32
-      responses: *ref_29
+                phase: *ref_37
+      responses: *ref_36
   /referrals/{id}/start-litigation:
     post:
       operationId: startLitigationReferral
@@ -5160,9 +5409,9 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                reason: *ref_30
-                notes: *ref_31
-                clientFeeAgreementPercentage: *ref_33
+                reason: *ref_34
+                notes: *ref_35
+                clientFeeAgreementPercentage: *ref_38
                 attorneyFees:
                   type: number
                   minimum: 0
@@ -5178,8 +5427,8 @@ paths:
                   minimum: 0
                   maximum: 1000000000
                   description: Projected settlement amount in dollars
-                phase: *ref_32
-      responses: *ref_29
+                phase: *ref_37
+      responses: *ref_36
   /referrals/{id}/begin-closing:
     post:
       operationId: beginClosingReferral
@@ -5210,7 +5459,7 @@ paths:
                     - lost
                     - no_longer_pursuing
                   description: Outcome type (case-insensitive)
-                reason: *ref_30
+                reason: *ref_34
                 closureReason:
                   type: string
                   minLength: 1
@@ -5222,7 +5471,7 @@ paths:
                   exclusiveMinimum: true
                   maximum: 1000000000
                   description: Final settlement amount in dollars; must be greater than zero when supplied
-                clientFeeAgreementPercentage: *ref_33
+                clientFeeAgreementPercentage: *ref_38
                 attorneyFees:
                   type: number
                   minimum: 0
@@ -5240,7 +5489,7 @@ paths:
                     - structured
                     - hybrid
                     - other
-      responses: *ref_29
+      responses: *ref_36
   /referrals/{id}/close:
     post:
       operationId: closeReferral
@@ -5267,8 +5516,8 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 5000
-                reason: *ref_30
-      responses: *ref_29
+                reason: *ref_34
+      responses: *ref_36
   /referrals/{id}/reject:
     post:
       operationId: rejectReferral
@@ -5295,7 +5544,7 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 5000
-      responses: *ref_29
+      responses: *ref_36
   /referrals/{id}/withdraw:
     post:
       operationId: withdrawReferral
@@ -5322,7 +5571,7 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 5000
-      responses: *ref_29
+      responses: *ref_36
   /received-referrals:
     get:
       operationId: listReceivedReferrals
@@ -5336,9 +5585,9 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_34
-        - *ref_35
-        - *ref_36
+        - *ref_39
+        - *ref_40
+        - *ref_41
         - in: query
           name: closingStatus
           schema:
@@ -5412,7 +5661,7 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - &ref_37
+        - &ref_42
           in: path
           name: id
           required: true
@@ -5450,7 +5699,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
-        "409": &ref_38
+        "409": &ref_43
           description: >-
             The id is one of the calling firm's integration ids and it matches more than one of its cases
             (`ambiguous_external_id`). For the Salesforce record id of cases the firm sent, only when more than one of
@@ -5470,7 +5719,7 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_37
+        - *ref_42
       responses:
         "200":
           description: Received referral detail
@@ -5489,7 +5738,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
-        "409": *ref_38
+        "409": *ref_43
     patch:
       operationId: updateReceivedReferral
       summary: Update a received referral
@@ -5503,7 +5752,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_37
+        - *ref_42
       requestBody:
         required: true
         content:
@@ -5560,7 +5809,7 @@ paths:
                   type: string
                   maxLength: 10000
                   nullable: true
-                customFields: *ref_39
+                customFields: *ref_44
       responses:
         "200":
           description: Updated received referral
@@ -5579,7 +5828,7 @@ paths:
         "401": *ref_23
         "403": *ref_27
         "404": *ref_26
-        "409": *ref_38
+        "409": *ref_43
   /status-updates/lookup:
     get:
       operationId: lookupStatusUpdates
@@ -5632,7 +5881,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
-        "409": *ref_38
+        "409": *ref_43
   /status-updates:
     get:
       operationId: listStatusUpdates
@@ -5645,9 +5894,9 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_34
-        - *ref_35
-        - *ref_36
+        - *ref_39
+        - *ref_40
+        - *ref_41
         - in: query
           name: dateFrom
           schema:
@@ -5780,7 +6029,7 @@ paths:
         "401": *ref_23
         "403": *ref_27
         "404": *ref_26
-        "409": *ref_38
+        "409": *ref_43
   /webhooks:
     post:
       operationId: createWebhook
@@ -5796,7 +6045,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: &ref_40
+      x-key-scope: &ref_45
         - firm
         - provider
       requestBody:
@@ -5839,7 +6088,7 @@ paths:
             already has 5 active subscriptions (`subscription_limit_reached`)
           content: *ref_19
         "401": *ref_23
-        "403": &ref_42
+        "403": &ref_47
           description: >-
             Either the key's tier is below `standard` (`insufficient_tier`), or the key cannot manage webhooks: an admin
             key, a Salesforce `cxsf_*` token, or an MCP-issued key (`wrong_scope`)
@@ -5856,10 +6105,10 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: read_only
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
       responses:
         "200":
           description: Paginated subscriptions
@@ -5881,7 +6130,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": &ref_41
+        "403": &ref_46
           description: >-
             The key cannot manage webhooks: an admin key, a Salesforce `cxsf_*` token (authenticates as firm context but
             is not webhook-capable), or an MCP-issued key (`wrong_scope`)
@@ -5898,7 +6147,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: read_only
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
       responses:
@@ -5916,7 +6165,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_46
         "404": *ref_26
     patch:
       operationId: updateWebhook
@@ -5928,7 +6177,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
       requestBody:
@@ -5973,7 +6222,7 @@ paths:
             `isActive: true` would exceed 5 active subscriptions (`subscription_limit_reached`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_47
         "404": *ref_26
     delete:
       operationId: deleteWebhook
@@ -5985,14 +6234,14 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
       responses:
         "204":
           description: Subscription deleted (no content)
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_47
         "404": *ref_26
   /webhooks/{id}/deliveries:
     get:
@@ -6006,11 +6255,11 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: read_only
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
       responses:
         "200":
           description: Paginated deliveries
@@ -6032,7 +6281,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_46
         "404": *ref_26
   /webhooks/{id}/test:
     post:
@@ -6047,7 +6296,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
       responses:
@@ -6065,7 +6314,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_47
         "404": *ref_26
         "409":
           description: >-
@@ -6085,7 +6334,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
       responses:
@@ -6103,7 +6352,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_47
         "404": *ref_26
   /webhooks/{id}/echo/enable:
     post:
@@ -6127,7 +6376,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
       responses:
@@ -6148,7 +6397,7 @@ paths:
           description: Subscription is inactive (`echo_requires_active`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_47
         "404": *ref_26
   /webhooks/{id}/echo/disable:
     post:
@@ -6161,7 +6410,7 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: standard
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
       responses:
@@ -6181,7 +6430,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_42
+        "403": *ref_47
         "404": *ref_26
   /webhooks/{id}/echo/captures:
     get:
@@ -6194,11 +6443,11 @@ paths:
         - Webhooks
       security: *ref_21
       x-access-tier: read_only
-      x-key-scope: *ref_40
+      x-key-scope: *ref_45
       parameters:
         - *ref_25
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
       responses:
         "200":
           description: Paginated captures
@@ -6222,7 +6471,7 @@ paths:
           description: Request validation failed, or echo mode is not active for this subscription (`echo_not_active`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_41
+        "403": *ref_46
         "404": *ref_26
   /network/pending:
     get:
@@ -6253,7 +6502,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": &ref_43
+        "403": &ref_48
           description: API key tier does not permit this action, or the key is not firm-scoped (`wrong_scope`)
           content: *ref_19
   /network/outbound/{firmId}:
@@ -6269,7 +6518,7 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - &ref_44
+        - &ref_49
           in: path
           name: firmId
           required: true
@@ -6293,7 +6542,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404":
           description: Firm not found (`firm_not_found`)
           content: *ref_19
@@ -6312,7 +6561,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_44
+        - *ref_49
       requestBody:
         required: true
         content:
@@ -6353,7 +6602,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404":
           description: Firm not found (`firm_not_found`)
           content: *ref_19
@@ -6368,7 +6617,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_44
+        - *ref_49
       requestBody:
         required: true
         content:
@@ -6410,7 +6659,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404":
           description: Firm or relationship not found (`firm_not_found`, `relationship_not_found`)
           content: *ref_19
@@ -6427,7 +6676,7 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_44
+        - *ref_49
       responses:
         "200":
           description: Firm detail with inbound relationship
@@ -6444,7 +6693,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404":
           description: Firm not found (`firm_not_found`)
           content: *ref_19
@@ -6460,7 +6709,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_44
+        - *ref_49
       requestBody:
         required: true
         content:
@@ -6499,7 +6748,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404":
           description: Firm or relationship not found (`firm_not_found`, `relationship_not_found`)
           content: *ref_19
@@ -6522,10 +6771,10 @@ paths:
           required: true
           schema:
             type: string
-            enum: *ref_45
+            enum: *ref_50
           description: External system to list links for
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
       responses:
         "200":
           description: Paginated links
@@ -6547,7 +6796,7 @@ paths:
                   - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
   /external-links:
     get:
       operationId: lookupExternalLink
@@ -6570,7 +6819,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: *ref_45
+            enum: *ref_50
         - in: query
           name: externalId
           required: true
@@ -6594,7 +6843,7 @@ paths:
                       - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404": *ref_26
     post:
       operationId: createExternalLink
@@ -6628,7 +6877,7 @@ paths:
                   format: uuid
                 externalSystem:
                   type: string
-                  enum: *ref_45
+                  enum: *ref_50
                 externalId:
                   type: string
                   minLength: 1
@@ -6652,7 +6901,7 @@ paths:
                       - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404": *ref_26
         "409":
           description: Referral already has an active link for this system (`external_link_conflict`)
@@ -6699,7 +6948,7 @@ paths:
         - in: path
           name: id
           required: true
-          schema: *ref_46
+          schema: *ref_51
           description: UUID of the link being replaced
       requestBody:
         required: true
@@ -6718,7 +6967,7 @@ paths:
                   format: uuid
                 externalSystem:
                   type: string
-                  enum: *ref_45
+                  enum: *ref_50
                 externalId:
                   type: string
                   minLength: 1
@@ -6742,7 +6991,7 @@ paths:
                       - meta
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404": *ref_26
   /external-links/{id}:
     delete:
@@ -6759,7 +7008,7 @@ paths:
         "204":
           description: Link deleted (no content)
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404": *ref_26
   /me:
     get:
@@ -6787,7 +7036,7 @@ paths:
                   - data
                   - meta
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
         "404":
           description: The firm the key belongs to no longer exists (`firm_not_found`)
           content: *ref_19
@@ -6904,7 +7153,7 @@ paths:
           description: Recorded (no content)
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
+        "403": *ref_48
   /analytics/export:
     get:
       operationId: exportAllAnalytics
@@ -6995,8 +7244,8 @@ paths:
                 format: binary
         "400": *ref_22
         "401": *ref_23
-        "403": *ref_43
-        "429": &ref_47
+        "403": *ref_48
+        "429": &ref_52
           description: >-
             Export rate limit exceeded (`export_rate_limit_exceeded`) — at most 10 export requests per API key per
             sliding 60-second window. `Retry-After` carries the seconds until the window frees up.
@@ -7113,8 +7362,8 @@ paths:
           description: Request validation failed or unknown category (`invalid_category`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_43
-        "429": *ref_47
+        "403": *ref_48
+        "429": *ref_52
   /cases/export:
     get:
       operationId: exportCases
@@ -7234,8 +7483,8 @@ paths:
           description: Request validation failed or result set exceeds 50,000 rows (`export_row_limit_exceeded`)
           content: *ref_19
         "401": *ref_23
-        "403": *ref_43
-        "429": *ref_47
+        "403": *ref_48
+        "429": *ref_52
   /health:
     get:
       operationId: getPublicApiHealth
@@ -7268,14 +7517,14 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - &ref_48
+        - &ref_53
           in: path
           name: caseId
           required: true
           schema: *ref_14
           description: Med case UUID
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
         - in: query
           name: medReferralId
           schema: *ref_14
@@ -7325,7 +7574,7 @@ paths:
                 properties:
                   data:
                     type: array
-                    items: &ref_49
+                    items: &ref_54
                       $ref: "#/components/schemas/MedAppointment"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
@@ -7351,7 +7600,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_48
+        - *ref_53
       requestBody:
         required: true
         content:
@@ -7366,7 +7615,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_49
+                  data: *ref_54
                   meta: *ref_17
                 required:
                   - data
@@ -7391,8 +7640,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_48
-        - &ref_50
+        - *ref_53
+        - &ref_55
           in: path
           name: appointmentId
           required: true
@@ -7406,7 +7655,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_49
+                  data: *ref_54
                   meta: *ref_17
                 required:
                   - data
@@ -7430,8 +7679,8 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_48
-        - *ref_50
+        - *ref_53
+        - *ref_55
       requestBody:
         required: true
         content:
@@ -7446,7 +7695,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_49
+                  data: *ref_54
                   meta: *ref_17
                 required:
                   - data
@@ -7467,8 +7716,8 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_48
-        - *ref_50
+        - *ref_53
+        - *ref_55
       responses:
         "204":
           description: Deleted
@@ -7489,8 +7738,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_48
-        - *ref_50
+        - *ref_53
+        - *ref_55
       responses:
         "200":
           description: Billing lines
@@ -7501,7 +7750,7 @@ paths:
                 properties:
                   data:
                     type: array
-                    items: &ref_51
+                    items: &ref_56
                       $ref: "#/components/schemas/MedBillableEvent"
                   meta:
                     allOf:
@@ -7533,8 +7782,8 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_48
-        - *ref_50
+        - *ref_53
+        - *ref_55
       requestBody:
         required: true
         content:
@@ -7549,7 +7798,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_51
+                  data: *ref_56
                   meta: *ref_17
                 required:
                   - data
@@ -7571,9 +7820,9 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_48
-        - *ref_50
-        - &ref_52
+        - *ref_53
+        - *ref_55
+        - &ref_57
           in: path
           name: eventId
           required: true
@@ -7593,7 +7842,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: *ref_51
+                  data: *ref_56
                   meta: *ref_17
                 required:
                   - data
@@ -7614,9 +7863,9 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters:
-        - *ref_48
-        - *ref_50
-        - *ref_52
+        - *ref_53
+        - *ref_55
+        - *ref_57
       responses:
         "204":
           description: Deleted
@@ -7719,7 +7968,7 @@ paths:
         - in: path
           name: id
           required: true
-          schema: *ref_46
+          schema: *ref_51
           description: Case type UUID
       responses:
         "200":
@@ -7920,8 +8169,9 @@ paths:
       operationId: listAvailableFirms
       summary: List firms available to receive referrals
       description: >-
-        Firms your firm can refer to: your private network, the public directory, or both, depending on your firm's
-        directory access. Requesting a source your firm cannot see returns 403 `directory_access_denied`.
+        Firms your firm can refer to: your private network, the firms listed in Network Xchange (`source=directory`), or
+        both, depending on your firm's directory access. Requesting a source your firm cannot see returns 403
+        `directory_access_denied`.
       tags:
         - Firms
       security: *ref_21
@@ -8014,8 +8264,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
         - in: query
           name: status
           schema:
@@ -8130,9 +8380,29 @@ paths:
                 jurisdiction:
                   type: string
                   minLength: 1
+                caseCounty:
+                  type: string
+                  nullable: true
+                  description: >-
+                    The case's county inside its jurisdiction; routing rules match on it. Looked up from casePostalCode,
+                    then clientPostalCode, when the sender does not supply it.
+                casePostalCode:
+                  type: string
+                  maxLength: 20
+                  nullable: true
+                  description: Zip of the case's own location. Used to look up caseCounty.
                 county:
                   type: string
                   nullable: true
+                  description: >-
+                    The client's home county, looked up from clientPostalCode when the sender does not supply it. Send
+                    caseCounty (or the zips) for routing; this value is used as the case county only when neither gives
+                    one. Masked for the receiving firm until it acknowledges.
+                clientPostalCode:
+                  type: string
+                  maxLength: 20
+                  nullable: true
+                  description: Used to look up county, and caseCounty when casePostalCode is absent or in another state.
                 clientFirstName:
                   type: string
                   minLength: 1
@@ -8164,6 +8434,7 @@ paths:
                 isRetainerSigned:
                   type: boolean
                   default: false
+                allowDuplicateClient: *ref_58
       responses:
         "201":
           description: Created case
@@ -8181,11 +8452,18 @@ paths:
         "400": *ref_22
         "401": *ref_23
         "403": *ref_24
+        "409": *ref_59
   /cases/{id}:
     get:
       operationId: getCaseById
       summary: Get case by ID
-      description: Returns a single case by UUID.
+      description: >-
+        Returns a single case by UUID. While the case is SENT and the caller is the receiving firm, case details are
+        masked until the referral is acknowledged (POST /referrals/{id}/acknowledge): clientFirstName is 'Referral',
+        clientLastName is 'Details Hidden', clientEmail is 'hidden@acknowledgereceipt.com', clientPhone is
+        '***-***-****', description is 'Acknowledge receipt to view full case details.', and clientDateOfBirth, county,
+        incidentDate, warmTransferUnsuccessfulReason and warmTransferUnsuccessfulReasonType are null. The placeholders
+        are not real data: check status rather than the field values. After acknowledgment the real values are returned.
       tags:
         - Cases
       security: *ref_21
@@ -8402,6 +8680,10 @@ paths:
                     - pending_spin_off
                 notes:
                   type: string
+                  maxLength: 5000
+                  description: >-
+                    Free-text note for the timeline. Required when `status` is `rejected` (the rejection reason); a
+                    rejection without notes returns 400.
                 closingStatus:
                   type: string
                   description: Required when transitioning to CLOSED
@@ -8649,8 +8931,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
       responses:
         "200":
           description: User list
@@ -8786,8 +9068,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
         - name: status
           in: query
           schema:
@@ -8893,9 +9175,39 @@ paths:
                 jurisdiction:
                   type: string
                   minLength: 1
+                caseCounty:
+                  type: string
+                  nullable: true
+                  description: >-
+                    The case's county inside its jurisdiction; routing rules match on it. Looked up from casePostalCode,
+                    then clientPostalCode, when the sender does not supply it.
+                casePostalCode:
+                  type: string
+                  maxLength: 20
+                  nullable: true
+                  description: >-
+                    Zip of the case's own location (for example where the incident happened). Used to look up
+                    caseCounty.
                 county:
                   type: string
                   nullable: true
+                  description: >-
+                    The client's home county, looked up from clientPostalCode when the sender does not supply it. Send
+                    caseCounty (or the zips) for routing; this value is used as the case county only when neither gives
+                    one. Masked for the receiving firm until it acknowledges.
+                clientAddress1:
+                  type: string
+                  maxLength: 500
+                clientAddress2:
+                  type: string
+                  maxLength: 500
+                clientCity:
+                  type: string
+                  maxLength: 200
+                clientPostalCode:
+                  type: string
+                  maxLength: 20
+                  description: Used to look up county, and caseCounty when casePostalCode is absent or in another state.
                 clientFirstName:
                   type: string
                   minLength: 1
@@ -8955,6 +9267,7 @@ paths:
                     - morgan_morgan
                 externalId:
                   type: string
+                allowDuplicateClient: *ref_58
       responses:
         "201":
           description: Created sent case
@@ -8973,8 +9286,16 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "409":
-          description: A referral for this Salesforce record already exists
-          content: *ref_19
+          description: >-
+            Conflict — the `error.code` selects the case:
+
+            - `duplicate_sf_referral`: a referral for this Salesforce record already exists.
+
+            - `duplicate_client_referral`: your firm already referred this client (same name, plus a matching date of
+            birth, phone or email) to the same receiving firm from another case of the same case type, and that referral
+            is still live or was sent within 7 days of this one. `error.details`: `{ matches, overrideField }`. Re-send
+            with `allowDuplicateClient: true` if this is a separate matter.
+          content: *ref_60
   /sent-cases/{id}:
     get:
       operationId: getSentCase
@@ -9010,7 +9331,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
-        "409": *ref_38
+        "409": *ref_43
     patch:
       operationId: updateSentCase
       summary: Update a sent case
@@ -9070,6 +9391,13 @@ paths:
                   type: string
                   maxLength: 20
                   nullable: true
+                casePostalCode:
+                  type: string
+                  maxLength: 20
+                  nullable: true
+                  description: >-
+                    Zip of the case's own location. Changing either zip looks the counties up again; a county the sender
+                    supplied is left alone.
                 note:
                   type: string
                   minLength: 1
@@ -9092,7 +9420,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
-        "409": *ref_38
+        "409": *ref_43
   /sent-cases/{id}/available-statuses:
     get:
       operationId: getSentCaseAvailableStatuses
@@ -9131,7 +9459,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
-        "409": *ref_38
+        "409": *ref_43
   /sent-cases/{id}/refer:
     post:
       operationId: referSentCase
@@ -9172,6 +9500,7 @@ paths:
                     Optional. The roundRobinPosition from GET /routing/re-refer. Requires routingRuleId; advances the
                     rule's round-robin pointer when the selected slot is a first-look slot (its attempt window includes
                     attempt 1); re-look-only slots leave the pointer unchanged.
+                allowDuplicateClient: *ref_58
       responses:
         "200":
           description: Case referred
@@ -9190,7 +9519,21 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
-        "409": *ref_38
+        "409":
+          description: >-
+            Conflict — the `error.code` selects the case:
+
+            - `ambiguous_external_id`: The id is one of the calling firm's integration ids and it matches more than one
+            of its cases (`ambiguous_external_id`). For the Salesforce record id of cases the firm sent, only when more
+            than one of them is still being referred: otherwise the one whose latest referral is not rejected, withdrawn
+            or closed is returned, or the newest when none is. Use the case or referral UUID, or the reference number,
+            instead.
+
+            - `duplicate_client_referral`: your firm already referred this client (same name, plus a matching date of
+            birth, phone or email) to the same receiving firm from another case of the same case type, and that referral
+            is still live or was sent within 7 days of this one. `error.details`: `{ matches, overrideField }`. Re-send
+            with `allowDuplicateClient: true` if this is a separate matter.
+          content: *ref_60
   /routing/evaluate:
     get:
       operationId: evaluateRouting
@@ -9220,10 +9563,29 @@ paths:
             type: integer
             minimum: 1
             maximum: 5
+        - name: caseCounty
+          in: query
+          schema:
+            type: string
+          description: >-
+            The case's county inside its jurisdiction. When omitted it is looked up from casePostalCode, then
+            clientPostalCode.
         - name: county
           in: query
           schema:
             type: string
+          deprecated: true
+          description: Older name for caseCounty on this endpoint only; on the POST bodies `county` is the home county.
+        - name: casePostalCode
+          in: query
+          schema:
+            type: string
+            maxLength: 20
+        - name: clientPostalCode
+          in: query
+          schema:
+            type: string
+            maxLength: 20
         - name: typeCategory
           in: query
           schema:
@@ -9293,7 +9655,7 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
-        "409": *ref_38
+        "409": *ref_43
   /routing/rules:
     get:
       operationId: listRoutingRules
@@ -9702,7 +10064,7 @@ paths:
         - Analytics
       security: *ref_21
       x-access-tier: read_only
-      parameters: &ref_53
+      parameters: &ref_61
         - in: query
           name: referralStartDate
           schema:
@@ -9774,7 +10136,7 @@ paths:
         - Analytics
       security: *ref_21
       x-access-tier: read_only
-      parameters: *ref_53
+      parameters: *ref_61
       responses:
         "200":
           description: Sent-revenue analytics object
@@ -9801,7 +10163,7 @@ paths:
         - Analytics
       security: *ref_21
       x-access-tier: read_only
-      parameters: *ref_53
+      parameters: *ref_61
       responses:
         "200":
           description: Referral analytics object
@@ -9961,8 +10323,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
         - in: query
           name: search
           schema:
@@ -10146,8 +10508,8 @@ paths:
             type: string
             format: uuid
           description: Med case UUID
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
       responses:
         "200":
           description: Med referral list
@@ -10311,7 +10673,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: &ref_54
+      parameters: &ref_62
         - in: path
           name: id
           required: true
@@ -10343,7 +10705,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_54
+      parameters: *ref_62
       responses:
         "401": *ref_23
         "403": *ref_24
@@ -10361,7 +10723,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_54
+      parameters: *ref_62
       responses:
         "401": *ref_23
         "403": *ref_24
@@ -10379,7 +10741,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_54
+      parameters: *ref_62
       responses:
         "401": *ref_23
         "403": *ref_24
@@ -10397,7 +10759,7 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_54
+      parameters: *ref_62
       responses:
         "401": *ref_23
         "403": *ref_24
@@ -10413,8 +10775,8 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_54
-      requestBody: &ref_55
+      parameters: *ref_62
+      requestBody: &ref_63
         required: false
         content:
           application/json:
@@ -10454,8 +10816,8 @@ paths:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
-      parameters: *ref_54
-      requestBody: *ref_55
+      parameters: *ref_62
+      requestBody: *ref_63
       responses:
         "200":
           description: Closed med referral
@@ -10483,8 +10845,8 @@ paths:
       security: *ref_21
       x-access-tier: read_only
       parameters:
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
         - in: query
           name: medCaseId
           schema:
@@ -10577,8 +10939,8 @@ paths:
             type: string
             format: uuid
           description: Med case UUID
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
         - in: query
           name: insuranceType
           schema:
@@ -10634,8 +10996,8 @@ paths:
             type: string
             format: uuid
           description: MedCase UUID
-        - *ref_34
-        - *ref_35
+        - *ref_39
+        - *ref_40
       responses:
         "200":
           description: Document list
@@ -10658,6 +11020,103 @@ paths:
         "401": *ref_23
         "403": *ref_24
         "404": *ref_26
+    post:
+      operationId: uploadMedCaseDocument
+      summary: Upload a MedEx case document
+      description: >-
+        Uploads one file to a MedEx case (multipart/form-data), optionally attached to an appointment on that case. Firm
+        and practice keys, STANDARD tier or above. Maximum 25 MB. The Content-Type of the `file` part must be one of:
+        application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+        application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,
+        application/vnd.ms-powerpoint, application/vnd.openxmlformats-officedocument.presentationml.presentation,
+        text/plain, text/csv, application/rtf, image/jpeg, image/png, image/gif, image/bmp, image/tiff, image/svg+xml,
+        application/zip, application/x-rar-compressed (many clients default to application/octet-stream, which is
+        refused); the file content must match it. Restricted-access practices may upload to the case but not attach to
+        an appointment. Notifies the other side of the case. A practice key upload also fires the document.uploaded
+        webhook to that practice's own subscriptions; a firm key upload fires no webhook.
+      tags:
+        - MedEx Documents
+      security: *ref_21
+      x-access-tier: standard
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: MedCase UUID
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - category
+              additionalProperties: false
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file. Max 25 MB.
+                category:
+                  type: string
+                  enum:
+                    - medical_records
+                    - imaging
+                    - intake_form
+                    - insurance_card
+                    - lien_auth
+                    - hipaa_auth
+                    - demand_letter
+                    - settlement
+                    - correspondence
+                    - police_report
+                    - invoice
+                    - statement
+                    - ledger
+                    - payment_receipt
+                    - other
+                  description: Document type.
+                appointmentId:
+                  type: string
+                  format: uuid
+                  description: Attach to this appointment. Must belong to the case.
+                note:
+                  type: string
+                  maxLength: 2000
+      responses:
+        "201":
+          description: Uploaded document
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedCaseDocument"
+                  meta: *ref_17
+                required:
+                  - data
+                  - meta
+        "400":
+          description: >-
+            validation_error (missing or unknown category, bad appointmentId, unknown field); invalid_upload (malformed
+            multipart body, or the file not in a field named "file"); file_type_not_allowed; no_file_uploaded; the
+            appointment is not on this case; the file content does not match its declared type.
+          content: *ref_19
+        "401": *ref_23
+        "403":
+          description: >-
+            insufficient_tier (key below STANDARD); restricted_access (a restricted-access practice passed
+            appointmentId).
+          content: *ref_19
+        "404": *ref_26
+        "413":
+          description: File exceeds the size limit (file_too_large); error.details.maxBytes carries the limit in bytes.
+          content: *ref_19
   /med-cases/{caseId}/documents/{documentId}:
     get:
       operationId: getMedCaseDocument
@@ -10768,6 +11227,14 @@ paths:
                   type: string
                   format: binary
                   description: CSV file (max 20 MB)
+                allowDuplicateClient:
+                  type: boolean
+                  default: false
+                  description: >-
+                    File-level override ('true' or 'false' as a form field). Without it, a row that sends a client your
+                    firm already referred to the same receiving firm from another case of the same case type (live, or
+                    sent within 7 days of the row's referral date) is reported as a row error with code
+                    `duplicate_client_referral` and `details: { matches, overrideField }`; the other rows still import.
       responses:
         "200":
           description: Import result summary
@@ -10982,6 +11449,11 @@ paths:
         - `409 attempt_failed` — a previous send with this idempotency key failed; submit a fresh key to retry.
         `error.details`: `{ failureCode, lastError }`.
 
+        - `409 duplicate_client_referral` — your firm already referred this client to the target firm from another case
+        of the same case type (live, or sent within 7 days). `error.details`: `{ matches, overrideField }`. Checked
+        before the attempt is recorded; to send anyway, submit again with `allowDuplicateClient: true` and a fresh
+        idempotencyKey.
+
         - `502 salesforce_unavailable` — no usable Salesforce access token for this connection.
 
         - `502 salesforce_read_failed` — the Salesforce SOQL read of the source record failed.
@@ -11071,6 +11543,7 @@ paths:
                     Optional. The roundRobinPosition from GET /routing/evaluate. Requires routingRuleId; advances the
                     rule's round-robin pointer when the selected slot is a first-look slot (its attempt window includes
                     attempt 1); re-look-only slots leave the pointer unchanged.
+                allowDuplicateClient: *ref_58
       responses:
         "200":
           description: Replay of a previously processed idempotency key — returns the original outcome
@@ -11104,7 +11577,7 @@ paths:
         "404": *ref_26
         "409":
           description: >-
-            Conflict — the `error.code` selects one of four cases, each with a distinct `error.details` shape:
+            Conflict — the `error.code` selects one of five cases, each with a distinct `error.details` shape:
 
             - `record_already_sent` (already linked; pass reRefer to re-refer instead) — `details: { baseCaseId,
             referenceNumber }`.
@@ -11116,7 +11589,12 @@ paths:
 
             - `attempt_failed` (the prior attempt for this idempotency key failed; use a fresh key) — `details: {
             failureCode, lastError }`.
-          content: *ref_19
+
+            - `duplicate_client_referral`: your firm already referred this client (same name, plus a matching date of
+            birth, phone or email) to the same receiving firm from another case of the same case type, and that referral
+            is still live or was sent within 7 days of this one. `error.details`: `{ matches, overrideField }`. Re-send
+            with `allowDuplicateClient: true` if this is a separate matter.
+          content: *ref_60
         "502":
           description: >-
             Salesforce unavailable (`salesforce_unavailable`) or the source record read failed
