@@ -1,0 +1,552 @@
+---
+title: "MedEx for medical providers"
+description: "Provider-scoped API keys, the referral lifecycle from the practice's side, the notify flag, and loading a backlog of existing patients"
+icon: "stethoscope"
+---
+
+This guide is for medical practices that connect an EHR, practice-management or billing system to **Med Xchange (MedEx)**, the CaseXchange module through which law firms refer injured clients to medical providers. It covers what a practice's API key can do, how a referral moves from "sent" to "treatment complete", and how to load patients you are already treating.
+
+**Base URL:** `https://api.casexchange.com/api/public/v1`
+
+**Authentication:** pass your key in the `X-API-Key` header on every request. Responses use the standard envelope described in [Response Format](/api-reference/response-format).
+
+Field-by-field request and response schemas live in the API tab under **Endpoints**: the **Med Cases**, **Med Appointments**, **Med Billing** and **MedEx Documents** groups, plus **Account** (`GET /me/doctors`, `GET /me/locations`) and **Webhooks**. This page explains how those endpoints fit together and doesn't repeat every field.
+
+---
+
+## Provider-scoped API keys
+
+A practice integrates with a **provider-scoped key**. Its prefix is `cxpp_` (double `p`), followed by the tier:
+
+| Tier | Key prefix | What it allows |
+|------|-----------|----------------|
+| `read_only` | `cxpp_ro_...` | Read cases, insurance, appointments, billing lines and documents |
+| `standard` | `cxpp_std_...` | Everything above, plus the referral lifecycle actions, appointment and billing writes, document upload and webhook subscriptions |
+
+CaseXchange issues provider keys. To request one, email [help@casexchange.com](mailto:help@casexchange.com). The plaintext key is shown once, when it is created, so store it in a secrets manager straight away.
+
+A provider key acts for the **whole practice**. It sees every case that has been referred to the practice (or that the practice created), not just one clinician's patients. Changes you make are recorded in the case history under `API key: <key name>`, so give each integration a key with a recognisable name.
+
+### What a provider key can and cannot do
+
+| | Provider key (`cxpp_`) | Firm key (`cxp_`) |
+|---|---|---|
+| List and read med cases referred to you: `GET /med-cases`, `GET /med-cases/{id}`, `GET /med-cases/{id}/insurances` | Yes | Yes (the firm's own cases) |
+| List or read the referrals on a case: `GET /med-cases/{id}/referrals`, `GET /med-cases/{id}/referrals/{referralId}` | Yes, your practice's referrals only. Another practice's referral returns `404` | Yes |
+| Acknowledge, accept, reject, start treatment, complete treatment | Yes | No (`403 wrong_scope`) |
+| Withdraw or close a referral | No (`403 wrong_scope`) | Yes |
+| Create or update cases and referrals | No (`403 wrong_scope`) | Yes |
+| Create, update and delete appointments and billing lines | Yes | No (read-only) |
+| Upload documents to a case | Yes | Yes |
+| List the practice's clinicians and locations: `GET /me/doctors`, `GET /me/locations` | Yes | No (`403 wrong_scope`) |
+| `GET /me` | No (`403 wrong_scope`) | Yes |
+| Manage webhook subscriptions (`/webhooks`) | Yes, for the practice's own subscriptions | Yes, for the firm's own subscriptions |
+
+The CaseXchange law-firm endpoints (`/referrals`, `/received-referrals`, `/sent-cases`, `/firms` and so on) are for firm keys.
+
+### Restricted-access practices
+
+Some practices, typically records or fulfilment vendors rather than treating clinicians, are set up as **restricted-access**. A restricted-access practice's key can still read cases, insurance and documents, and can upload documents to a case. It gets `403 restricted_access` on:
+
+- the five lifecycle actions (acknowledge, accept, reject, start treatment, complete treatment)
+- listing or reading referrals (`GET /med-cases/{id}/referrals` and `GET /med-cases/{id}/referrals/{referralId}`)
+- every appointment and billing endpoint
+- a document upload that names an `appointmentId` (omit `appointmentId` to upload to the case itself)
+
+If you aren't sure whether your practice is restricted, ask CaseXchange support.
+
+---
+
+## The referral lifecycle
+
+A law firm creates a med case for its client and sends your practice a **referral** on that case. The referral, not the case, carries the status:
+
+```
+sent ──acknowledge──> under_review ──accept──> accepted ──start-treatment──> in_treatment ──complete-treatment──> treatment_complete
+                           │
+                           └──reject──> rejected
+
+Firm side:  sent / under_review / accepted / in_treatment ──withdraw──> withdrawn
+            treatment_complete ──close──> closed
+```
+
+| Action | Endpoint | Moves the referral from → to | Who |
+|---|---|---|---|
+| Acknowledge | `POST /med-cases/{id}/referrals/{referralId}/acknowledge` | `sent` → `under_review` | Practice |
+| Accept | `POST /med-cases/{id}/referrals/{referralId}/accept` | `under_review` → `accepted`. From `sent`, acknowledges first (see below) | Practice |
+| Reject | `POST /med-cases/{id}/referrals/{referralId}/reject` | `under_review` → `rejected` | Practice |
+| Start treatment | `POST /med-cases/{id}/referrals/{referralId}/start-treatment` | `accepted` → `in_treatment` | Practice |
+| Complete treatment | `POST /med-cases/{id}/referrals/{referralId}/complete-treatment` | `in_treatment` → `treatment_complete` | Practice |
+| Withdraw | `POST /med-cases/{id}/referrals/{referralId}/withdraw` | `sent`, `under_review`, `accepted` or `in_treatment` → `withdrawn` | Firm |
+| Close | `POST /med-cases/{id}/referrals/{referralId}/close` | `treatment_complete` → `closed` | Firm |
+
+`{id}` is the med case ID and `{referralId}` is the referral ID. Both are UUIDs, and the referral must belong to that case.
+
+Every successful action returns `200` with the updated referral in `data`, including its new `status` and the timestamp for that step (`acknowledgedAt`, `respondedAt`, `treatmentStartedAt` or `treatmentCompletedAt`).
+
+### Accepting a `sent` referral
+
+You don't have to acknowledge before you accept. If the referral is still `sent`, `accept` runs two transitions: it acknowledges (`sent` → `under_review`) and then accepts (`under_review` → `accepted`). Each step is recorded separately in the case history and each sends its own webhook (`referral.under_review`, then `referral.accepted`).
+
+If the acknowledge step succeeds and the accept step then fails, the referral is left `under_review` and the error is returned. `under_review` is a valid state to retry `accept` from.
+
+Reject only works from `under_review`. To reject a referral that is still `sent`, acknowledge it first.
+
+### Rejection reasons
+
+`reject` requires a `reasonCode` and accepts an optional `reasonNote` (up to 1,000 characters):
+
+| `reasonCode` | Meaning |
+|---|---|
+| `capacity` | At capacity / not accepting new patients |
+| `out_of_network_insurance` | Out-of-network insurance |
+| `wrong_specialty` | Wrong specialty for the case |
+| `outside_service_area` | Outside our service area |
+| `conflict_of_interest` | Conflict of interest |
+| `patient_declined` | Patient declined |
+| `other` | Other (explain in `reasonNote`) |
+
+A missing or unknown `reasonCode` returns `400 validation_error`.
+
+### Pharmacies
+
+If your practice is set up in CaseXchange as a pharmacy, `start-treatment` and `complete-treatment` return `400` with the message `Treatment steps do not apply to pharmacy referrals`. A pharmacy referral stays `accepted` while you fill it, and the firm closes it from there.
+
+---
+
+## The `notify` flag
+
+All five practice actions take an optional boolean `notify` in the JSON body. It defaults to `true`.
+
+With `notify: true`, the action notifies people the same way the web app does:
+
+- The firm gets an email about the status change, if the firm has chosen to receive status changes as they happen.
+- On **accept**, the patient gets a text message saying the referral was accepted, if the patient has agreed to receive texts.
+
+With `notify: false`, CaseXchange skips both of those. Everything else is still recorded:
+
+- the entry in the case history, which the firm sees in MedEx
+- the `referral.*` webhooks to your own subscriptions
+- notes written to the firm's case-management system, for firms that have connected one (on accept, reject, start treatment and complete treatment, including your treatment summary)
+- the line in the firm's MedEx daily digest, for firms that receive one
+
+<Warning>
+`notify: false` means the firm hears about the change **only** through those records. It gets no email when it happens. That matters most for `reject` and `complete-treatment`, which the firm usually needs to act on. Use the default for live work and keep `notify: false` for loading history.
+</Warning>
+
+<Tip>
+Use `notify: false` when you load patients you are **already treating**. Without it, every accept would email the firm and text a patient who is already coming to see you that their referral "was accepted".
+</Tip>
+
+`notify` only affects the five lifecycle actions. Appointment writes send their usual notifications whatever you pass. For example, the first appointment on a case triggers the firm's first-appointment email, and naming a clinician who isn't yet on the referral emails that clinician.
+
+---
+
+## Finding your referral IDs
+
+Every lifecycle action needs the case ID and the referral ID. To find them:
+
+1. Page through `GET /med-cases` (`limit` up to 100), optionally using `search`, to get the cases referred to your practice.
+2. For each case, call `GET /med-cases/{id}/referrals`. A provider key sees **only its own practice's referrals** on the case. Usually there's one, but handle more than one. Each referral carries its `id` and current `status`. Archived referrals aren't listed.
+
+`GET /med-cases/{id}/referrals/{referralId}` returns a single referral, so you can check its current status at any time. Another practice's referral returns `404`.
+
+You also get referral IDs from:
+
+- **Webhooks.** `referral.sent` arrives when a firm sends your practice a new referral, with `referralId` and `medCaseId`. Every later `referral.<status>` event carries both IDs too. Webhooks have no backfill, so they only cover referrals sent after you subscribed.
+- **Action responses.** Each lifecycle action returns the referral, including its `id` and `medCaseId`.
+- **Appointments.** Each appointment returned by `GET /med-cases/{caseId}/appointments` carries the `medReferralId` it is linked to.
+
+---
+
+## Integration walkthrough
+
+<Steps>
+  <Step title="Check the key and load your roster">
+    `GET /me` is for firm keys. To check a provider key, call `GET /me/doctors`. It returns the practice's active clinicians, and `GET /me/locations` returns its locations. You need these IDs to create appointments: `doctorId` comes from `/me/doctors` and `providerLocationId` from `/me/locations`.
+
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/me/doctors" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+
+    curl "https://api.casexchange.com/api/public/v1/me/locations" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+    ```
+  </Step>
+
+  <Step title="Subscribe to webhooks">
+    Register an HTTPS endpoint with a `standard` key. The response includes the signing `secret`, which is returned only this once.
+
+    ```bash
+    curl -X POST "https://api.casexchange.com/api/public/v1/webhooks" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -H "Content-Type: application/json" \
+      -d '{ "url": "https://ehr.example.com/hooks/casexchange", "description": "Production EHR" }'
+    ```
+
+    See [Webhooks for providers](#webhooks-for-providers) below for what you receive.
+  </Step>
+
+  <Step title="List the cases referred to you">
+    `GET /med-cases` returns the practice's cases, newest first. It accepts `page`, `limit` (up to 100, default 20), `search` (matches patient name, reference number or date of birth) and `includeArchived=true`.
+
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/med-cases?page=1&limit=100" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+    ```
+
+    You can read the patient's details, including `patientFirstName`, `patientLastName`, `patientDateOfBirth` and `incidentDate`, **before** you accept, so you can match the referral to a patient record first. The firm decides which fields to fill in, so **any of them can be `null`**. Don't make your match depend on a single field.
+  </Step>
+
+  <Step title="Read one case and its insurance">
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+    ```
+
+    ```json
+    {
+      "data": {
+        "id": "0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a",
+        "referenceNumber": "MX-0412",
+        "patientFirstName": "Jordan",
+        "patientLastName": "Reyes",
+        "patientEmail": null,
+        "patientPhone": "2155550142",
+        "patientDateOfBirth": "1986-03-14T00:00:00.000Z",
+        "patientZipCode": "19103",
+        "patientAddress1": null,
+        "patientAddress2": null,
+        "patientCity": "Philadelphia",
+        "patientState": "PA",
+        "handlingFirmId": "5e1d2c3b-4a59-4687-9a0b-c1d2e3f4a5b6",
+        "attorneyName": "Dana Whitfield",
+        "attorneyPhone": "2155550100",
+        "attorneyEmail": "dwhitfield@firm.example.com",
+        "description": "Lower back injury lifting at work",
+        "incidentDate": "2026-08-21T00:00:00.000Z",
+        "caseType": "Workers' Compensation",
+        "jurisdiction": "PA",
+        "createdByFirmId": "5e1d2c3b-4a59-4687-9a0b-c1d2e3f4a5b6",
+        "createdByProviderId": null,
+        "baseCaseId": null,
+        "createdAt": "2026-10-01T14:02:11.000Z",
+        "updatedAt": "2026-10-01T14:02:11.000Z"
+      },
+      "meta": { "requestId": "req_7f3a9c2e1b0d4e5f6a7b8c9d", "timestamp": "2026-10-09T15:00:00.000Z" }
+    }
+    ```
+
+    `GET /med-cases/{id}` returns `404` for a case that isn't referred to your practice. `GET /med-cases/{id}/insurances` returns the insurance on the case.
+  </Step>
+
+  <Step title="Find your referral on the case">
+    List the case's referrals. A provider key only sees its own practice's referrals. Use the `id` of the referral you want to act on and check its `status` first.
+
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/referrals" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+    ```
+
+    ```json
+    {
+      "data": [
+        {
+          "id": "a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f",
+          "referenceNumber": "MX-0412-R1",
+          "medCaseId": "0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a",
+          "providerId": "c3b2a190-8f7e-4d6c-b5a4-93827160f5e4",
+          "status": "sent",
+          "acknowledgedAt": null,
+          "respondedAt": null
+        }
+      ],
+      "pagination": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 },
+      "meta": { "requestId": "req_2b3c4d5e6f7a8b9c0d1e2f3a", "timestamp": "2026-10-09T15:00:30.000Z" }
+    }
+    ```
+
+    The example is shortened; each referral has the same fields as the accept response below.
+  </Step>
+
+  <Step title="Acknowledge, then accept or reject">
+    Acknowledge tells the firm you've seen the referral. Accept says you'll take the patient. As described above, `accept` also acknowledges a `sent` referral, so a single call is enough.
+
+    ```bash
+    # Acknowledge
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/referrals/a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f/acknowledge" \
+      -H "X-API-Key: cxpp_std_your_key_here"
+
+    # Accept (works from sent or under_review)
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/referrals/a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f/accept" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -H "Content-Type: application/json" \
+      -d '{ "notify": true }'
+
+    # Or reject (from under_review)
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/referrals/a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f/reject" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -H "Content-Type: application/json" \
+      -d '{ "reasonCode": "outside_service_area", "reasonNote": "Nearest clinic is 60 miles away" }'
+    ```
+
+    **Response `200 OK`** (accept):
+
+    ```json
+    {
+      "data": {
+        "id": "a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f",
+        "referenceNumber": "MX-0412-R1",
+        "medCaseId": "0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a",
+        "providerId": "c3b2a190-8f7e-4d6c-b5a4-93827160f5e4",
+        "doctorIds": [],
+        "locationIds": [],
+        "parentReferralId": null,
+        "status": "accepted",
+        "notes": "Please evaluate for physical therapy",
+        "rejectionReasonCode": null,
+        "rejectionReasonNote": null,
+        "withdrawnNote": null,
+        "closedNote": null,
+        "acknowledgedAt": "2026-10-09T15:01:02.000Z",
+        "respondedAt": "2026-10-09T15:01:02.000Z",
+        "treatmentStartedAt": null,
+        "treatmentCompletedAt": null,
+        "closedAt": null,
+        "withdrawnAt": null,
+        "createdAt": "2026-10-01T14:02:11.000Z",
+        "updatedAt": "2026-10-09T15:01:02.000Z"
+      },
+      "meta": { "requestId": "req_1c2d3e4f5a6b7c8d9e0f1a2b", "timestamp": "2026-10-09T15:01:02.000Z" }
+    }
+    ```
+  </Step>
+
+  <Step title="Start treatment">
+    ```bash
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/referrals/a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f/start-treatment" \
+      -H "X-API-Key: cxpp_std_your_key_here"
+    ```
+
+    The referral must be `accepted`. Pharmacies can't use this step.
+  </Step>
+
+  <Step title="Record appointments">
+    Appointments live on the case. `doctorId` and `providerLocationId` are required on **every** create and update. Pass `medReferralId` to link the appointment to a specific referral. If you leave it out, the appointment is linked to your practice's most active referral on the case.
+
+    ```bash
+    # Create
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/appointments" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "medReferralId": "a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f",
+        "doctorId": "d1e2f3a4-b5c6-4d7e-8f90-a1b2c3d4e5f6",
+        "providerLocationId": "e2f3a4b5-c6d7-4e8f-90a1-b2c3d4e5f6a7",
+        "appointmentDate": "2026-10-14",
+        "appointmentTime": "09:30"
+      }'
+
+    # Record the outcome
+    curl -X PUT "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/appointments/f3a4b5c6-d7e8-4f90-a1b2-c3d4e5f6a7b8" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "doctorId": "d1e2f3a4-b5c6-4d7e-8f90-a1b2c3d4e5f6",
+        "providerLocationId": "e2f3a4b5-c6d7-4e8f-90a1-b2c3d4e5f6a7",
+        "attended": true
+      }'
+
+    # Delete
+    curl -X DELETE "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/appointments/f3a4b5c6-d7e8-4f90-a1b2-c3d4e5f6a7b8" \
+      -H "X-API-Key: cxpp_std_your_key_here"
+    ```
+
+    To cancel an appointment, send `"cancelled": true` on update. You can't combine it with a non-null `attended` in the same request.
+
+    **Premier-synced appointments.** Some appointments come from a Premier practice-management sync (`"source": "premier"`). Premier owns their date, time and outcome:
+
+    - Sending `appointmentDate`, `appointmentTime`, `attended` or `cancelled` on an update, even unchanged, returns `400 premier_owned_field`.
+    - Deleting one returns `400 premier_managed`.
+    - You can still change the referral, clinician, location, category, injury and insurance on them.
+    - Creating an appointment that matches an existing Premier appointment (same day and clinician, within 30 minutes) returns `409 conflict` with `existingAppointmentId` in `details`. Update that appointment instead.
+  </Step>
+
+  <Step title="Add billing lines">
+    Billing lines belong to an appointment. Each new appointment comes with a `VISIT_FEE` line that has no amounts yet, so update that line rather than adding a second visit fee. Add `PROCEDURE` or `OTHER` lines for anything else. Amounts are **decimal strings**, not numbers.
+
+    ```bash
+    # List the appointment's lines (includes the automatic visit fee)
+    curl "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/appointments/f3a4b5c6-d7e8-4f90-a1b2-c3d4e5f6a7b8/billable-events" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+
+    # Fill in the visit fee
+    curl -X PATCH "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/appointments/f3a4b5c6-d7e8-4f90-a1b2-c3d4e5f6a7b8/billable-events/b4c5d6e7-f8a9-4b0c-9d1e-2f3a4b5c6d7e" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -H "Content-Type: application/json" \
+      -d '{ "costBilled": "185.00" }'
+
+    # Add a procedure
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/appointments/f3a4b5c6-d7e8-4f90-a1b2-c3d4e5f6a7b8/billable-events" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -H "Content-Type: application/json" \
+      -d '{ "kind": "PROCEDURE", "description": "Lumbar MRI", "costBilled": "1250.00" }'
+    ```
+
+    A line's `kind` can't be changed after it is created. Use `DELETE` on the same path to remove a line.
+  </Step>
+
+  <Step title="Upload documents">
+    Send `multipart/form-data` with the file in a field named `file` and a required `category`. You can add an `appointmentId` to attach the document to a visit, and a `note`.
+
+    ```bash
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/documents" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -F "file=@visit-note-2026-10-14.pdf" \
+      -F "category=medical_records" \
+      -F "appointmentId=f3a4b5c6-d7e8-4f90-a1b2-c3d4e5f6a7b8"
+    ```
+
+    The **MedEx Documents** endpoint pages list the accepted categories. `GET /med-cases/{caseId}/documents` lists a case's documents, and `GET /med-cases/{caseId}/documents/{documentId}` returns a download link.
+  </Step>
+
+  <Step title="Complete treatment">
+    `summary` is optional (up to 2,000 characters). It is stored on the referral and, for firms whose case-management system is connected, filed there as a note.
+
+    ```bash
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/referrals/a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f/complete-treatment" \
+      -H "X-API-Key: cxpp_std_your_key_here" \
+      -H "Content-Type: application/json" \
+      -d '{ "summary": "Discharged after 12 PT sessions; full range of motion restored." }'
+    ```
+
+    The referral must be `in_treatment`. After this, the firm closes the referral.
+  </Step>
+</Steps>
+
+---
+
+## Loading a backlog of existing patients
+
+If you are bringing patients you already treat into CaseXchange, you'll run the same calls for many referrals. There's no bulk endpoint in the public API: loop over the per-referral endpoints.
+
+### Rate limits
+
+Limits apply over a sliding 60-second window:
+
+| Limit | `read_only` key | `standard` key |
+|---|---|---|
+| GET requests per key | 500 / min | 300 / min |
+| Writes (POST, PUT, PATCH, DELETE) per key | not allowed | 100 / min |
+| All keys of the practice combined | 1,000 GET / min, 200 writes / min | 1,000 GET / min, 200 writes / min |
+
+An `accept` that also acknowledges counts as one request. At 100 writes a minute, 1,900 accepts take about 20 minutes.
+
+Discovery uses the read limit. Finding 1,900 referrals takes about 19 `GET /med-cases` pages at `limit=100` plus one `GET /med-cases/{id}/referrals` per case, about 1,920 GETs in all. That's roughly 7 minutes at the `standard` read limit of 300 a minute, or 4 minutes at the `read_only` limit of 500. Discovery can run on a separate `read_only` key, but all the practice's keys share the 1,000 GET a minute cap. Read the `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers and slow down before you reach the limit. A `429` carries a `Retry-After` header in seconds. Requests rejected with `429` still count towards the window, so wait for `Retry-After` before you send again rather than retrying at once.
+
+### A backlog loop
+
+For each existing patient:
+
+1. Find the case with `GET /med-cases` (use `search` or page through with `limit=100`) and match it to your patient record. Remember that patient fields can be blank.
+2. Get your referral with `GET /med-cases/{id}/referrals` and note its `id` and `status`. Skip referrals that are already where you want them, and don't try to accept `rejected`, `withdrawn` or `closed` ones.
+3. `POST .../accept` with `{ "notify": false }`. This acknowledges and accepts in one call.
+4. If the patient is already in treatment, `POST .../start-treatment` with `{ "notify": false }`.
+5. If treatment has finished, `POST .../complete-treatment` with `{ "notify": false }` and, if you have one, a `summary`.
+6. Optionally load past appointments and billing. Remember that `notify` doesn't apply to appointment writes. For example, the first appointment on a case still triggers the firm's first-appointment email.
+
+Send one request at a time per key, or a small fixed number in parallel, and keep under the write limit.
+
+### Retries and idempotency
+
+The lifecycle actions are not repeatable: each one only works from its source status. That makes retries safe to reason about:
+
+- A `409` means the referral is no longer in a status that action can move it from. The message names the current status, for example: `Cannot transition referral from "accepted" to "accepted". Allowed source statuses: under_review`. If you retried after a timeout and the current status is the one you were moving to (or a later one), your first call succeeded. Record it and move on.
+- To confirm, read the referral with `GET /med-cases/{id}/referrals/{referralId}` and check its `status`.
+- If `accept` on a `sent` referral fails after the acknowledge step, the referral is `under_review`. Retry `accept`.
+- `400` and `404` won't succeed on retry without a change to the request. `429` and `5xx` can be retried with back-off.
+
+---
+
+## Errors
+
+Errors use the standard envelope with `error.code` and `error.message`. See [Error Handling](/api-reference/error-handling) for the general rules.
+
+| Status | `error.code` | When |
+|---|---|---|
+| `401` | `auth_missing`, `api_key_invalid_format`, `api_key_not_found`, `api_key_revoked`, `api_key_expired` | The key is missing, malformed, unknown, revoked or expired |
+| `403` | `api_key_provider_inactive` | The practice the key belongs to has been deactivated |
+| `403` | `insufficient_tier` | A `read_only` key tried a write |
+| `403` | `wrong_scope` | The endpoint needs a different kind of key. For example, a firm key on a practice action, or a provider key on `GET /me`, withdraw or close |
+| `403` | `restricted_access` | A restricted-access practice tried a lifecycle action, listing or reading referrals, an appointment or billing endpoint, or a document upload with `appointmentId` |
+| `404` | `not_found` | The case or referral doesn't exist, the referral isn't on that case, **or it belongs to another practice**. You can't tell another practice's referral apart from one that doesn't exist |
+| `409` | `conflict` | The referral is in the wrong status for this action. The message names the current status. Also returned when a new appointment duplicates a Premier-synced appointment |
+| `400` | `validation_error` | The body failed validation: a missing or unknown `reasonCode`, a non-boolean `notify`, an unknown field, a malformed UUID. `error.details.errors` lists each problem |
+| `400` | `bad_request` | `start-treatment` or `complete-treatment` on a pharmacy referral |
+| `400` | `premier_owned_field`, `premier_managed` | Editing visit facts on, or deleting, a Premier-synced appointment |
+| `429` | `rate_limit_exceeded` | Over the per-key or per-practice limit. Wait for `Retry-After` |
+
+```json
+{
+  "error": {
+    "code": "conflict",
+    "message": "Cannot transition referral from \"rejected\" to \"accepted\". Allowed source statuses: under_review"
+  },
+  "meta": { "requestId": "req_9a8b7c6d5e4f3a2b1c0d9e8f", "timestamp": "2026-10-09T15:05:00.000Z" }
+}
+```
+
+---
+
+## Webhooks for providers
+
+A subscription created with a provider key receives the MedEx events for your practice. The delivery mechanics (signature header, retries, the 5-active-subscription cap, the `X-CaseXchange-Event`, `X-CaseXchange-Event-Id` and `X-CaseXchange-Delivery` headers) are the same as for firm subscriptions. See [Verify Signatures](/webhooks/verify-signatures) and [Reliability](/webhooks/reliability).
+
+Two things differ from the firm webhooks documented in the Webhooks tab:
+
+- **The body is the bare payload, with no envelope.** Read the event name from the `X-CaseXchange-Event` header.
+- **The events are the MedEx catalogue below**, not the CaseXchange referral events. A provider subscription receives all of them; there's no per-event filter.
+
+### Referral events
+
+| Event | Body |
+|---|---|
+| `referral.sent` | `{ "referralId", "medCaseId" }`: IDs only |
+| `referral.under_review`, `referral.accepted`, `referral.rejected`, `referral.in_treatment`, `referral.treatment_complete`, `referral.withdrawn`, `referral.closed` | `{ "referralId", "medCaseId", "fromStatuses", "toStatus" }` |
+
+`fromStatuses` lists the statuses the transition is allowed from, not necessarily the exact status the referral left. When CaseXchange support corrects a referral's status, the event also carries `"adminOverride": true`.
+
+```json
+{
+  "referralId": "a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f",
+  "medCaseId": "0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a",
+  "fromStatuses": ["under_review"],
+  "toStatus": "accepted"
+}
+```
+
+**After `referral.sent`, fetch the case.** The event carries only IDs. Call `GET /med-cases/{medCaseId}` for the patient and case details, and keep the `referralId` because you'll need it for every action on that referral.
+
+### Other events
+
+You also receive events for changes to the cases referred to you:
+
+- `case.created`, `case.updated`, `case.archived`
+- `injury.*`, `insurance.*`, `appointment.*`, `prescription.*`, `diagnosis.*` and `billing.*` (`created`, `updated`, `deleted`)
+- `note.*` (`created`, `updated`, `deleted`)
+- `document.uploaded`, `document.deleted`
+
+`case.updated` and `case.archived` for a firm's case, which carry patient details, are sent only to practices whose referral on the case has been acknowledged. Before that, you get `referral.sent` and nothing else for the case.
+
+### Ignore echoes of your own changes
+
+Your own API calls send webhooks to your own subscriptions too. An `accept` you make produces `referral.accepted` (and `referral.under_review` first, if it started from `sent`), and an appointment you create produces `appointment.created`. The payload doesn't say who made the change. Keep track of the changes you've just made, for example by `referralId` and `toStatus`, and skip the matching events rather than processing them again.
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/api-reference/error-handling">
+    Error envelope, status codes and troubleshooting.
+  </Card>
+  <Card title="Webhooks" icon="bell" href="/webhooks">
+    Subscriptions, signatures, retries and delivery history.
+  </Card>
+</CardGroup>

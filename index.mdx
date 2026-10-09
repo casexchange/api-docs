@@ -50,6 +50,8 @@ The Public API uses `X-API-Key` authentication with three access levels:
 | **STANDARD** | `cxp_std_...` | Read + create/update referrals | Case intake, referral workflows |
 | **FULL** | `cxp_full_...` | All operations including delete, bulk import, routing rules, firm profile updates | Admin integrations |
 
+These are **firm** keys. Medical practices that integrate with Med Xchange use **provider-scoped** keys, which start with `cxpp_` (for example `cxpp_std_...`) and act for the practice rather than a law firm. See [MedEx for medical providers](/api-reference/examples/medex-providers).
+
 ## What's Inside
 
 <CardGroup cols={2}>

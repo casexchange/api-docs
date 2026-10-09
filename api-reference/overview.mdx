@@ -43,6 +43,8 @@ The fastest way to explore and test the API is with the pre-built Postman collec
 X-API-Key: cxp_std_your_key_here
 ```
 
+Law firms use firm keys (`cxp_`). Medical practices on Med Xchange use provider-scoped keys (`cxpp_`) in the same header. See [MedEx for medical providers](/api-reference/examples/medex-providers) for what those keys can do.
+
 **Internal API** — use JWT bearer tokens (relative to `/api/v1`):
 
 1. `POST /api/v1/auth/login`
