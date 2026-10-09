@@ -32,7 +32,7 @@ A provider key acts for the **whole practice**. It sees every case that has been
 | | Provider key (`cxpp_`) | Firm key (`cxp_`) |
 |---|---|---|
 | List and read med cases referred to you: `GET /med-cases`, `GET /med-cases/{id}`, `GET /med-cases/{id}/insurances` | Yes | Yes (the firm's own cases) |
-| List or read the referrals on a case: `GET /med-cases/{id}/referrals`, `GET /med-cases/{id}/referrals/{referralId}` | No (`403 wrong_scope`) | Yes |
+| List or read the referrals on a case: `GET /med-cases/{id}/referrals`, `GET /med-cases/{id}/referrals/{referralId}` | Yes, your practice's referrals only. Another practice's referral returns `404` | Yes |
 | Acknowledge, accept, reject, start treatment, complete treatment | Yes | No (`403 wrong_scope`) |
 | Withdraw or close a referral | No (`403 wrong_scope`) | Yes |
 | Create or update cases and referrals | No (`403 wrong_scope`) | Yes |
@@ -49,6 +49,7 @@ The CaseXchange law-firm endpoints (`/referrals`, `/received-referrals`, `/sent-
 Some practices, typically records or fulfilment vendors rather than treating clinicians, are set up as **restricted-access**. A restricted-access practice's key can still read cases, insurance and documents, and can upload documents to a case. It gets `403 restricted_access` on:
 
 - the five lifecycle actions (acknowledge, accept, reject, start treatment, complete treatment)
+- listing or reading referrals (`GET /med-cases/{id}/referrals` and `GET /med-cases/{id}/referrals/{referralId}`)
 - every appointment and billing endpoint
 - a document upload that names an `appointmentId` (omit `appointmentId` to upload to the case itself)
 
@@ -143,15 +144,18 @@ Use `notify: false` when you load patients you are **already treating**. Without
 
 ## Finding your referral IDs
 
-Every lifecycle action needs a referral ID, but **a provider key can't list the referrals on a case**: `GET /med-cases/{id}/referrals` and `GET /med-cases/{id}/referrals/{referralId}` are firm-only, and the case objects returned by `GET /med-cases` don't include referrals. You get referral IDs in these ways:
+Every lifecycle action needs the case ID and the referral ID. To find them:
 
-- **Webhooks.** `referral.sent` arrives when a firm sends your practice a new referral, with `referralId` and `medCaseId`. Every later `referral.<status>` event carries both IDs too. Subscribe before you need them, because webhooks have no backfill.
+1. Page through `GET /med-cases` (`limit` up to 100), optionally using `search`, to get the cases referred to your practice.
+2. For each case, call `GET /med-cases/{id}/referrals`. A provider key sees **only its own practice's referrals** on the case. Usually there's one, but handle more than one. Each referral carries its `id` and current `status`. Archived referrals aren't listed.
+
+`GET /med-cases/{id}/referrals/{referralId}` returns a single referral, so you can check its current status at any time. Another practice's referral returns `404`.
+
+You also get referral IDs from:
+
+- **Webhooks.** `referral.sent` arrives when a firm sends your practice a new referral, with `referralId` and `medCaseId`. Every later `referral.<status>` event carries both IDs too. Webhooks have no backfill, so they only cover referrals sent after you subscribed.
 - **Action responses.** Each lifecycle action returns the referral, including its `id` and `medCaseId`.
 - **Appointments.** Each appointment returned by `GET /med-cases/{caseId}/appointments` carries the `medReferralId` it is linked to.
-
-<Warning>
-For referrals sent to your practice before your webhook subscription existed, none of these sources may give you the ID. Contact [help@casexchange.com](mailto:help@casexchange.com) before you plan a backlog load.
-</Warning>
 
 ---
 
@@ -234,6 +238,35 @@ For referrals sent to your practice before your webhook subscription existed, no
     ```
 
     `GET /med-cases/{id}` returns `404` for a case that isn't referred to your practice. `GET /med-cases/{id}/insurances` returns the insurance on the case.
+  </Step>
+
+  <Step title="Find your referral on the case">
+    List the case's referrals. A provider key only sees its own practice's referrals. Use the `id` of the referral you want to act on and check its `status` first.
+
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/med-cases/0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a/referrals" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+    ```
+
+    ```json
+    {
+      "data": [
+        {
+          "id": "a7d4e2b1-9c38-4f56-8e21-7b6a5c4d3e2f",
+          "referenceNumber": "MX-0412-R1",
+          "medCaseId": "0b6c3f9e-2d41-4a7e-9c55-1f2e3d4c5b6a",
+          "providerId": "c3b2a190-8f7e-4d6c-b5a4-93827160f5e4",
+          "status": "sent",
+          "acknowledgedAt": null,
+          "respondedAt": null
+        }
+      ],
+      "pagination": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 },
+      "meta": { "requestId": "req_2b3c4d5e6f7a8b9c0d1e2f3a", "timestamp": "2026-10-09T15:00:30.000Z" }
+    }
+    ```
+
+    The example is shortened; each referral has the same fields as the accept response below.
   </Step>
 
   <Step title="Acknowledge, then accept or reject">
@@ -407,17 +440,20 @@ Limits apply over a sliding 60-second window:
 | Writes (POST, PUT, PATCH, DELETE) per key | not allowed | 100 / min |
 | All keys of the practice combined | 1,000 GET / min, 200 writes / min | 1,000 GET / min, 200 writes / min |
 
-An `accept` that also acknowledges counts as one request. At 100 writes a minute, 1,900 accepts take about 20 minutes. Read the `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers and slow down before you reach the limit. A `429` carries a `Retry-After` header in seconds. Requests rejected with `429` still count towards the window, so wait for `Retry-After` before you send again rather than retrying at once.
+An `accept` that also acknowledges counts as one request. At 100 writes a minute, 1,900 accepts take about 20 minutes.
+
+Discovery uses the read limit. Finding 1,900 referrals takes about 19 `GET /med-cases` pages at `limit=100` plus one `GET /med-cases/{id}/referrals` per case, about 1,920 GETs in all. That's roughly 7 minutes at the `standard` read limit of 300 a minute, or 4 minutes at the `read_only` limit of 500. Discovery can run on a separate `read_only` key, but all the practice's keys share the 1,000 GET a minute cap. Read the `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers and slow down before you reach the limit. A `429` carries a `Retry-After` header in seconds. Requests rejected with `429` still count towards the window, so wait for `Retry-After` before you send again rather than retrying at once.
 
 ### A backlog loop
 
 For each existing patient:
 
 1. Find the case with `GET /med-cases` (use `search` or page through with `limit=100`) and match it to your patient record. Remember that patient fields can be blank.
-2. `POST .../accept` with `{ "notify": false }`. This acknowledges and accepts in one call.
-3. If the patient is already in treatment, `POST .../start-treatment` with `{ "notify": false }`.
-4. If treatment has finished, `POST .../complete-treatment` with `{ "notify": false }` and, if you have one, a `summary`.
-5. Optionally load past appointments and billing. Remember that `notify` doesn't apply to appointment writes. For example, the first appointment on a case still triggers the firm's first-appointment email.
+2. Get your referral with `GET /med-cases/{id}/referrals` and note its `id` and `status`. Skip referrals that are already where you want them, and don't try to accept `rejected`, `withdrawn` or `closed` ones.
+3. `POST .../accept` with `{ "notify": false }`. This acknowledges and accepts in one call.
+4. If the patient is already in treatment, `POST .../start-treatment` with `{ "notify": false }`.
+5. If treatment has finished, `POST .../complete-treatment` with `{ "notify": false }` and, if you have one, a `summary`.
+6. Optionally load past appointments and billing. Remember that `notify` doesn't apply to appointment writes. For example, the first appointment on a case still triggers the firm's first-appointment email.
 
 Send one request at a time per key, or a small fixed number in parallel, and keep under the write limit.
 
@@ -426,7 +462,7 @@ Send one request at a time per key, or a small fixed number in parallel, and kee
 The lifecycle actions are not repeatable: each one only works from its source status. That makes retries safe to reason about:
 
 - A `409` means the referral is no longer in a status that action can move it from. The message names the current status, for example: `Cannot transition referral from "accepted" to "accepted". Allowed source statuses: under_review`. If you retried after a timeout and the current status is the one you were moving to (or a later one), your first call succeeded. Record it and move on.
-- A provider key has no endpoint that returns a single referral's status, so use the `409` message, the `200` response body and your `referral.*` webhooks to know where each referral stands.
+- To confirm, read the referral with `GET /med-cases/{id}/referrals/{referralId}` and check its `status`.
 - If `accept` on a `sent` referral fails after the acknowledge step, the referral is `under_review`. Retry `accept`.
 - `400` and `404` won't succeed on retry without a change to the request. `429` and `5xx` can be retried with back-off.
 
@@ -441,8 +477,8 @@ Errors use the standard envelope with `error.code` and `error.message`. See [Err
 | `401` | `auth_missing`, `api_key_invalid_format`, `api_key_not_found`, `api_key_revoked`, `api_key_expired` | The key is missing, malformed, unknown, revoked or expired |
 | `403` | `api_key_provider_inactive` | The practice the key belongs to has been deactivated |
 | `403` | `insufficient_tier` | A `read_only` key tried a write |
-| `403` | `wrong_scope` | The endpoint needs a different kind of key. For example, a firm key on a practice action, or a provider key on `GET /med-cases/{id}/referrals`, `GET /me`, withdraw or close |
-| `403` | `restricted_access` | A restricted-access practice tried a lifecycle action, an appointment or billing endpoint, or a document upload with `appointmentId` |
+| `403` | `wrong_scope` | The endpoint needs a different kind of key. For example, a firm key on a practice action, or a provider key on `GET /me`, withdraw or close |
+| `403` | `restricted_access` | A restricted-access practice tried a lifecycle action, listing or reading referrals, an appointment or billing endpoint, or a document upload with `appointmentId` |
 | `404` | `not_found` | The case or referral doesn't exist, the referral isn't on that case, **or it belongs to another practice**. You can't tell another practice's referral apart from one that doesn't exist |
 | `409` | `conflict` | The referral is in the wrong status for this action. The message names the current status. Also returned when a new appointment duplicates a Premier-synced appointment |
 | `400` | `validation_error` | The body failed validation: a missing or unknown `reasonCode`, a non-boolean `notify`, an unknown field, a malformed UUID. `error.details.errors` lists each problem |
