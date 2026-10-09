@@ -10316,8 +10316,8 @@ paths:
       operationId: listMedCases
       summary: List med cases
       description: >-
-        Returns all Med Xchange cases visible to the caller's firm. Supports pagination, full-text search, and archived
-        filtering.
+        Returns all Med Xchange cases visible to the caller: the firm's own cases, or, for a provider key, cases
+        referred to or created by the practice. Supports pagination, full-text search, and archived filtering.
       tags:
         - Med Cases
       security: *ref_21
@@ -10330,7 +10330,9 @@ paths:
           schema:
             type: string
             maxLength: 255
-          description: Full-text search across patient name, reference number, and description
+          description: >-
+            Case-insensitive substring search across patient name, reference number, date of birth, handling-firm name
+            and provider name
         - in: query
           name: includeArchived
           schema:
@@ -10468,9 +10470,7 @@ paths:
     delete:
       operationId: deleteMedCase
       summary: Delete a med case (not supported)
-      description: |-
-        This endpoint intentionally returns 405. Deleting med cases is not supported.
-        Set `isArchived` to `true` via PUT instead.
+      description: This endpoint intentionally returns 405. Deleting med cases is not supported.
       tags:
         - Med Cases
       security: *ref_21
@@ -10495,7 +10495,10 @@ paths:
     get:
       operationId: listMedReferrals
       summary: List referrals on a med case
-      description: Returns referrals attached to the specified Med Xchange case, paginated (default `limit=20`, max 100).
+      description: >-
+        Returns referrals attached to the specified Med Xchange case, paginated (default `limit=20`, max 100). Firm keys
+        see every referral on the case; provider keys see only their own practice's referral(s). Restricted-access
+        practices receive 403 restricted_access.
       tags:
         - Med Cases
       security: *ref_21
@@ -10576,7 +10579,10 @@ paths:
     get:
       operationId: getMedReferralById
       summary: Get a referral on a med case
-      description: Returns a single referral by UUID on the specified Med Xchange case.
+      description: >-
+        Returns a single referral by UUID on the specified Med Xchange case. Firm keys can read any referral on the
+        case; provider keys can read only their own practice's referral (another practice's referral returns 404).
+        Restricted-access practices receive 403 restricted_access.
       tags:
         - Med Cases
       security: *ref_21
@@ -10667,8 +10673,8 @@ paths:
       operationId: acknowledgeMedReferral
       summary: Acknowledge a med referral (provider)
       description: >-
-        Provider-side action. Not yet available to API keys: the endpoint is routed but responds 501 until the
-        provider-side public API ships. Use the firm dashboard in the meantime.
+        Moves a SENT referral to UNDER_REVIEW. Requires a provider-scoped key at STANDARD tier; firm and admin keys get
+        403 wrong_scope and restricted-access practices 403 restricted_access.
       tags:
         - Med Cases
       security: *ref_21
@@ -10688,83 +10694,233 @@ paths:
             type: string
             format: uuid
           description: Med referral UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                notify: &ref_63
+                  type: boolean
+                  default: true
+                  description: >-
+                    Set false to skip the firm's per-referral email and the patient's accept text (e.g. while loading a
+                    backlog of existing patients). The activity log, webhooks and notes in the firm's connected
+                    case-management system, if any, are always recorded.
       responses:
+        "200":
+          description: Acknowledged med referral
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedReferral"
+                  meta: *ref_17
+                required:
+                  - data
+                  - meta
+        "400": *ref_22
         "401": *ref_23
         "403": *ref_24
-        "501":
-          description: Provider-side public API not yet available
+        "404": *ref_26
+        "409":
+          description: The referral is not in a status this action can move it from
           content: *ref_19
   /med-cases/{id}/referrals/{referralId}/accept:
     post:
       operationId: acceptMedReferral
       summary: Accept a med referral (provider)
       description: >-
-        Provider-side action. Not yet available to API keys: the endpoint is routed but responds 501 until the
-        provider-side public API ships. Use the firm dashboard in the meantime.
+        Moves an UNDER_REVIEW referral to ACCEPTED. A SENT referral is acknowledged first, then accepted (two recorded
+        transitions); if the accept step fails, the referral is left UNDER_REVIEW. Requires a provider-scoped key at
+        STANDARD tier; firm and admin keys get 403 wrong_scope and restricted-access practices 403 restricted_access.
       tags:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
       parameters: *ref_62
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                notify: *ref_63
       responses:
+        "200":
+          description: Accepted med referral
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedReferral"
+                  meta: *ref_17
+                required:
+                  - data
+                  - meta
+        "400": *ref_22
         "401": *ref_23
         "403": *ref_24
-        "501":
-          description: Provider-side public API not yet available
+        "404": *ref_26
+        "409":
+          description: The referral is not in a status this action can move it from
           content: *ref_19
   /med-cases/{id}/referrals/{referralId}/reject:
     post:
       operationId: rejectMedReferral
       summary: Reject a med referral (provider)
       description: >-
-        Provider-side action. Not yet available to API keys: the endpoint is routed but responds 501 until the
-        provider-side public API ships. Use the firm dashboard in the meantime.
+        Moves an UNDER_REVIEW referral to REJECTED. Requires a provider-scoped key at STANDARD tier; firm and admin keys
+        get 403 wrong_scope and restricted-access practices 403 restricted_access.
       tags:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
       parameters: *ref_62
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reasonCode:
+                  type: string
+                  enum:
+                    - capacity
+                    - out_of_network_insurance
+                    - wrong_specialty
+                    - outside_service_area
+                    - conflict_of_interest
+                    - patient_declined
+                    - other
+                reasonNote:
+                  type: string
+                  maxLength: 1000
+                  nullable: true
+                notify: *ref_63
+              required:
+                - reasonCode
       responses:
+        "200":
+          description: Rejected med referral
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedReferral"
+                  meta: *ref_17
+                required:
+                  - data
+                  - meta
+        "400": *ref_22
         "401": *ref_23
         "403": *ref_24
-        "501":
-          description: Provider-side public API not yet available
+        "404": *ref_26
+        "409":
+          description: The referral is not in a status this action can move it from
           content: *ref_19
   /med-cases/{id}/referrals/{referralId}/start-treatment:
     post:
       operationId: startTreatmentMedReferral
       summary: Start treatment on a med referral (provider)
       description: >-
-        Provider-side action. Not yet available to API keys: the endpoint is routed but responds 501 until the
-        provider-side public API ships. Use the firm dashboard in the meantime.
+        Moves an ACCEPTED referral to IN_TREATMENT. Not available for pharmacy referrals (400). Requires a
+        provider-scoped key at STANDARD tier; firm and admin keys get 403 wrong_scope and restricted-access practices
+        403 restricted_access.
       tags:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
       parameters: *ref_62
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                notify: *ref_63
       responses:
+        "200":
+          description: Med referral in treatment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedReferral"
+                  meta: *ref_17
+                required:
+                  - data
+                  - meta
+        "400": *ref_22
         "401": *ref_23
         "403": *ref_24
-        "501":
-          description: Provider-side public API not yet available
+        "404": *ref_26
+        "409":
+          description: The referral is not in a status this action can move it from
           content: *ref_19
   /med-cases/{id}/referrals/{referralId}/complete-treatment:
     post:
       operationId: completeTreatmentMedReferral
       summary: Complete treatment on a med referral (provider)
       description: >-
-        Provider-side action. Not yet available to API keys: the endpoint is routed but responds 501 until the
-        provider-side public API ships. Use the firm dashboard in the meantime.
+        Moves an IN_TREATMENT referral to TREATMENT_COMPLETE. The optional summary is filed as a note in the firm's
+        connected case-management system, if any. Not available for pharmacy referrals (400). Requires a provider-scoped
+        key at STANDARD tier; firm and admin keys get 403 wrong_scope and restricted-access practices 403
+        restricted_access.
       tags:
         - Med Cases
       security: *ref_21
       x-access-tier: standard
       parameters: *ref_62
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                summary:
+                  type: string
+                  maxLength: 2000
+                  nullable: true
+                notify: *ref_63
       responses:
+        "200":
+          description: Treatment-complete med referral
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MedReferral"
+                  meta: *ref_17
+                required:
+                  - data
+                  - meta
+        "400": *ref_22
         "401": *ref_23
         "403": *ref_24
-        "501":
-          description: Provider-side public API not yet available
+        "404": *ref_26
+        "409":
+          description: The referral is not in a status this action can move it from
           content: *ref_19
   /med-cases/{id}/referrals/{referralId}/withdraw:
     post:
@@ -10776,7 +10932,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters: *ref_62
-      requestBody: &ref_63
+      requestBody: &ref_64
         required: false
         content:
           application/json:
@@ -10817,7 +10973,7 @@ paths:
       security: *ref_21
       x-access-tier: standard
       parameters: *ref_62
-      requestBody: *ref_63
+      requestBody: *ref_64
       responses:
         "200":
           description: Closed med referral
