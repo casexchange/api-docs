@@ -55,6 +55,12 @@
               "api-reference/examples/messages",
               "api-reference/examples/network"
             ]
+          },
+          {
+            "group": "MedEx",
+            "pages": [
+              "api-reference/examples/medex-providers"
+            ]
           }
         ]
       },
