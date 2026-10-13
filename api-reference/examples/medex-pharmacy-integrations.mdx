@@ -46,7 +46,7 @@ You write to the ledger of **your own referral** on a case. The referral's statu
 | `rejected` | Refused with `409 referral_not_writable` |
 | `accepted`, `in_treatment`, `treatment_complete` | Allowed |
 | `closed`, `withdrawn` | Allowed. Payments often arrive after a case settles and the firm closes the referral |
-| Any status, if the referral is archived | Refused with `409 referral_not_writable` |
+| Any status, if the referral is archived | Refused. Because an archived referral is hidden from your key, you usually get `404 not_found` |
 
 Reads work in every status. Changes to existing fills and transactions follow the same rule.
 
@@ -56,7 +56,11 @@ Resending a record you've already created succeeds in any status. See [Idempoten
 
 ### Test in UAT
 
-Build against UAT, the environment for testing integrations. It runs the same API against synthetic firms and patients, so you can acknowledge, accept and reject referrals and write to the ledger without touching a real case.
+Build against UAT, the environment for testing integrations. It runs the same API against test firms and patients, so you can acknowledge, accept and reject referrals and write to the ledger without touching a real case.
+
+<Warning>
+UAT is for synthetic data only. Never send real patient, prescription, payment or claim data or documents to UAT, and don't point a copy of your live pharmacy database at it.
+</Warning>
 
 | Environment | Base URL |
 |---|---|
@@ -118,6 +122,17 @@ UAT and production keys are separate. A production key doesn't work in UAT, and 
     Another practice's referral returns `404`.
   </Step>
 
+  <Step title="Accept the referral">
+    The ledger opens once your referral is `accepted`. Accept it in MedEx, or with your `standard` or `full` key. From `sent`, `accept` acknowledges the referral first, so one call is enough:
+
+    ```bash
+    curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals/9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75/accept" \
+      -H "X-API-Key: cxpp_std_your_key_here"
+    ```
+
+    See [The referral lifecycle](/api-reference/examples/medex-providers#the-referral-lifecycle) for `notify` and rejection.
+  </Step>
+
   <Step title="Find the prescription routed to you">
     When the treating practice routes a prescription to your pharmacy, `GET /med-cases/{caseId}/prescriptions` lists it. Use its `id` as `prescriptionId` when you record the fill.
 
@@ -150,12 +165,14 @@ UAT and production keys are separate. A production key doesn't work in UAT, and 
     - You see the list only while your referral on the case is `under_review`, `accepted`, `in_treatment` or `treatment_complete`, and isn't archived. Otherwise `data` is an empty array.
 
     <Warning>
-    After the firm closes or withdraws your referral, this list is empty, but you can still record fills and payments. When you first match a fill to a prescription, save the `prescriptionId` in your own system.
+    After the firm closes or withdraws your referral, this list is empty, but you can still record fills and payments. A `prescriptionId` you saved earlier is still accepted on new fills, so save each routed prescription's `id` in your own system as soon as you see it.
     </Warning>
+
+    List the prescriptions again after you acknowledge or accept. A prescription routed to you while your referral was still `sent` doesn't produce a webhook.
   </Step>
 </Steps>
 
-Webhooks tell you about new work as it happens: `referral.sent` when a firm sends you a referral, and `prescription.created` when a prescription is routed to you. See [Webhooks](#webhooks).
+Webhooks tell you about new work as it happens. `referral.sent` arrives when a firm sends you a referral. `prescription.created` arrives when a prescription is routed to you while your referral is `under_review`, `accepted`, `in_treatment` or `treatment_complete`. A prescription that's re-routed to you from another pharmacy arrives as `prescription.updated`. Prescriptions routed while your referral was `sent` produce no webhook. See [Webhooks](#webhooks).
 
 ---
 
@@ -234,7 +251,17 @@ An unknown field, or a value in the wrong format, returns `400 validation_error`
 
 Send the 11-digit NDC in the 5-4-2 layout. CaseXchange removes hyphens and spaces, then requires exactly 11 digits, and returns the NDC without hyphens.
 
-Removing hyphens does **not** pad a 10-digit NDC. NDCs printed on packages in the 4-4-2, 5-3-2 or 5-4-1 layout have 10 digits. Convert them to 5-4-2 by adding a leading zero to the short segment: `1234-5678-90` becomes `01234-5678-90`. A 10-digit NDC returns `400 validation_error` with the message `NDC must be 11 digits (hyphens allowed)`.
+Removing hyphens does **not** pad a 10-digit NDC. NDCs printed on packages in the 4-4-2, 5-3-2 or 5-4-1 layout have 10 digits. Convert them to 5-4-2 by adding a leading zero to the short segment:
+
+| Printed layout | Example | Send |
+|---|---|---|
+| 4-4-2 | `1234-5678-90` | `01234-5678-90` |
+| 5-3-2 | `12345-678-90` | `12345-0678-90` |
+| 5-4-1 | `12345-6789-0` | `12345-6789-00` |
+
+An unhyphenated 10-digit NDC can't be converted reliably, because you can't tell which segment is short. Convert from the hyphenated form, or send the 11-digit NDC your system already stores.
+
+A 10-digit NDC returns `400 validation_error`. The entry for `body.ndc` in `error.details.errors` has the message `NDC must be 11 digits (hyphens allowed)`.
 
 ### Read fills
 
@@ -279,7 +306,7 @@ Void a fill that was entered in error or reversed in your system:
 curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals/9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75/pharmacy/fills/6e3a9c2f-5d18-4b74-a9e6-0c4f8b2d1a57/void" \
   -H "X-API-Key: cxpp_std_your_key_here" \
   -H "Content-Type: application/json" \
-  -d '{ "reason": "Entered in error: duplicate of RX-100245" }'
+  -d '{ "reason": "Entered in error: RX-100246 was never dispensed" }'
 ```
 
 `reason` is required (1–1,000 characters). The response is `200` with the fill, with `voidedAt` and `voidReason` set. A voided fill:
@@ -318,7 +345,11 @@ A positive `amount` reduces the balance, and a negative `amount` increases it. T
 | You refund a 10.00 overpayment | `REFUND` | `"-10.00"` | Up 10.00 |
 | You undo that 5.00 write-off | `REVERSAL` with `reversesTransactionId` set to the write-off | `"-5.00"` | Up 5.00 |
 
-CaseXchange stores each amount exactly as you send it and doesn't check its sign against its type, because real ledgers contain unusual rows. Map your system's sign convention once in your integration, and test each type in UAT. An amount of zero is allowed.
+<Warning>
+CaseXchange stores each amount exactly as you send it and doesn't check its sign against its type, because real ledgers contain unusual rows. A refund sent as `"10.00"` lowers the balance instead of raising it. Map your system's sign convention once in your integration, and test each type in UAT.
+</Warning>
+
+An amount of zero is allowed.
 
 ### Record a transaction
 
@@ -450,7 +481,7 @@ A negative balance, as after T3, is a credit. T7 reverses a write-off, so it cou
     "reported": {
       "balance": "0.00",
       "asOf": "2026-10-17T23:00:00.000Z",
-      "externalId": "prx-bal-9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75-2026-10-17"
+      "externalId": "prx-bal-9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75-20261017T230000Z"
     },
     "difference": "0.00",
     "fillCount": 1,
@@ -482,7 +513,7 @@ curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-
   -H "X-API-Key: cxpp_std_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
-    "externalId": "prx-bal-9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75-2026-10-15",
+    "externalId": "prx-bal-9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75-20261015T230000Z",
     "balance": "20.00",
     "asOf": "2026-10-15T23:00:00Z"
   }'
@@ -490,8 +521,8 @@ curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-
 
 | Field | Required | Format |
 |---|---|---|
-| `externalId` | Strongly recommended | Your own ID for this snapshot, 1–200 characters. Include the referral, as in the example. See [Idempotency](#idempotency) |
-| `balance` | Yes | A decimal string, optionally negative, with up to 2 decimal places |
+| `externalId` | Strongly recommended | Your own ID for this snapshot, 1–200 characters. Include the referral and the `asOf` instant, as in the example, so each new report is a new record and a retry of the same report replays. See [Idempotency](#idempotency) |
+| `balance` | Yes | A decimal string, optionally negative, with up to 2 decimal places. Same convention as `computedBalance`: positive means money is still owed to you, negative is a credit |
 | `asOf` | Yes | When your system computed the balance: an ISO 8601 timestamp with `Z` or an offset, such as `2026-10-15T23:00:00Z` or `2026-10-15T19:00:00-04:00` |
 | `note` | No | Up to 2,000 characters |
 
@@ -503,7 +534,7 @@ The response is `201` with the snapshot. Snapshots are append-only and can't be 
 - After T6, T7 and T8, the computed balance is 0.00, so `difference` is `"20.00"`, even though both systems agreed when the snapshot was taken.
 - Reporting again (`"balance": "0.00"`, `"asOf": "2026-10-17T23:00:00Z"`, with a new `externalId`) brings `difference` back to `"0.00"`, as in the response above.
 
-Report a new snapshot after each sync. A difference that remains after that means the two ledgers really disagree, which usually means a transaction one side has and the other doesn't. A positive `difference` means your system says more is owed than CaseXchange computes. List the referral's transactions and compare them with your records.
+Report a new snapshot whenever your system's balance changes, and after a sync that wrote to this referral. A difference that remains after that means the two ledgers really disagree, which usually means a transaction one side has and the other doesn't. A positive `difference` means your system says more is owed than CaseXchange computes. List the referral's transactions and compare them with your records.
 
 ---
 
@@ -514,7 +545,7 @@ Send an `externalId` on every create: fills, transactions, balance snapshots and
 | You send | You get |
 |---|---|
 | An `externalId` you haven't used before | `201 Created` and the new record |
-| The same `externalId` with the same content | `200 OK` and the **existing** record, with `"replayed": true` in `meta`. Nothing new is written, logged, emailed or sent as a webhook |
+| The same `externalId` with the same content | `200 OK` and the **existing** record, with `"replayed": true` in `meta`. Nothing new is written, logged, emailed or sent as a webhook. A replay still counts as a write towards your [rate limit](/api-reference/examples/medex-providers#rate-limits) |
 | The same `externalId` with different content | `409 external_id_conflict`, and `error.details.existingId` is the existing record's ID |
 | No `externalId` | `201 Created` every time. A retry creates a duplicate |
 
@@ -543,7 +574,8 @@ A replay looks like this:
 ### The rules
 
 - **Scope.** An `externalId` is unique across your whole pharmacy, separately for each kind of record. Your fill IDs are checked against your fills on every case and referral, your transaction IDs against your transactions, and so on. A fill and a transaction may share an ID, but two fills may not.
-- **The referral is part of the content.** Reusing an `externalId` on another referral returns `409 external_id_conflict`. Build IDs that are unique across your pharmacy. For balance snapshots, where you'd naturally use a date, put the referral in the ID too.
+- **The referral is part of the content.** Reusing an `externalId` on another referral returns `409 external_id_conflict`. Build IDs that are unique across your pharmacy. For balance snapshots, put the referral and the `asOf` instant in the ID.
+- **A conflict can point at another referral.** If fetching `existingId` under this referral returns `404`, the `externalId` is already used on another of your referrals. A PATCH can't move a record between referrals, so choose a different `externalId`. Look `existingId` up in your own map first.
 - **What counts as the same content.** The incoming request is compared with the record **as it is now**, after small formatting differences are ignored:
   - money in any precision (`"40"` and `"40.00"`);
   - NDC hyphens and spaces;
@@ -553,10 +585,12 @@ A replay looks like this:
   - the same `asOf` instant written in different time zones.
 
   Anything else that differs is a conflict.
+- **Send CaseXchange IDs in lower case, exactly as they were returned.** For fills, transactions and snapshots, the IDs in the URL and the body are compared exactly. A retry that sends the same referral, prescription, document, fill or transaction ID in upper case returns `409 external_id_conflict`. If your database stores GUIDs in upper case, lower-case them before you send them.
 - **After a PATCH, the original create conflicts.** Once you've changed a record, resending its original `POST` returns `409`. Keep your own map from each `externalId` to the CaseXchange `id` it returned, and update existing records with `PATCH` instead of resending the create.
 - **A voided fill still replays.** Voiding isn't part of a fill's content. Resending the create for a fill you've since voided returns `200` and the voided fill, with `voidedAt` set. It doesn't restore the fill or create a new one, so check `voidedAt`.
-- **Replays work in any status.** The `externalId` is looked up before the referral status is checked and before linked IDs are validated. A replay therefore still returns `200` after the firm has closed or withdrawn the referral, or after it has been archived. Only a genuinely new record is refused with `referral_not_writable`. A replay still needs a key that can reach the case and referral, on a referral of a pharmacy.
+- **Replays work in any status.** The `externalId` is looked up before the referral status is checked and before linked IDs are validated. A replay therefore still returns `200` after the firm has closed or withdrawn the referral. Only a genuinely new record is refused with `referral_not_writable`. A replay still needs a key that can reach the case and referral, on a referral of a pharmacy.
 - **Retries of the same request at the same moment** never create two records. One creates the record and the other gets the replay, or `409` if their contents differ.
+- **Links that disappear.** If the prescription or document a fill links to is deleted, the fill's `prescriptionId` or `claimDocumentId` becomes `null`. No fill webhook is sent. A resend of the fill's original `POST` then returns `409`. Don't PATCH the old ID back, because it returns `400 invalid_reference`. Link a current document, or leave the field empty.
 - **Format.** 1–200 characters after spaces at either end are trimmed. An empty value returns `400 validation_error`. You can't change an `externalId` after creating the record.
 - **Finding a record by `externalId`.** Use `GET .../pharmacy/fills?externalId=...` or `GET .../pharmacy/transactions?externalId=...`.
 
@@ -633,6 +667,7 @@ curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-
 - The document you replace must be one **your organisation uploaded directly** to this case, and it must not already be replaced. Otherwise the upload returns `409 invalid_supersede`. If it was already replaced, `error.details.supersededByDocumentId` names the replacement; supersede that one instead.
 - The original stays listed and downloadable. `GET /med-cases/{caseId}/documents` shows it with `supersededAt` and `supersededByDocumentId` set, and MedEx marks it as superseded.
 - If the replacement is later deleted, the original becomes the current version again. A replay of the replacement upload after the **original** has been deleted returns `409 external_id_conflict`, because the replaced document is part of the upload's content.
+- If you delete a document, its `externalId` is released. Resending that upload stores a new document instead of replaying.
 - Repoint the fill with `PATCH .../pharmacy/fills/{fillId}` and `{ "claimDocumentId": "<the new id>" }`.
 
 <Tip>
@@ -665,10 +700,11 @@ A webhook subscription created with your pharmacy's key receives the MedEx event
 
 - The events go only to the pharmacy whose referral it is, never to the firm or to other practices on the case.
 - They carry IDs only. Fetch the record with `GET` for its details.
-- `externalId` is the one the record was created with. It's `null` for records entered in the CaseXchange web app, by someone at your pharmacy or by CaseXchange support. Those are changes your system didn't make.
+- Every event carries the `externalId` the record was created with, whoever made the change. An `updated` or `voided` event for a fill you created can come from someone at your pharmacy or from CaseXchange support, editing it in the web app.
+- `externalId` is `null` when the record was created without one: in the web app, or by an API call that didn't send one.
 - A replay sends no webhook.
 
-**Ignore echoes of your own changes.** Your own API writes send these events to your own subscriptions. Because the body carries `externalId`, you can skip events for records you've just created yourself.
+**Echoes of your own changes.** Your own API writes send these events to your own subscriptions. Handle an event only after you verify its signature, and treat the body as a prompt to fetch the record, not as the record itself. You can skip a `pharmacy_fill.created`, `pharmacy_transaction.created` or `pharmacy_balance.reported` event whose `externalId` is in your map, because you created that record. Don't skip `updated` or `voided` events on that basis: fetch the record and compare it with your system.
 
 ### Prescription events
 
@@ -690,7 +726,7 @@ Errors use the standard envelope with `error.code`, `error.message` and, for the
 | `403` | `pharmacy_only` | The referral's practice isn't set up as a pharmacy (ledger writes), or yours isn't (`GET /med-cases/{caseId}/prescriptions`) | Ask CaseXchange support to check your setup. Ledger reads still work and return empty lists |
 | `409` | `referral_not_writable` | The referral is `sent`, `under_review` or `rejected`, or archived. `error.details.status` and `error.details.isArchived` say which | Accept a `sent` or `under_review` referral first. A rejected or archived referral takes no new records. Replays still succeed |
 | `409` | `fill_voided` | You tried to change or void a fill that's already voided | Leave it. If the fill is real, record a new fill with a new `externalId`, and reverse any payments posted to the voided one |
-| `409` | `external_id_conflict` | The `externalId` is already used with different content. `error.details.existingId` is that record | Fetch `existingId` and compare. Fill: `PATCH` it. Transaction: `PATCH` `payer`, `reference`, `note` or `fillId`; if the money differs, reverse it and post a new transaction with a new `externalId`. Snapshot or document: use a new `externalId`. Rarely, an upload raced with one that was then deleted: this has no `details`; retry the upload |
+| `409` | `external_id_conflict` | The `externalId` is already used with different content. `error.details.existingId` is that record | Look `existingId` up in your own map and reconcile, as described under [Idempotency](#idempotency). If it's on another referral, choose a different `externalId`. Rarely, an upload raced with one that was then deleted: this has no `details`; retry the upload |
 | `400` | `immutable_field` | A transaction `PATCH` named `type`, `amount`, `transactionDate` or `reversesTransactionId`. `error.details.fields` lists them | Remove those fields. To change money, post a reversal |
 | `400` | `invalid_reference` | A `prescriptionId`, `claimDocumentId`, `fillId` or `reversesTransactionId` isn't on this case or referral, the prescription isn't routed to you, or you can't see the document. `error.details.field` names it | Check the ID. Create fills before the transactions that name them |
 | `409` | `invalid_supersede` | `supersedesDocumentId` isn't your organisation's own direct upload on this case, or it was already replaced (`error.details.supersededByDocumentId`) | Supersede the current version, or upload without `supersedesDocumentId` |
@@ -720,52 +756,65 @@ This is one way to keep CaseXchange in step with a pharmacy management system su
 Keep a local map from each `externalId` you send to the CaseXchange `id` that comes back.
 
 <Steps>
-  <Step title="Choose permanent externalIds">
-    Derive each `externalId` from your system's own permanent key for the record, with a prefix for the record type. It must be unique across your whole pharmacy:
+  <Step title="Choose permanent external IDs">
+    Derive each `externalId` from your system's own permanent key for the record, with a prefix for the record type. It must be unique across your whole pharmacy. If you run more than one store or database under one CaseXchange pharmacy, include a store code:
 
     | Record | Example `externalId` |
     |---|---|
     | Fill | `prx-fill-<your fill or dispense ID>` |
     | Transaction | `prx-txn-<your payment or adjustment row ID>` |
-    | Balance snapshot | `prx-bal-<referralId>-<YYYY-MM-DD>` |
+    | Balance snapshot | `prx-bal-<referralId>-<asOf>`, with `asOf` written as `YYYYMMDDTHHMMSSZ` |
     | Document | `prx-claim-<your claim ID>-v<version>` |
 
-    Never send the same `externalId` with different content. A balance snapshot taken daily needs the referral in its ID, or the second referral's snapshot that day conflicts with the first.
+    Never send the same `externalId` with different content.
   </Step>
 
-  <Step title="Find the referrals to sync">
-    Page through `GET /med-cases` and `GET /med-cases/{id}/referrals`, and keep the referrals whose status [accepts writes](#when-you-can-write). Save each case's routed `prescriptionId`s from `GET /med-cases/{caseId}/prescriptions` while that list is still visible. Between full passes, the `referral.accepted` and `prescription.created` webhooks tell you what's new.
+  <Step title="Load your referrals once, then follow webhooks">
+    On the first run, page through `GET /med-cases` and `GET /med-cases/{caseId}/referrals` with `limit=100`, and keep a local list of your referrals and their statuses. Keep the ones whose status [accepts writes](#when-you-can-write).
+
+    After that, update the list from webhooks instead of re-scanning: `referral.sent`, `referral.rejected`, `referral.closed` and `referral.withdrawn`, plus `prescription.created`, `prescription.updated` and `prescription.deleted`. Webhooks have no backfill, so repeat the full pass occasionally to catch anything you missed.
+
+    Call `GET /med-cases/{caseId}/prescriptions` only for referrals that are `under_review`, `accepted`, `in_treatment` or `treatment_complete`, including once just after you accept. For other referrals it returns an empty list and still counts as a request.
   </Step>
 
   <Step title="Fills first">
-    For each fill in your system:
+    Send only fills that are new or changed since your last successful sync. Track changes in your own system. The `fillDateFrom` and `dateFrom` filters work on the fill or transaction date, not on when the record was recorded or changed, so they can't find changes for you.
 
-    - If your map already has its CaseXchange `id` and the fill has changed, PATCH it rather than resending the `POST`.
-    - Otherwise `POST` it with its `externalId`. Store the `id` from a `201`, or from a `200` replay.
-    - On `409 external_id_conflict`, store `error.details.existingId`, fetch that fill, and `PATCH` the fields that differ.
+    - If your map already has the fill's CaseXchange `id`, `PATCH` it if it changed. If it didn't change, skip it.
+    - Otherwise `POST` it with its `externalId`, and store the `id` from the `201`.
+    - Don't resend creates to sync. A resend is for retrying a request that timed out, and a replay still counts as a write towards your rate limit.
+    - On `409 external_id_conflict`, look `error.details.existingId` up in your map. If it's there, `PATCH` that fill. If it isn't, see [Idempotency](#idempotency).
     - If your system cancels the fill, `POST .../void` with a reason. On `409 fill_voided` it's already voided. If the fill is dispensed again, record a new fill with a new `externalId`.
   </Step>
 
   <Step title="Then transactions">
     Send transactions after the fills they name, so that `fillId` resolves. `POST` each new payment, adjustment, write-off or refund with its `externalId`.
 
-    Never try to change money. If your system changes a transaction's amount, date or type, post a `REVERSAL` of the old one and a new transaction, each with its own new `externalId`, such as `prx-txn-55001-rev` and `prx-txn-55001-v2`. If only the payer, reference, note or fill changed, `PATCH` it. On `409 external_id_conflict`, compare with `existingId` and apply the same rule.
+    Never try to change money. If your system changes a transaction's amount, date or type, post a `REVERSAL` of the old one and a new transaction, each with its own new `externalId`, such as `prx-txn-55001-rev` and `prx-txn-55001-v2`. If only the payer, reference, note or fill changed, `PATCH` it. On `409 external_id_conflict`, find `existingId` in your map and apply the same rule.
   </Step>
 
   <Step title="Report the balance">
-    After the transactions, `POST` one balance snapshot per referral, with `asOf` set to when your system computed the balance. Then `GET .../pharmacy/balance`. If `difference` isn't `"0.00"`, list the referral's transactions, compare them with your records, and post whatever is missing.
+    Report a snapshot for each referral you wrote to in this run, and for any referral whose balance changed in your system, with `asOf` set to when your system computed the balance. Then `GET .../pharmacy/balance` for those referrals. If `difference` isn't `"0.00"`, list the referral's transactions, compare them with your records, and post whatever is missing.
   </Step>
 
   <Step title="Upload claim documents">
-    Upload each claim form with `category=claim_form` and an `externalId` per file version, and set the returned `id` as the fill's `claimDocumentId`. Send a corrected form with `supersedesDocumentId`. When loading a backlog, send `notify=false`.
+    Upload each claim form once per file version, with `category=claim_form` and an `externalId` for that version, and set the returned `id` as the fill's `claimDocumentId`. A replay re-sends the whole file, so don't re-upload files you've already sent. Send a corrected form with `supersedesDocumentId`. When loading a backlog, send `notify=false`.
   </Step>
 
   <Step title="Retry safely">
-    On a timeout, a `429` or a `5xx`, resend the **same** request with the **same** `externalId`. You get `201` if the first attempt never landed, or a `200` replay if it did. Wait for `Retry-After` after a `429`. A `standard` or `full` key allows 100 writes a minute, and 200 a minute across all of your pharmacy's keys. A `400`, `403` or `404` won't succeed without a change to the request.
+    On a timeout, a `429` or a `5xx`, resend the **same** request with the **same** `externalId`. You get `201` if the first attempt never landed, or a `200` replay if it did. A `PATCH` is safe to resend.
+
+    Wait for `Retry-After` after a `429`. A request rejected with `429` still counts towards the window. Read `X-RateLimit-Remaining` and slow down before you reach the limit. Writes count whether they create, replay, conflict or fail validation. The limits are in [Rate limits](/api-reference/examples/medex-providers#rate-limits).
+
+    A `400`, `403` or `404` won't succeed without a change to the request. A `409` isn't retryable as it is:
+
+    - `referral_not_writable` waits for the referral to be accepted;
+    - `external_id_conflict` follows the rules under [Idempotency](#idempotency);
+    - `fill_voided` means the void already happened.
   </Step>
 
-  <Step title="Skip your own echoes">
-    Your writes come back to your subscriptions as `pharmacy_*` webhooks. Skip events whose `externalId` is in your map. An event with `externalId: null` is a change someone made in the CaseXchange web app, so fetch it and record it in your system.
+  <Step title="Handle echoes and web-app changes">
+    Your writes come back to your subscriptions as `pharmacy_*` webhooks. Verify each event's signature. Skip a `*.created` or `pharmacy_balance.reported` event whose `externalId` is in your map. For `pharmacy_fill.updated`, `pharmacy_fill.voided` and `pharmacy_transaction.updated`, fetch the record and compare it with your system, because someone at your pharmacy may have changed it in the CaseXchange web app.
   </Step>
 </Steps>
 

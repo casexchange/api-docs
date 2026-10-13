@@ -53,6 +53,7 @@ Some practices, typically records or fulfilment vendors rather than treating cli
 - listing or reading referrals (`GET /med-cases/{id}/referrals` and `GET /med-cases/{id}/referrals/{referralId}`)
 - every appointment and billing endpoint
 - a document upload that names an `appointmentId` (omit `appointmentId` to upload to the case itself)
+- the pharmacy ledger and `GET /med-cases/{caseId}/prescriptions`
 
 If you aren't sure whether your practice is restricted, ask CaseXchange support.
 
@@ -79,7 +80,7 @@ Firm side:  sent / under_review / accepted / in_treatment ──withdraw──> 
 | Start treatment | `POST /med-cases/{id}/referrals/{referralId}/start-treatment` | `accepted` → `in_treatment` | Practice |
 | Complete treatment | `POST /med-cases/{id}/referrals/{referralId}/complete-treatment` | `in_treatment` → `treatment_complete` | Practice |
 | Withdraw | `POST /med-cases/{id}/referrals/{referralId}/withdraw` | `sent`, `under_review`, `accepted` or `in_treatment` → `withdrawn` | Firm |
-| Close | `POST /med-cases/{id}/referrals/{referralId}/close` | `treatment_complete` → `closed` | Firm |
+| Close | `POST /med-cases/{id}/referrals/{referralId}/close` | `treatment_complete` → `closed`. Pharmacy referrals can also be closed from `accepted` or `in_treatment` | Firm |
 
 `{id}` is the med case ID and `{referralId}` is the referral ID. Both are UUIDs, and the referral must belong to that case.
 
@@ -540,7 +541,7 @@ You also receive events for changes to the cases referred to you:
 - `document.uploaded`, `document.deleted`
 - Pharmacies only: `pharmacy_fill.*` (`created`, `updated`, `voided`), `pharmacy_transaction.*` (`created`, `updated`) and `pharmacy_balance.reported`. See [Pharmacy integrations](/api-reference/examples/medex-pharmacy-integrations#webhooks)
 
-`prescription.*` events also go to the pharmacy a prescription is routed to, while that pharmacy's referral on the case is live.
+`prescription.*` events also go to the pharmacy a prescription is routed to, while that pharmacy's referral on the case is `under_review`, `accepted`, `in_treatment` or `treatment_complete` and not archived.
 
 `case.updated` and `case.archived` for a firm's case, which carry patient details, are sent only to practices whose referral on the case has been acknowledged. Before that, you get `referral.sent` and nothing else for the case.
 
