@@ -291,4 +291,218 @@ curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-
 
 A void can't be undone. If the fill was real after all, record it again as a new fill with a new `externalId`.
 
+---
+
+## Transactions
+
+Every payment, adjustment, write-off, refund and reversal is a transaction. The transaction ledger is **append-only**: a transaction's money never changes after it's recorded, and transactions are never deleted. To correct money, post a [reversal](#reversals).
+
+| `type` | Use it for | Counts in |
+|---|---|---|
+| `PAYMENT` | Money received from a payer (positive), or taken back by a payer (negative) | `paid` |
+| `REFUND` | Money you send back, such as returning an overpayment (usually negative) | `paid` |
+| `ADJUSTMENT` | Contractual write-downs and other adjustments | `adjustments` |
+| `WRITE_OFF` | A balance you write off | `adjustments` |
+| `REVERSAL` | Undoing an earlier transaction | The same bucket as the transaction it reverses |
+
+### The sign convention
+
+A positive `amount` reduces the balance, and a negative `amount` increases it. The balance is `billed − paid − adjustments`.
+
+| What happened | `type` | `amount` | Balance |
+|---|---|---|---|
+| A payer pays you 40.00 | `PAYMENT` | `"40.00"` | Down 40.00 |
+| The payer takes the 40.00 back | `PAYMENT` with `"-40.00"`, or a `REVERSAL` of `"-40.00"` pointing at the payment | `"-40.00"` | Up 40.00 |
+| A contractual write-down of 15.00 | `ADJUSTMENT` | `"15.00"` | Down 15.00 |
+| You write off 5.00 | `WRITE_OFF` | `"5.00"` | Down 5.00 |
+| You refund a 10.00 overpayment | `REFUND` | `"-10.00"` | Up 10.00 |
+| You undo that 5.00 write-off | `REVERSAL` with `reversesTransactionId` set to the write-off | `"-5.00"` | Up 5.00 |
+
+CaseXchange stores each amount exactly as you send it and doesn't check its sign against its type, because real ledgers contain unusual rows. Map your system's sign convention once in your integration, and test each type in UAT. An amount of zero is allowed.
+
+### Record a transaction
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals/9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75/pharmacy/transactions" \
+  -H "X-API-Key: cxpp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "externalId": "prx-txn-55001",
+    "type": "PAYMENT",
+    "amount": "80.00",
+    "transactionDate": "2026-10-09",
+    "fillId": "4b8e1d6a-9f23-4c57-8e0b-2a6d9c1f7e34",
+    "payer": "Testpayer Mutual",
+    "reference": "EFT-0001"
+  }'
+```
+
+**Response `201 Created`:**
+
+```json
+{
+  "data": {
+    "id": "d2c4e6f8-1a3b-4c5d-8e7f-9a0b1c2d3e41",
+    "medCaseId": "5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10",
+    "medReferralId": "9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75",
+    "externalId": "prx-txn-55001",
+    "fillId": "4b8e1d6a-9f23-4c57-8e0b-2a6d9c1f7e34",
+    "type": "PAYMENT",
+    "amount": "80.00",
+    "transactionDate": "2026-10-09",
+    "payer": "Testpayer Mutual",
+    "reference": "EFT-0001",
+    "reversesTransactionId": null,
+    "note": null,
+    "createdVia": "api",
+    "createdAt": "2026-10-09T16:00:00.000Z",
+    "updatedAt": "2026-10-09T16:00:00.000Z"
+  },
+  "meta": { "requestId": "req_7b8c9d0e1f2a3b4c5d6e7f8a", "timestamp": "2026-10-09T16:00:00.000Z" }
+}
+```
+
+| Field | Required | Format |
+|---|---|---|
+| `externalId` | Strongly recommended | Your own ID for this transaction, 1–200 characters. See [Idempotency](#idempotency) |
+| `type` | Yes | `PAYMENT`, `ADJUSTMENT`, `WRITE_OFF`, `REFUND` or `REVERSAL` |
+| `amount` | Yes | A decimal string, optionally negative, with up to 2 decimal places, such as `"-40.00"` |
+| `transactionDate` | Yes | `YYYY-MM-DD` |
+| `fillId` | No | A fill on this referral. Leave it out for money that isn't tied to one fill, such as a lump-sum payment |
+| `payer` | No | Up to 300 characters |
+| `reference` | No | A check or EFT number, up to 200 characters |
+| `reversesTransactionId` | No | Only with `type: "REVERSAL"`: the transaction being reversed. With any other type it returns `400 validation_error` |
+| `note` | No | Up to 2,000 characters |
+
+Record the fill before any transaction that names it: a `fillId` or `reversesTransactionId` that isn't on this referral returns `400 invalid_reference`.
+
+`GET .../pharmacy/transactions` lists the referral's transactions, newest `transactionDate` first. You can filter by `fillId`, `type`, `dateFrom`, `dateTo` (inclusive) and `externalId`, and page with `page` and `limit` (up to 100). `GET .../pharmacy/transactions/{transactionId}` returns one transaction.
+
+### What you can change afterwards
+
+`PATCH .../pharmacy/transactions/{transactionId}` changes only `payer`, `reference`, `note` and `fillId`. Use `fillId` to move a transaction to another fill, or send `null` to un-apply it.
+
+```bash
+curl -X PATCH "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals/9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75/pharmacy/transactions/d2c4e6f8-1a3b-4c5d-8e7f-9a0b1c2d3e41" \
+  -H "X-API-Key: cxpp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{ "reference": "EFT-0001-A" }'
+```
+
+`type`, `amount`, `transactionDate` and `reversesTransactionId` never change. A PATCH that names any of them, even with the value it already has, returns `400 immutable_field`, and `error.details.fields` lists the fields:
+
+```json
+{
+  "error": {
+    "code": "immutable_field",
+    "message": "amount cannot be changed after a transaction is recorded; post a REVERSAL instead",
+    "details": { "fields": ["amount"] }
+  },
+  "meta": { "requestId": "req_8c9d0e1f2a3b4c5d6e7f8a9b", "timestamp": "2026-10-10T09:00:00.000Z" }
+}
+```
+
+### Reversals
+
+A reversal undoes an earlier transaction on the same referral. Post a `REVERSAL` with `reversesTransactionId` set to that transaction, usually for the negative of its amount:
+
+```json
+{ "externalId": "prx-txn-55007", "type": "REVERSAL", "amount": "-20.00", "transactionDate": "2026-10-16", "reversesTransactionId": "d2c4e6f8-1a3b-4c5d-8e7f-9a0b1c2d3e46" }
+```
+
+- A reversal counts in the same bucket as the transaction it reverses. Reversing a `WRITE_OFF` changes `adjustments`, and reversing a `PAYMENT` changes `paid`.
+- A **reversal of a reversal** follows the chain back to the original transaction and counts in that transaction's bucket. Use it when the reversal itself was the mistake.
+- A `REVERSAL` with no `reversesTransactionId` counts in `paid`.
+- CaseXchange doesn't check the reversal amount against the original, and doesn't stop you reversing the same transaction twice. Before you post one, list the referral's reversals (`?type=REVERSAL`) and check their `reversesTransactionId`.
+- To correct an amount, reverse the original and record a new transaction with its own new `externalId`.
+
+### Worked example
+
+Fill `RX-100245` is billed at 120.00. A second fill, `RX-100246` for 45.00, was entered in error and voided, so it doesn't count. These eight transactions are then posted against `RX-100245`:
+
+| # | What happened | `type` | `amount` | `paid` | `adjustments` | Balance |
+|---|---|---|---|---|---|---|
+| | Fill billed | | | 0.00 | 0.00 | 120.00 |
+| T1 | Testpayer Mutual pays | `PAYMENT` | `"80.00"` | 80.00 | 0.00 | 40.00 |
+| T2 | Contractual write-down | `ADJUSTMENT` | `"15.00"` | 80.00 | 15.00 | 25.00 |
+| T3 | Testpayer Casualty pays, 10.00 too much | `PAYMENT` | `"35.00"` | 115.00 | 15.00 | -10.00 |
+| T4 | You refund the overpayment | `REFUND` | `"-10.00"` | 105.00 | 15.00 | 0.00 |
+| T5 | Testpayer Mutual takes 20.00 back on audit | `PAYMENT` | `"-20.00"` | 85.00 | 15.00 | 20.00 |
+| T6 | You write off the 20.00 | `WRITE_OFF` | `"20.00"` | 85.00 | 35.00 | 0.00 |
+| T7 | The write-off was a mistake: reverse T6 | `REVERSAL` → T6 | `"-20.00"` | 85.00 | 15.00 | 20.00 |
+| T8 | The write-off was right after all: reverse T7 | `REVERSAL` → T7 | `"20.00"` | 85.00 | 35.00 | 0.00 |
+
+A negative balance, as after T3, is a credit. T7 reverses a write-off, so it counts in `adjustments`. T8 is a reversal of a reversal: it follows T7 back to T6, a `WRITE_OFF`, so it also counts in `adjustments`.
+
+---
+
+## Balance
+
+`GET .../pharmacy/balance` returns the referral's totals as CaseXchange computes them, next to the balance your system last reported. This is the referral from the worked example, after the snapshot of 2026-10-17 described below:
+
+```json
+{
+  "data": {
+    "billed": "120.00",
+    "paid": "85.00",
+    "adjustments": "35.00",
+    "computedBalance": "0.00",
+    "reported": {
+      "balance": "0.00",
+      "asOf": "2026-10-17T23:00:00.000Z",
+      "externalId": "prx-bal-9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75-2026-10-17"
+    },
+    "difference": "0.00",
+    "fillCount": 1,
+    "transactionCount": 8
+  },
+  "meta": { "requestId": "req_9d0e1f2a3b4c5d6e7f8a9b0c", "timestamp": "2026-10-18T08:00:00.000Z" }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `billed` | The total `billedAmount` of fills that aren't voided |
+| `paid` | `PAYMENT` and `REFUND` amounts, plus reversals of them and reversals that name no transaction |
+| `adjustments` | `ADJUSTMENT` and `WRITE_OFF` amounts, plus reversals of them |
+| `computedBalance` | `billed − paid − adjustments`. Negative means a credit |
+| `reported` | Your most recent balance snapshot (the latest `asOf`; on a tie, the one recorded last), or `null` if you haven't reported one |
+| `difference` | `reported.balance − computedBalance`, or `null` with no snapshot |
+| `fillCount` | Fills that aren't voided |
+| `transactionCount` | Every transaction, reversals included |
+
+The firm sees both balances in MedEx.
+
+### Report your balance
+
+Your system's balance is the figure the firm will usually ask about. Record it as a snapshot:
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals/9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75/pharmacy/balance-snapshots" \
+  -H "X-API-Key: cxpp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "externalId": "prx-bal-9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75-2026-10-15",
+    "balance": "20.00",
+    "asOf": "2026-10-15T23:00:00Z"
+  }'
+```
+
+| Field | Required | Format |
+|---|---|---|
+| `externalId` | Strongly recommended | Your own ID for this snapshot, 1–200 characters. Include the referral, as in the example. See [Idempotency](#idempotency) |
+| `balance` | Yes | A decimal string, optionally negative, with up to 2 decimal places |
+| `asOf` | Yes | When your system computed the balance: an ISO 8601 timestamp with `Z` or an offset, such as `2026-10-15T23:00:00Z` or `2026-10-15T19:00:00-04:00` |
+| `note` | No | Up to 2,000 characters |
+
+The response is `201` with the snapshot. Snapshots are append-only and can't be changed or deleted. `GET .../pharmacy/balance-snapshots` lists them, latest `asOf` first, with `page` and `limit`.
+
+`difference` compares your latest snapshot with the ledger **as it is now**, not as it was at `asOf`. In the worked example:
+
+- The snapshot above reports 20.00 as of 2026-10-15, which matches the ledger after T5.
+- After T6, T7 and T8, the computed balance is 0.00, so `difference` is `"20.00"`, even though both systems agreed when the snapshot was taken.
+- Reporting again (`"balance": "0.00"`, `"asOf": "2026-10-17T23:00:00Z"`, with a new `externalId`) brings `difference` back to `"0.00"`, as in the response above.
+
+Report a new snapshot after each sync. A difference that remains after that means the two ledgers really disagree, which usually means a transaction one side has and the other doesn't. A positive `difference` means your system says more is owed than CaseXchange computes. List the referral's transactions and compare them with your records.
+
 {/* SECTIONS BELOW ARE ADDED BY LATER TASKS */}
