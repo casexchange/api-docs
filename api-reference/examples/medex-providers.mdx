@@ -10,7 +10,7 @@ This guide is for medical practices that connect an EHR, practice-management or 
 
 **Authentication:** pass your key in the `X-API-Key` header on every request. Responses use the standard envelope described in [Response Format](/api-reference/response-format).
 
-Field-by-field request and response schemas live in the API tab under **Endpoints**: the **Med Cases**, **Med Appointments**, **Med Billing** and **MedEx Documents** groups, plus **Account** (`GET /me/doctors`, `GET /me/locations`) and **Webhooks**. This page explains how those endpoints fit together and doesn't repeat every field.
+Field-by-field request and response schemas live in the API tab under **Endpoints**: the **Med Cases**, **Med Appointments**, **Med Billing**, **MedEx Documents** and **MedEx Pharmacy** groups, plus **Account** (`GET /me/doctors`, `GET /me/locations`) and **Webhooks**. This page explains how those endpoints fit together and doesn't repeat every field.
 
 ---
 
@@ -111,7 +111,7 @@ A missing or unknown `reasonCode` returns `400 validation_error`.
 
 ### Pharmacies
 
-If your practice is set up in CaseXchange as a pharmacy, `start-treatment` and `complete-treatment` return `400` with the message `Treatment steps do not apply to pharmacy referrals`. A pharmacy referral stays `accepted` while you fill it, and the firm closes it from there.
+If your practice is set up in CaseXchange as a pharmacy, `start-treatment` and `complete-treatment` return `400` with the message `Treatment steps do not apply to pharmacy referrals`. A pharmacy referral stays `accepted` while you fill it, and the firm closes it from there. To record fills, payments and your balance on the referral, see [Pharmacy integrations](/api-reference/examples/medex-pharmacy-integrations).
 
 ---
 

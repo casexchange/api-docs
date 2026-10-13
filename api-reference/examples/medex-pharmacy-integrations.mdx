@@ -1,0 +1,294 @@
+---
+title: "Pharmacy integrations"
+description: "Record fills, every payment transaction and your reported balance on a MedEx pharmacy referral, safely retryable, from a pharmacy management system"
+icon: "prescription-bottle-medical"
+---
+
+This guide is for pharmacies that connect a pharmacy management system to **Med Xchange (MedEx)**. A law firm refers its client to your pharmacy. You record what you dispensed and billed, every payment, adjustment and refund against it, and the balance your own system shows. The firm sees the totals and the detail in MedEx, beside the rest of its client's medical care.
+
+Everything here sits on **your pharmacy's referral**, not on an appointment. You don't create appointments or billing lines to record a fill.
+
+Read [MedEx for medical providers](/api-reference/examples/medex-providers) first. It covers provider keys, the referral lifecycle and webhook delivery, which this guide builds on.
+
+**Base URL:** `https://api.casexchange.com/api/public/v1` in production. Build and test against UAT first: see [Test in UAT](#test-in-uat).
+
+**Authentication:** pass your key in the `X-API-Key` header on every request. Responses use the standard envelope described in [Response Format](/api-reference/response-format).
+
+Field-by-field request and response schemas live in the API tab under **Endpoints → MedEx Pharmacy**. This page explains how those endpoints fit together.
+
+---
+
+## Before you start
+
+### Your key
+
+| Tier | Key prefix | Pharmacy ledger |
+|---|---|---|
+| `read_only` | `cxpp_ro_...` | Read fills, transactions, the balance and balance snapshots, and list routed prescriptions |
+| `standard` | `cxpp_std_...` | Everything above, plus record and correct fills, transactions and balance snapshots, and upload documents |
+| `full` | `cxpp_full_...` | The same as `standard` for a pharmacy |
+
+A `read_only` key that tries a write gets `403 insufficient_tier`. The law firm on the case can read your ledger, but can't change it.
+
+### Your practice must be set up as a pharmacy
+
+CaseXchange marks a practice as a pharmacy. If yours isn't marked, ledger writes on your referral return `403 pharmacy_only`, and so does `GET /med-cases/{caseId}/prescriptions`. Ledger reads still work and come back empty. If you get `pharmacy_only`, ask [help@casexchange.com](mailto:help@casexchange.com) to check your setup.
+
+A restricted-access practice gets `403 restricted_access` on every ledger endpoint.
+
+### When you can write
+
+You write to the ledger of **your own referral** on a case. The referral's status decides whether new records are accepted:
+
+| Referral status | New fills, transactions and snapshots |
+|---|---|
+| `sent`, `under_review` | Refused with `409 referral_not_writable`. Accept the referral first |
+| `rejected` | Refused with `409 referral_not_writable` |
+| `accepted`, `in_treatment`, `treatment_complete` | Allowed |
+| `closed`, `withdrawn` | Allowed. Payments often arrive after a case settles and the firm closes the referral |
+| Any status, if the referral is archived | Refused with `409 referral_not_writable` |
+
+Reads work in every status. Changes to existing fills and transactions follow the same rule.
+
+A pharmacy referral normally goes `sent` → `under_review` → `accepted` and stays `accepted` until the firm closes it. `start-treatment` and `complete-treatment` don't apply to pharmacies (see [Pharmacies](/api-reference/examples/medex-providers#pharmacies)). `accept` also acknowledges a `sent` referral, so a single call opens the ledger.
+
+Resending a record you've already created succeeds in any status. See [Idempotency](#idempotency).
+
+### Test in UAT
+
+Build against UAT, the environment for testing integrations. It runs the same API against synthetic firms and patients, so you can acknowledge, accept and reject referrals and write to the ledger without touching a real case.
+
+| Environment | Base URL |
+|---|---|
+| UAT | `https://api-uat.casexchange.com/api/public/v1` |
+| Production | `https://api.casexchange.com/api/public/v1` |
+
+UAT and production keys are separate. A production key doesn't work in UAT, and a UAT key doesn't work in production. To get a UAT key and test referrals, email [help@casexchange.com](mailto:help@casexchange.com). See [Base URLs](/api-reference/overview#base-urls).
+
+---
+
+## Finding work
+
+<Steps>
+  <Step title="List the cases referred to you">
+    `GET /med-cases` returns your pharmacy's cases, newest first. It takes `page`, `limit` (up to 100, default 20), `search` (matches patient name, reference number or date of birth) and `includeArchived=true`.
+
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/med-cases?page=1&limit=100" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+    ```
+
+    ```json
+    {
+      "data": [
+        {
+          "id": "5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10",
+          "referenceNumber": "MX-0901",
+          "patientFirstName": "Alpha",
+          "patientLastName": "Testpatient",
+          "patientDateOfBirth": "1979-04-22T00:00:00.000Z",
+          "patientZipCode": "19103"
+        }
+      ],
+      "pagination": { "page": 1, "limit": 100, "total": 1, "totalPages": 1 },
+      "meta": { "requestId": "req_4e5f6a7b8c9d0e1f2a3b4c5d", "timestamp": "2026-10-02T13:00:00.000Z" }
+    }
+    ```
+
+    The example is shortened. Each case has the fields shown in [MedEx for medical providers](/api-reference/examples/medex-providers#integration-walkthrough), and the firm decides which of them to fill in.
+  </Step>
+
+  <Step title="Find your referral and check its status">
+    `GET /med-cases/{id}/referrals` lists **your pharmacy's** referrals on the case. Note the referral `id`, which every ledger call needs, and check its `status` against [When you can write](#when-you-can-write).
+
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+    ```
+
+    The ledger lives under that referral:
+
+    ```
+    /med-cases/{caseId}/referrals/{referralId}/pharmacy/fills
+    /med-cases/{caseId}/referrals/{referralId}/pharmacy/transactions
+    /med-cases/{caseId}/referrals/{referralId}/pharmacy/balance
+    /med-cases/{caseId}/referrals/{referralId}/pharmacy/balance-snapshots
+    ```
+
+    Another practice's referral returns `404`.
+  </Step>
+
+  <Step title="Find the prescription routed to you">
+    When the treating practice routes a prescription to your pharmacy, `GET /med-cases/{caseId}/prescriptions` lists it. Use its `id` as `prescriptionId` when you record the fill.
+
+    ```bash
+    curl "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/prescriptions" \
+      -H "X-API-Key: cxpp_ro_your_key_here"
+    ```
+
+    ```json
+    {
+      "data": [
+        {
+          "id": "3f6b9d2a-8c41-4e75-b1a0-c95e7d2f4a68",
+          "drugName": "Cyclobenzaprine 10 mg tablet",
+          "dosage": "10 mg",
+          "directions": "Take 1 tablet by mouth at bedtime",
+          "lengthDays": 30,
+          "numRefills": 1,
+          "lastRefillDate": null,
+          "datePrescribed": "2026-10-01",
+          "prescriber": { "id": "7a2d5f8c-1e94-4b36-a8c7-0d3f6b9e2c51", "name": "Testclinic Orthopedics" },
+          "appointmentDate": "2026-10-01"
+        }
+      ],
+      "meta": { "requestId": "req_5f6a7b8c9d0e1f2a3b4c5d6e", "timestamp": "2026-10-02T13:00:05.000Z" }
+    }
+    ```
+
+    - The list holds only prescriptions routed to **your** pharmacy. `prescriber` is the practice that wrote the prescription. The list isn't paginated.
+    - You see the list only while your referral on the case is `under_review`, `accepted`, `in_treatment` or `treatment_complete`, and isn't archived. Otherwise `data` is an empty array.
+
+    <Warning>
+    After the firm closes or withdraws your referral, this list is empty, but you can still record fills and payments. When you first match a fill to a prescription, save the `prescriptionId` in your own system.
+    </Warning>
+  </Step>
+</Steps>
+
+Webhooks tell you about new work as it happens: `referral.sent` when a firm sends you a referral, and `prescription.created` when a prescription is routed to you. See [Webhooks](#webhooks).
+
+---
+
+## Fills
+
+A fill is one dispensing of a prescription: what you dispensed, when, and what you billed for it. Fills are corrected or voided, never deleted.
+
+### Record a fill
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals/9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75/pharmacy/fills" \
+  -H "X-API-Key: cxpp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "externalId": "prx-fill-100245-1",
+    "rxNumber": "RX-100245",
+    "fillDate": "2026-10-02",
+    "ndc": "12345-6789-01",
+    "drugName": "Cyclobenzaprine 10 mg tablet",
+    "quantity": "30",
+    "daysSupply": 30,
+    "prescriberName": "Dr. Testdoctor Bravo",
+    "billedAmount": "120.00",
+    "prescriptionId": "3f6b9d2a-8c41-4e75-b1a0-c95e7d2f4a68"
+  }'
+```
+
+**Response `201 Created`:**
+
+```json
+{
+  "data": {
+    "id": "4b8e1d6a-9f23-4c57-8e0b-2a6d9c1f7e34",
+    "medCaseId": "5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10",
+    "medReferralId": "9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75",
+    "externalId": "prx-fill-100245-1",
+    "rxNumber": "RX-100245",
+    "fillDate": "2026-10-02",
+    "ndc": "12345678901",
+    "drugName": "Cyclobenzaprine 10 mg tablet",
+    "quantity": "30.000",
+    "daysSupply": 30,
+    "prescriberName": "Dr. Testdoctor Bravo",
+    "billedAmount": "120.00",
+    "prescriptionId": "3f6b9d2a-8c41-4e75-b1a0-c95e7d2f4a68",
+    "claimDocumentId": null,
+    "notes": null,
+    "voidedAt": null,
+    "voidReason": null,
+    "createdVia": "api",
+    "createdAt": "2026-10-02T14:10:00.000Z",
+    "updatedAt": "2026-10-02T14:10:00.000Z"
+  },
+  "meta": { "requestId": "req_6a7b8c9d0e1f2a3b4c5d6e7f", "timestamp": "2026-10-02T14:10:00.000Z" }
+}
+```
+
+| Field | Required | Format |
+|---|---|---|
+| `externalId` | Strongly recommended | Your own ID for this fill, 1–200 characters. See [Idempotency](#idempotency) |
+| `rxNumber` | Yes | 1–50 characters |
+| `fillDate` | Yes | `YYYY-MM-DD` |
+| `drugName` | Yes | 1–500 characters |
+| `billedAmount` | Yes | A non-negative decimal string with up to 2 decimal places, such as `"120.00"`. `"120"` is accepted and returned as `"120.00"` |
+| `ndc` | No | 11 digits. Hyphens and spaces are removed. See [NDC format](#ndc-format) |
+| `quantity` | No | A decimal string greater than 0, with up to 3 decimal places. It's returned with 3, so `"30"` comes back as `"30.000"` |
+| `daysSupply` | No | A whole number from 0 to 3650, sent as a JSON number |
+| `prescriberName` | No | Free text, up to 300 characters. The prescriber doesn't have to be on CaseXchange |
+| `prescriptionId` | No | A prescription routed to you on this case, from `GET /med-cases/{caseId}/prescriptions` |
+| `claimDocumentId` | No | A document on this case that you can see, usually the claim form you uploaded. See [Prescription and claim documents](#prescription-and-claim-documents) |
+| `notes` | No | Up to 2,000 characters |
+
+An unknown field, or a value in the wrong format, returns `400 validation_error` with each problem listed in `error.details.errors`. A `prescriptionId` that isn't routed to you on this case, or a `claimDocumentId` that isn't on this case or that you can't see, returns `400 invalid_reference`.
+
+### NDC format
+
+Send the 11-digit NDC in the 5-4-2 layout. CaseXchange removes hyphens and spaces, then requires exactly 11 digits, and returns the NDC without hyphens.
+
+Removing hyphens does **not** pad a 10-digit NDC. NDCs printed on packages in the 4-4-2, 5-3-2 or 5-4-1 layout have 10 digits. Convert them to 5-4-2 by adding a leading zero to the short segment: `1234-5678-90` becomes `01234-5678-90`. A 10-digit NDC returns `400 validation_error` with the message `NDC must be 11 digits (hyphens allowed)`.
+
+### Read fills
+
+`GET .../pharmacy/fills` lists the referral's fills, newest `fillDate` first. It accepts:
+
+- `fillDateFrom` and `fillDateTo` (`YYYY-MM-DD`, inclusive)
+- `externalId`, to find the fill you created with that ID
+- `includeVoided` (`true` by default; pass `false` to hide voided fills)
+- `page` and `limit` (up to 100, default 20)
+
+`GET .../pharmacy/fills/{fillId}` returns one fill plus:
+
+- `transactions`: the transactions linked to that fill, oldest first
+- `totals`: the fill's own `billed`, `paid`, `adjustments` and `computedBalance`, in the same shape as [the balance](#balance). `reported` and `difference` are always `null` here. For a voided fill, `billed` is `"0.00"` and `fillCount` is `0`, but its transactions still count.
+
+### Correct a fill
+
+`PATCH .../pharmacy/fills/{fillId}` changes any of these fields: `rxNumber`, `fillDate`, `ndc`, `drugName`, `quantity`, `daysSupply`, `prescriberName`, `billedAmount`, `prescriptionId`, `claimDocumentId` and `notes`. Send at least one. Send `null` to clear an optional field.
+
+```bash
+curl -X PATCH "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals/9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75/pharmacy/fills/4b8e1d6a-9f23-4c57-8e0b-2a6d9c1f7e34" \
+  -H "X-API-Key: cxpp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{ "notes": "Prior authorization approved 2026-10-01" }'
+```
+
+It returns `200` with the updated fill. The change is recorded in the case history, and a change to `billedAmount` records both the old and new amounts.
+
+- You can't change `externalId` or the void fields: sending them returns `400 validation_error`.
+- A voided fill can't be changed: `409 fill_voided`.
+- The referral must be in a status that [accepts writes](#when-you-can-write).
+
+<Note>
+After you PATCH a fill, sending its original `POST` again with the same `externalId` returns `409 external_id_conflict`, because the fill no longer matches that body. Once you have a fill's CaseXchange `id`, update it with `PATCH` rather than resending the `POST`. See [Idempotency](#idempotency).
+</Note>
+
+### Void a fill
+
+Void a fill that was entered in error or reversed in your system:
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/referrals/9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75/pharmacy/fills/6e3a9c2f-5d18-4b74-a9e6-0c4f8b2d1a57/void" \
+  -H "X-API-Key: cxpp_std_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "Entered in error: duplicate of RX-100245" }'
+```
+
+`reason` is required (1–1,000 characters). The response is `200` with the fill, with `voidedAt` and `voidReason` set. A voided fill:
+
+- no longer counts towards `billed` or `fillCount`;
+- stays in the fills list and keeps its history, so the firm still sees it, marked as voided;
+- can't be changed or voided again (`409 fill_voided`);
+- **keeps its transactions, and they still count.** If money was posted against it, post [reversals](#reversals) to back that money out.
+
+A void can't be undone. If the fill was real after all, record it again as a new fill with a new `externalId`.
+
+{/* SECTIONS BELOW ARE ADDED BY LATER TASKS */}

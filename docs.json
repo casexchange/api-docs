@@ -59,7 +59,8 @@
           {
             "group": "MedEx",
             "pages": [
-              "api-reference/examples/medex-providers"
+              "api-reference/examples/medex-providers",
+              "api-reference/examples/medex-pharmacy-integrations"
             ]
           }
         ]
