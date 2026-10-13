@@ -641,6 +641,46 @@ When you load a backlog of claim forms, send `notify=false` so the firm isn't em
 
 ---
 
+## Webhooks
+
+A webhook subscription created with your pharmacy's key receives the MedEx events described in [Webhooks for providers](/api-reference/examples/medex-providers#webhooks-for-providers). It covers delivery, signatures and the bare-payload body, with the event name in the `X-CaseXchange-Event` header. Pharmacies also receive these ledger events:
+
+| Event | Sent when | Body |
+|---|---|---|
+| `pharmacy_fill.created` | A fill was recorded on your referral | `{ "medCaseId", "medReferralId", "fillId", "externalId" }` |
+| `pharmacy_fill.updated` | A fill was changed | `{ "medCaseId", "medReferralId", "fillId", "externalId" }` |
+| `pharmacy_fill.voided` | A fill was voided | `{ "medCaseId", "medReferralId", "fillId", "externalId" }` |
+| `pharmacy_transaction.created` | A transaction was recorded | `{ "medCaseId", "medReferralId", "transactionId", "externalId" }` |
+| `pharmacy_transaction.updated` | A transaction's `payer`, `reference`, `note` or `fillId` changed | `{ "medCaseId", "medReferralId", "transactionId", "externalId" }` |
+| `pharmacy_balance.reported` | A balance snapshot was recorded | `{ "medCaseId", "medReferralId", "snapshotId", "externalId" }` |
+
+```json
+{
+  "medCaseId": "5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10",
+  "medReferralId": "9c47b2e1-3f58-4a06-b8d2-6e1f0a9c3b75",
+  "fillId": "4b8e1d6a-9f23-4c57-8e0b-2a6d9c1f7e34",
+  "externalId": "prx-fill-100245-1"
+}
+```
+
+- The events go only to the pharmacy whose referral it is, never to the firm or to other practices on the case.
+- They carry IDs only. Fetch the record with `GET` for its details.
+- `externalId` is the one the record was created with. It's `null` for records entered in the CaseXchange web app, by someone at your pharmacy or by CaseXchange support. Those are changes your system didn't make.
+- A replay sends no webhook.
+
+**Ignore echoes of your own changes.** Your own API writes send these events to your own subscriptions. Because the body carries `externalId`, you can skip events for records you've just created yourself.
+
+### Prescription events
+
+`prescription.created`, `prescription.updated` and `prescription.deleted` also go to the pharmacy a prescription is routed to, as well as to the practice that wrote it.
+
+- **When you receive them.** Only while your referral on the case isn't archived and is `under_review`, `accepted`, `in_treatment` or `treatment_complete`. This is the same rule as `GET /med-cases/{caseId}/prescriptions`.
+- **Exceptions.** Restricted-access practices don't receive them. If you also wrote the prescription, you receive each event once.
+- **Bodies.** `prescription.created` and `prescription.updated` carry `{ "prescriptionId", "medCaseId" }`. `prescription.deleted` carries `{ "id", "medCaseId" }`, where `id` is the prescription ID.
+- **Re-routing.** If a prescription is re-routed from your pharmacy to another one, you receive `prescription.deleted` for it.
+
+---
+
 ## Errors
 
 Errors use the standard envelope with `error.code`, `error.message` and, for these codes, `error.details`. See [Error Handling](/api-reference/error-handling) for the general rules and [MedEx for medical providers](/api-reference/examples/medex-providers#errors) for the authentication and rate-limit codes.

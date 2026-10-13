@@ -538,6 +538,9 @@ You also receive events for changes to the cases referred to you:
 - `injury.*`, `insurance.*`, `appointment.*`, `prescription.*`, `diagnosis.*` and `billing.*` (`created`, `updated`, `deleted`)
 - `note.*` (`created`, `updated`, `deleted`)
 - `document.uploaded`, `document.deleted`
+- Pharmacies only: `pharmacy_fill.*` (`created`, `updated`, `voided`), `pharmacy_transaction.*` (`created`, `updated`) and `pharmacy_balance.reported`. See [Pharmacy integrations](/api-reference/examples/medex-pharmacy-integrations#webhooks)
+
+`prescription.*` events also go to the pharmacy a prescription is routed to, while that pharmacy's referral on the case is live.
 
 `case.updated` and `case.archived` for a firm's case, which carry patient details, are sent only to practices whose referral on the case has been acknowledged. Before that, you get `referral.sent` and nothing else for the case.
 
