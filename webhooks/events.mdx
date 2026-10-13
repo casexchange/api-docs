@@ -9,6 +9,10 @@ sidebarTitle: "Event catalog"
 
 A firm subscription receives 13 business events plus one synthetic `webhook.test` event. There is no per-subscription event filter: every active subscription receives every event your firm is entitled to, so branch on the `event` field (or the `X-CaseXchange-Event` header) and route from there.
 
+<Note>
+  This page covers **firm** subscriptions. A subscription created with a medical provider key (`cxpp_`) receives the MedEx event catalogue instead, as bare payloads: see [Webhooks for providers](/api-reference/examples/medex-providers#webhooks-for-providers) and, for pharmacies, [Pharmacy integrations](/api-reference/examples/medex-pharmacy-integrations#webhooks).
+</Note>
+
 Every business event arrives inside the same envelope. The envelope fields (`eventId`, `occurredAt`, `perspective`, `piiMasked`, `referralId`, `baseCaseId`, `actor`, and so on) are documented on [Anatomy of a delivery](/webhooks/deliveries). This page covers what changes from event to event: the `data` object and who receives it.
 
 The `data` schema names below (`CaseSnapshot`, `StatusChangeData`, `NoteData`, ...) are the component names the API reference uses for the same shapes, and the case snapshot uses the same field vocabulary as `GET /cases`, so a push and a poll line up field for field there.

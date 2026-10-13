@@ -10,7 +10,7 @@ This guide is for medical practices that connect an EHR, practice-management or 
 
 **Authentication:** pass your key in the `X-API-Key` header on every request. Responses use the standard envelope described in [Response Format](/api-reference/response-format).
 
-Field-by-field request and response schemas live in the API tab under **Endpoints**: the **Med Cases**, **Med Appointments**, **Med Billing** and **MedEx Documents** groups, plus **Account** (`GET /me/doctors`, `GET /me/locations`) and **Webhooks**. This page explains how those endpoints fit together and doesn't repeat every field.
+Field-by-field request and response schemas live in the API tab under **Endpoints**: the **Med Cases**, **Med Appointments**, **Med Billing**, **MedEx Documents** and **MedEx Pharmacy** groups, plus **Account** (`GET /me/doctors`, `GET /me/locations`) and **Webhooks**. This page explains how those endpoints fit together and doesn't repeat every field.
 
 ---
 
@@ -22,6 +22,7 @@ A practice integrates with a **provider-scoped key**. Its prefix is `cxpp_` (dou
 |------|-----------|----------------|
 | `read_only` | `cxpp_ro_...` | Read cases, insurance, appointments, billing lines and documents |
 | `standard` | `cxpp_std_...` | Everything above, plus the referral lifecycle actions, appointment and billing writes, document upload and webhook subscriptions |
+| `full` | `cxpp_full_...` | The same as `standard` for a provider key, with the same rate limits |
 
 CaseXchange issues provider keys. To request one, email [help@casexchange.com](mailto:help@casexchange.com). The plaintext key is shown once, when it is created, so store it in a secrets manager straight away.
 
@@ -52,6 +53,7 @@ Some practices, typically records or fulfilment vendors rather than treating cli
 - listing or reading referrals (`GET /med-cases/{id}/referrals` and `GET /med-cases/{id}/referrals/{referralId}`)
 - every appointment and billing endpoint
 - a document upload that names an `appointmentId` (omit `appointmentId` to upload to the case itself)
+- the pharmacy ledger and `GET /med-cases/{caseId}/prescriptions`
 
 If you aren't sure whether your practice is restricted, ask CaseXchange support.
 
@@ -78,7 +80,7 @@ Firm side:  sent / under_review / accepted / in_treatment ──withdraw──> 
 | Start treatment | `POST /med-cases/{id}/referrals/{referralId}/start-treatment` | `accepted` → `in_treatment` | Practice |
 | Complete treatment | `POST /med-cases/{id}/referrals/{referralId}/complete-treatment` | `in_treatment` → `treatment_complete` | Practice |
 | Withdraw | `POST /med-cases/{id}/referrals/{referralId}/withdraw` | `sent`, `under_review`, `accepted` or `in_treatment` → `withdrawn` | Firm |
-| Close | `POST /med-cases/{id}/referrals/{referralId}/close` | `treatment_complete` → `closed` | Firm |
+| Close | `POST /med-cases/{id}/referrals/{referralId}/close` | `treatment_complete` → `closed`. Pharmacy referrals can also be closed from `accepted` or `in_treatment` | Firm |
 
 `{id}` is the med case ID and `{referralId}` is the referral ID. Both are UUIDs, and the referral must belong to that case.
 
@@ -110,7 +112,7 @@ A missing or unknown `reasonCode` returns `400 validation_error`.
 
 ### Pharmacies
 
-If your practice is set up in CaseXchange as a pharmacy, `start-treatment` and `complete-treatment` return `400` with the message `Treatment steps do not apply to pharmacy referrals`. A pharmacy referral stays `accepted` while you fill it, and the firm closes it from there.
+If your practice is set up in CaseXchange as a pharmacy, `start-treatment` and `complete-treatment` return `400` with the message `Treatment steps do not apply to pharmacy referrals`. A pharmacy referral stays `accepted` while you fill it, and the firm closes it from there. To record fills, payments and your balance on the referral, see [Pharmacy integrations](/api-reference/examples/medex-pharmacy-integrations).
 
 ---
 
@@ -408,6 +410,8 @@ You also get referral IDs from:
     ```
 
     The **MedEx Documents** endpoint pages list the accepted categories. `GET /med-cases/{caseId}/documents` lists a case's documents, and `GET /med-cases/{caseId}/documents/{documentId}` returns a download link.
+
+    Uploads also take an optional `externalId`, which makes retries safe, `supersedesDocumentId`, which replaces an earlier upload, and `notify`. See [Prescription and claim documents](/api-reference/examples/medex-pharmacy-integrations#prescription-and-claim-documents). These fields work for every practice, not only pharmacies.
   </Step>
 
   <Step title="Complete treatment">
@@ -434,7 +438,7 @@ If you are bringing patients you already treat into CaseXchange, you'll run the 
 
 Limits apply over a sliding 60-second window:
 
-| Limit | `read_only` key | `standard` key |
+| Limit | `read_only` key | `standard` or `full` key |
 |---|---|---|
 | GET requests per key | 500 / min | 300 / min |
 | Writes (POST, PUT, PATCH, DELETE) per key | not allowed | 100 / min |
@@ -535,6 +539,9 @@ You also receive events for changes to the cases referred to you:
 - `injury.*`, `insurance.*`, `appointment.*`, `prescription.*`, `diagnosis.*` and `billing.*` (`created`, `updated`, `deleted`)
 - `note.*` (`created`, `updated`, `deleted`)
 - `document.uploaded`, `document.deleted`
+- Pharmacies only: `pharmacy_fill.*` (`created`, `updated`, `voided`), `pharmacy_transaction.*` (`created`, `updated`) and `pharmacy_balance.reported`. See [Pharmacy integrations](/api-reference/examples/medex-pharmacy-integrations#webhooks)
+
+`prescription.*` events also go to the pharmacy a prescription is routed to, while that pharmacy's referral on the case is `under_review`, `accepted`, `in_treatment` or `treatment_complete` and not archived.
 
 `case.updated` and `case.archived` for a firm's case, which carry patient details, are sent only to practices whose referral on the case has been acknowledged. Before that, you get `referral.sent` and nothing else for the case.
 
