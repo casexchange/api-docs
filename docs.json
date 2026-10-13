@@ -252,6 +252,26 @@
                 "expanded": false
               },
               {
+                "group": "MedEx Pharmacy",
+                "openapi": "api-reference/openapi.yml",
+                "pages": [
+                  "GET /med-cases/{caseId}/prescriptions",
+                  "GET /med-cases/{caseId}/referrals/{referralId}/pharmacy/fills",
+                  "POST /med-cases/{caseId}/referrals/{referralId}/pharmacy/fills",
+                  "GET /med-cases/{caseId}/referrals/{referralId}/pharmacy/fills/{fillId}",
+                  "PATCH /med-cases/{caseId}/referrals/{referralId}/pharmacy/fills/{fillId}",
+                  "POST /med-cases/{caseId}/referrals/{referralId}/pharmacy/fills/{fillId}/void",
+                  "GET /med-cases/{caseId}/referrals/{referralId}/pharmacy/transactions",
+                  "POST /med-cases/{caseId}/referrals/{referralId}/pharmacy/transactions",
+                  "GET /med-cases/{caseId}/referrals/{referralId}/pharmacy/transactions/{transactionId}",
+                  "PATCH /med-cases/{caseId}/referrals/{referralId}/pharmacy/transactions/{transactionId}",
+                  "GET /med-cases/{caseId}/referrals/{referralId}/pharmacy/balance",
+                  "GET /med-cases/{caseId}/referrals/{referralId}/pharmacy/balance-snapshots",
+                  "POST /med-cases/{caseId}/referrals/{referralId}/pharmacy/balance-snapshots"
+                ],
+                "expanded": false
+              },
+              {
                 "group": "Messages",
                 "openapi": "api-reference/openapi.yml",
                 "pages": [
