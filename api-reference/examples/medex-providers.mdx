@@ -22,6 +22,7 @@ A practice integrates with a **provider-scoped key**. Its prefix is `cxpp_` (dou
 |------|-----------|----------------|
 | `read_only` | `cxpp_ro_...` | Read cases, insurance, appointments, billing lines and documents |
 | `standard` | `cxpp_std_...` | Everything above, plus the referral lifecycle actions, appointment and billing writes, document upload and webhook subscriptions |
+| `full` | `cxpp_full_...` | The same as `standard` for a provider key, with the same rate limits |
 
 CaseXchange issues provider keys. To request one, email [help@casexchange.com](mailto:help@casexchange.com). The plaintext key is shown once, when it is created, so store it in a secrets manager straight away.
 
@@ -434,7 +435,7 @@ If you are bringing patients you already treat into CaseXchange, you'll run the 
 
 Limits apply over a sliding 60-second window:
 
-| Limit | `read_only` key | `standard` key |
+| Limit | `read_only` key | `standard` or `full` key |
 |---|---|---|
 | GET requests per key | 500 / min | 300 / min |
 | Writes (POST, PUT, PATCH, DELETE) per key | not allowed | 100 / min |

@@ -33,7 +33,10 @@ The fastest way to explore and test the API is with the pre-built Postman collec
 | API | Base URL | Auth |
 |-----|----------|------|
 | **Public API** | `https://api.casexchange.com/api/public/v1` | `X-API-Key` header |
+| **Public API (UAT)** | `https://api-uat.casexchange.com/api/public/v1` | `X-API-Key` header, with a UAT key |
 | **Internal API** | `https://api.casexchange.com/api/v1` | JWT Bearer token |
+
+UAT is the environment for building and testing an integration. It runs the same Public API against synthetic firms, patients and cases, so nothing you do there reaches a real client. UAT keys are issued separately from production keys: a production key doesn't work in UAT, and a UAT key doesn't work in production. To get a UAT key and test data, email [help@casexchange.com](mailto:help@casexchange.com). While a release is being tested, UAT can run a newer version of the API than production.
 
 ### Authentication
 

@@ -35,7 +35,8 @@ See the [JWT Guide](/auth/jwt) in the docs site for details on JWT session authe
 
 - **Public API (Production):** `https://api.casexchange.com/api/public/v1`
 - **Internal API (Production):** `https://api.casexchange.com/api/v1`
-- **QA/UAT:** Contact support for environment-specific URLs
+- **Public API (UAT, partner testing):** `https://api-uat.casexchange.com/api/public/v1` (UAT keys only)
+- **QA:** Contact support for environment-specific URLs
 
 ## Public API Endpoint Groups
 
