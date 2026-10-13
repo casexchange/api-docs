@@ -711,4 +711,69 @@ Errors use the standard envelope with `error.code`, `error.message` and, for the
 }
 ```
 
-{/* SECTIONS BELOW ARE ADDED BY LATER TASKS */}
+---
+
+## A suggested sync loop
+
+This is one way to keep CaseXchange in step with a pharmacy management system such as PioneerRx. It uses only the behaviour described on this page, so adapt it to how your system stores fills and payments.
+
+Keep a local map from each `externalId` you send to the CaseXchange `id` that comes back.
+
+<Steps>
+  <Step title="Choose permanent externalIds">
+    Derive each `externalId` from your system's own permanent key for the record, with a prefix for the record type. It must be unique across your whole pharmacy:
+
+    | Record | Example `externalId` |
+    |---|---|
+    | Fill | `prx-fill-<your fill or dispense ID>` |
+    | Transaction | `prx-txn-<your payment or adjustment row ID>` |
+    | Balance snapshot | `prx-bal-<referralId>-<YYYY-MM-DD>` |
+    | Document | `prx-claim-<your claim ID>-v<version>` |
+
+    Never send the same `externalId` with different content. A balance snapshot taken daily needs the referral in its ID, or the second referral's snapshot that day conflicts with the first.
+  </Step>
+
+  <Step title="Find the referrals to sync">
+    Page through `GET /med-cases` and `GET /med-cases/{id}/referrals`, and keep the referrals whose status [accepts writes](#when-you-can-write). Save each case's routed `prescriptionId`s from `GET /med-cases/{caseId}/prescriptions` while that list is still visible. Between full passes, the `referral.accepted` and `prescription.created` webhooks tell you what's new.
+  </Step>
+
+  <Step title="Fills first">
+    For each fill in your system:
+
+    - If your map already has its CaseXchange `id` and the fill has changed, PATCH it rather than resending the `POST`.
+    - Otherwise `POST` it with its `externalId`. Store the `id` from a `201`, or from a `200` replay.
+    - On `409 external_id_conflict`, store `error.details.existingId`, fetch that fill, and `PATCH` the fields that differ.
+    - If your system cancels the fill, `POST .../void` with a reason. On `409 fill_voided` it's already voided. If the fill is dispensed again, record a new fill with a new `externalId`.
+  </Step>
+
+  <Step title="Then transactions">
+    Send transactions after the fills they name, so that `fillId` resolves. `POST` each new payment, adjustment, write-off or refund with its `externalId`.
+
+    Never try to change money. If your system changes a transaction's amount, date or type, post a `REVERSAL` of the old one and a new transaction, each with its own new `externalId`, such as `prx-txn-55001-rev` and `prx-txn-55001-v2`. If only the payer, reference, note or fill changed, `PATCH` it. On `409 external_id_conflict`, compare with `existingId` and apply the same rule.
+  </Step>
+
+  <Step title="Report the balance">
+    After the transactions, `POST` one balance snapshot per referral, with `asOf` set to when your system computed the balance. Then `GET .../pharmacy/balance`. If `difference` isn't `"0.00"`, list the referral's transactions, compare them with your records, and post whatever is missing.
+  </Step>
+
+  <Step title="Upload claim documents">
+    Upload each claim form with `category=claim_form` and an `externalId` per file version, and set the returned `id` as the fill's `claimDocumentId`. Send a corrected form with `supersedesDocumentId`. When loading a backlog, send `notify=false`.
+  </Step>
+
+  <Step title="Retry safely">
+    On a timeout, a `429` or a `5xx`, resend the **same** request with the **same** `externalId`. You get `201` if the first attempt never landed, or a `200` replay if it did. Wait for `Retry-After` after a `429`. A `standard` or `full` key allows 100 writes a minute, and 200 a minute across all of your pharmacy's keys. A `400`, `403` or `404` won't succeed without a change to the request.
+  </Step>
+
+  <Step title="Skip your own echoes">
+    Your writes come back to your subscriptions as `pharmacy_*` webhooks. Skip events whose `externalId` is in your map. An event with `externalId: null` is a change someone made in the CaseXchange web app, so fetch it and record it in your system.
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="MedEx for medical providers" icon="stethoscope" href="/api-reference/examples/medex-providers">
+    Provider keys, the referral lifecycle and webhook delivery.
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/api-reference/error-handling">
+    Error envelope, status codes and troubleshooting.
+  </Card>
+</CardGroup>
