@@ -409,6 +409,8 @@ You also get referral IDs from:
     ```
 
     The **MedEx Documents** endpoint pages list the accepted categories. `GET /med-cases/{caseId}/documents` lists a case's documents, and `GET /med-cases/{caseId}/documents/{documentId}` returns a download link.
+
+    Uploads also take an optional `externalId`, which makes retries safe, `supersedesDocumentId`, which replaces an earlier upload, and `notify`. See [Prescription and claim documents](/api-reference/examples/medex-pharmacy-integrations#prescription-and-claim-documents). These fields work for every practice, not only pharmacies.
   </Step>
 
   <Step title="Complete treatment">

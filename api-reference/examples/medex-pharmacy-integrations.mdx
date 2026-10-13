@@ -505,4 +505,170 @@ The response is `201` with the snapshot. Snapshots are append-only and can't be 
 
 Report a new snapshot after each sync. A difference that remains after that means the two ledgers really disagree, which usually means a transaction one side has and the other doesn't. A positive `difference` means your system says more is owed than CaseXchange computes. List the referral's transactions and compare them with your records.
 
+---
+
+## Idempotency
+
+Send an `externalId` on every create: fills, transactions, balance snapshots and document uploads. It's your own permanent ID for the record, and it makes every create safe to retry.
+
+| You send | You get |
+|---|---|
+| An `externalId` you haven't used before | `201 Created` and the new record |
+| The same `externalId` with the same content | `200 OK` and the **existing** record, with `"replayed": true` in `meta`. Nothing new is written, logged, emailed or sent as a webhook |
+| The same `externalId` with different content | `409 external_id_conflict`, and `error.details.existingId` is the existing record's ID |
+| No `externalId` | `201 Created` every time. A retry creates a duplicate |
+
+A replay looks like this:
+
+```json
+{
+  "data": { "id": "4b8e1d6a-9f23-4c57-8e0b-2a6d9c1f7e34", "externalId": "prx-fill-100245-1", "rxNumber": "RX-100245", "billedAmount": "120.00" },
+  "meta": { "requestId": "req_0e1f2a3b4c5d6e7f8a9b0c1d", "timestamp": "2026-10-02T14:10:30.000Z", "replayed": true }
+}
+```
+
+(The example is shortened; `data` is the full record.) A conflict looks like this:
+
+```json
+{
+  "error": {
+    "code": "external_id_conflict",
+    "message": "externalId already exists with different content (the record may have been edited since it was created); PATCH details.existingId instead.",
+    "details": { "existingId": "4b8e1d6a-9f23-4c57-8e0b-2a6d9c1f7e34" }
+  },
+  "meta": { "requestId": "req_1f2a3b4c5d6e7f8a9b0c1d2e", "timestamp": "2026-10-03T09:00:00.000Z" }
+}
+```
+
+### The rules
+
+- **Scope.** An `externalId` is unique across your whole pharmacy, separately for each kind of record. Your fill IDs are checked against your fills on every case and referral, your transaction IDs against your transactions, and so on. A fill and a transaction may share an ID, but two fills may not.
+- **The referral is part of the content.** Reusing an `externalId` on another referral returns `409 external_id_conflict`. Build IDs that are unique across your pharmacy. For balance snapshots, where you'd naturally use a date, put the referral in the ID too.
+- **What counts as the same content.** The incoming request is compared with the record **as it is now**, after small formatting differences are ignored:
+  - money in any precision (`"40"` and `"40.00"`);
+  - NDC hyphens and spaces;
+  - `quantity` precision (`"30"` and `"30.000"`);
+  - a missing field and `null`;
+  - spaces around text values;
+  - the same `asOf` instant written in different time zones.
+
+  Anything else that differs is a conflict.
+- **After a PATCH, the original create conflicts.** Once you've changed a record, resending its original `POST` returns `409`. Keep your own map from each `externalId` to the CaseXchange `id` it returned, and update existing records with `PATCH` instead of resending the create.
+- **A voided fill still replays.** Voiding isn't part of a fill's content. Resending the create for a fill you've since voided returns `200` and the voided fill, with `voidedAt` set. It doesn't restore the fill or create a new one, so check `voidedAt`.
+- **Replays work in any status.** The `externalId` is looked up before the referral status is checked and before linked IDs are validated. A replay therefore still returns `200` after the firm has closed or withdrawn the referral, or after it has been archived. Only a genuinely new record is refused with `referral_not_writable`. A replay still needs a key that can reach the case and referral, on a referral of a pharmacy.
+- **Retries of the same request at the same moment** never create two records. One creates the record and the other gets the replay, or `409` if their contents differ.
+- **Format.** 1–200 characters after spaces at either end are trimmed. An empty value returns `400 validation_error`. You can't change an `externalId` after creating the record.
+- **Finding a record by `externalId`.** Use `GET .../pharmacy/fills?externalId=...` or `GET .../pharmacy/transactions?externalId=...`.
+
+<Tip>
+Always send an `externalId`. Without one, a request that timed out after CaseXchange saved it, followed by your retry, records the same fill or payment twice.
+</Tip>
+
+---
+
+## Prescription and claim documents
+
+Upload documents with `POST /med-cases/{caseId}/documents`, as described in [MedEx for medical providers](/api-reference/examples/medex-providers#integration-walkthrough). Two categories suit pharmacies:
+
+| `category` | Use it for |
+|---|---|
+| `prescription` | A copy of a prescription |
+| `claim_form` | A claim form: CMS-1500, HCFA or UB-04 |
+
+The upload also takes three optional form fields, which work for every practice:
+
+| Field | What it does |
+|---|---|
+| `externalId` | The same [idempotency](#idempotency) rules as the ledger. Here, "the same content" means the same case, `category`, `appointmentId`, `note` and replaced document, and the same file bytes, compared by SHA-256. A replay returns `200` with `"replayed": true` and doesn't store the file again |
+| `supersedesDocumentId` | Marks an earlier document as replaced by this one. See below |
+| `notify` | `"true"` (the default) or `"false"`. `"false"` skips the email notifications about the upload, and nothing else: the case history entry and the `document.uploaded` webhook still happen |
+
+### Upload a claim form and link it to the fill
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/documents" \
+  -H "X-API-Key: cxpp_std_your_key_here" \
+  -F "file=@claim-RX-100245.pdf" \
+  -F "category=claim_form" \
+  -F "externalId=prx-claim-100245-v1"
+```
+
+**Response `201 Created`:**
+
+```json
+{
+  "data": {
+    "id": "2c9f7e4b-6a13-4d8e-b5f2-1e0a9d8c7b36",
+    "appointmentId": null,
+    "fileName": "claim-RX-100245.pdf",
+    "contentType": "application/pdf",
+    "fileSize": 48213,
+    "category": "claim_form",
+    "source": "upload",
+    "uploadedAt": "2026-10-02T14:12:00.000Z",
+    "pending": false,
+    "sharedWithProviders": true,
+    "supersededAt": null,
+    "supersededByDocumentId": null
+  },
+  "meta": { "requestId": "req_2a3b4c5d6e7f8a9b0c1d2e3f", "timestamp": "2026-10-02T14:12:00.000Z" }
+}
+```
+
+The response doesn't include `externalId`. Keep the returned `id`, then set it on the fill as `claimDocumentId`, either when you create the fill or later with `PATCH .../pharmacy/fills/{fillId}`.
+
+### Replace a document
+
+To send a corrected claim form, upload it with `supersedesDocumentId` set to the one it replaces, and give it a new `externalId`:
+
+```bash
+curl -X POST "https://api.casexchange.com/api/public/v1/med-cases/5d0e8a3c-7b14-4c29-9f61-2a8e4b7c9d10/documents" \
+  -H "X-API-Key: cxpp_std_your_key_here" \
+  -F "file=@claim-RX-100245-corrected.pdf" \
+  -F "category=claim_form" \
+  -F "externalId=prx-claim-100245-v2" \
+  -F "supersedesDocumentId=2c9f7e4b-6a13-4d8e-b5f2-1e0a9d8c7b36"
+```
+
+- The document you replace must be one **your organisation uploaded directly** to this case, and it must not already be replaced. Otherwise the upload returns `409 invalid_supersede`. If it was already replaced, `error.details.supersededByDocumentId` names the replacement; supersede that one instead.
+- The original stays listed and downloadable. `GET /med-cases/{caseId}/documents` shows it with `supersededAt` and `supersededByDocumentId` set, and MedEx marks it as superseded.
+- If the replacement is later deleted, the original becomes the current version again. A replay of the replacement upload after the **original** has been deleted returns `409 external_id_conflict`, because the replaced document is part of the upload's content.
+- Repoint the fill with `PATCH .../pharmacy/fills/{fillId}` and `{ "claimDocumentId": "<the new id>" }`.
+
+<Tip>
+When you load a backlog of claim forms, send `notify=false` so the firm isn't emailed for every file. The uploads still appear in the case history.
+</Tip>
+
+---
+
+## Errors
+
+Errors use the standard envelope with `error.code`, `error.message` and, for these codes, `error.details`. See [Error Handling](/api-reference/error-handling) for the general rules and [MedEx for medical providers](/api-reference/examples/medex-providers#errors) for the authentication and rate-limit codes.
+
+| Status | `error.code` | Meaning | What to do |
+|---|---|---|---|
+| `403` | `pharmacy_only` | The referral's practice isn't set up as a pharmacy (ledger writes), or yours isn't (`GET /med-cases/{caseId}/prescriptions`) | Ask CaseXchange support to check your setup. Ledger reads still work and return empty lists |
+| `409` | `referral_not_writable` | The referral is `sent`, `under_review` or `rejected`, or archived. `error.details.status` and `error.details.isArchived` say which | Accept a `sent` or `under_review` referral first. A rejected or archived referral takes no new records. Replays still succeed |
+| `409` | `fill_voided` | You tried to change or void a fill that's already voided | Leave it. If the fill is real, record a new fill with a new `externalId`, and reverse any payments posted to the voided one |
+| `409` | `external_id_conflict` | The `externalId` is already used with different content. `error.details.existingId` is that record | Fetch `existingId` and compare. Fill: `PATCH` it. Transaction: `PATCH` `payer`, `reference`, `note` or `fillId`; if the money differs, reverse it and post a new transaction with a new `externalId`. Snapshot or document: use a new `externalId`. Rarely, an upload raced with one that was then deleted: this has no `details`; retry the upload |
+| `400` | `immutable_field` | A transaction `PATCH` named `type`, `amount`, `transactionDate` or `reversesTransactionId`. `error.details.fields` lists them | Remove those fields. To change money, post a reversal |
+| `400` | `invalid_reference` | A `prescriptionId`, `claimDocumentId`, `fillId` or `reversesTransactionId` isn't on this case or referral, the prescription isn't routed to you, or you can't see the document. `error.details.field` names it | Check the ID. Create fills before the transactions that name them |
+| `409` | `invalid_supersede` | `supersedesDocumentId` isn't your organisation's own direct upload on this case, or it was already replaced (`error.details.supersededByDocumentId`) | Supersede the current version, or upload without `supersedesDocumentId` |
+| `400` | `validation_error` | The body or query failed validation: a bad money string, a 10-digit NDC, a date not in `YYYY-MM-DD`, an unknown field, `reversesTransactionId` on a type other than `REVERSAL`, an empty `externalId`. `error.details.errors` lists each problem | Fix the request |
+| `403` | `wrong_scope` | A firm key tried a ledger write or `GET /med-cases/{caseId}/prescriptions` | Use your pharmacy's provider key |
+| `403` | `insufficient_tier` | A `read_only` key tried a write | Use a `standard` or `full` key |
+| `403` | `restricted_access` | Your practice is restricted-access | Ask CaseXchange support |
+| `404` | `not_found` | The case, referral, fill or transaction doesn't exist, isn't on that case or referral, or belongs to another practice | Check the IDs |
+
+```json
+{
+  "error": {
+    "code": "referral_not_writable",
+    "message": "Pharmacy billing is not open while the referral is sent. Billing is open once the referral is accepted (and stays open through treatment, closure or withdrawal).",
+    "details": { "status": "sent", "isArchived": false }
+  },
+  "meta": { "requestId": "req_3b4c5d6e7f8a9b0c1d2e3f4a", "timestamp": "2026-10-02T13:30:00.000Z" }
+}
+```
+
 {/* SECTIONS BELOW ARE ADDED BY LATER TASKS */}
