@@ -534,7 +534,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Acme Law Group\",\n  \"phone\": \"555-123-4567\",\n  \"address\": \"123 Main Street\",\n  \"city\": \"New York\",\n  \"state\": \"NY\",\n  \"zip\": \"10001\",\n  \"website\": \"https://acmelaw.example.com\"\n}"
+              "raw": "{\n  \"name\": \"Acme Law Group\",\n  \"website\": \"https://acmelaw.example.com\",\n  \"contactEmail\": \"intake@acmelaw.example.com\",\n  \"primaryContactName\": \"Jane Smith\",\n  \"contactPhone\": \"555-123-4567\",\n  \"address\": {\n    \"street\": \"123 Main Street\",\n    \"city\": \"New York\",\n    \"state\": \"NY\",\n    \"zipCode\": \"10001\",\n    \"country\": \"US\"\n  },\n  \"specialties\": [\n    \"Personal Injury\"\n  ]\n}"
             },
             "url": {
               "raw": "{{public_api_url}}/firms/me",
@@ -546,7 +546,7 @@
                 "me"
               ]
             },
-            "description": "Updates editable fields on the API key's own firm. All body fields are optional. Tier: FULL."
+            "description": "Updates editable fields on the API key's own firm. All body fields are optional; unknown fields return 400. address is an object (street, street2, city, state, zipCode, country). Tier: FULL."
           },
           "event": [
             {
@@ -748,7 +748,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"referentFirmId\": \"{{firm_id}}\",\n  \"routingRuleId\": \"{{rule_id}}\",\n  \"roundRobinPosition\": 0,\n  \"isRetainerSigned\": false,\n  \"salesforceId\": \"006xxxxxxxxxxxx\",\n  \"salesforceObjectType\": \"Opportunity\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Example value\"\n    }\n  ]\n}"
+              "raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Auto accident case involving rear-end collision\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"county\": \"New York\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"1985-06-15\",\n  \"incidentDate\": \"2025-11-01\",\n  \"tier\": 3,\n  \"source\": \"Website Lead\",\n  \"notes\": \"Client sustained whiplash injuries. Police report filed.\",\n  \"referentFirmId\": \"{{firm_id}}\",\n  \"routingRuleId\": \"{{rule_id}}\",\n  \"roundRobinPosition\": 0,\n  \"isRetainerSigned\": false,\n  \"salesforceId\": \"006xxxxxxxxxxxx\",\n  \"salesforceObjectType\": \"Opportunity\"\n}"
             },
             "url": {
               "raw": "{{public_api_url}}/sent-cases",
@@ -843,7 +843,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"source\": \"Website Lead\",\n  \"salesforceId\": \"006xxxxxxxxxxxx\",\n  \"salesforceObjectType\": \"Opportunity\",\n  \"customFields\": [\n    {\n      \"fieldId\": \"{{custom_field_id}}\",\n      \"value\": \"Updated value\"\n    }\n  ]\n}"
+              "raw": "{\n  \"source\": \"Website Lead\",\n  \"salesforceId\": \"006xxxxxxxxxxxx\",\n  \"salesforceObjectType\": \"Opportunity\"\n}"
             },
             "url": {
               "raw": "{{public_api_url}}/sent-cases/{{sent_case_id}}",
@@ -1191,7 +1191,7 @@
                 "{{user_id}}"
               ]
             },
-            "description": "Updates a user in the caller's firm. All body fields are optional: firstName, lastName, email, role, isActive. Email must be unique. Tier: FULL."
+            "description": "Updates a user in the caller's firm. All body fields are optional: firstName, lastName, email, role, isActive. Tier: FULL.\n\nA user's sign-in email cannot be changed through the API: a different email for a user who already has a real address returns 400 email_change_not_supported and applies nothing. Change it in the Case Xchange app, where the new address must confirm it. email only sets the first real address of an account that still has a placeholder address."
           },
           "event": [
             {
@@ -1238,6 +1238,41 @@
               "script": {
                 "exec": [
                   "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resend an invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/users/{{user_id}}/resend-invitation",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}",
+                "resend-invitation"
+              ]
+            },
+            "description": "Emails a new invitation link to a user in the caller's firm who has not joined yet, replacing any earlier link. Returns 400 resend_for_active_user_disallowed for someone who already has a login, and 400 shell_email_is_placeholder when the user has no real email. Requires FULL tier. Tier: FULL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ],
                 "type": "text/javascript"
               }
@@ -1988,7 +2023,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"emailOnNewReferral\": true,\n  \"emailOnStatusChange\": true,\n  \"emailOnDocumentUpload\": false\n}"
+              "raw": "{\n  \"preferences\": [\n    {\n      \"alertType\": \"document_uploaded\",\n      \"isEnabled\": true,\n      \"deliveryMode\": \"immediate\",\n      \"recipientType\": \"default\"\n    },\n    {\n      \"alertType\": \"referral_status_change\",\n      \"isEnabled\": true,\n      \"recipientType\": \"admins_only\"\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{public_api_url}}/notifications/preferences",
@@ -2000,7 +2035,7 @@
                 "preferences"
               ]
             },
-            "description": "Updates the notification preferences for the caller's firm. Tier: FULL."
+            "description": "Updates the caller's firm's alert preferences. Send preferences: one item per alertType with isEnabled and recipientType (default, admins_only, contact_email, all_members, custom). deliveryMode (immediate, digest_only, off) overrides isEnabled when sent. Tier: FULL."
           },
           "event": [
             {
@@ -2599,6 +2634,231 @@
               }
             }
           ]
+        },
+        {
+          "name": "Acknowledge a med referral (provider)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notify\": true\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/acknowledge",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "acknowledge"
+              ]
+            },
+            "description": "Moves a SENT referral to UNDER_REVIEW. Requires a provider-scoped key at STANDARD tier; firm and admin keys get 403 wrong_scope and restricted-access practices 403 restricted_access. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Accept a med referral (provider)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notify\": true\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/accept",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "accept"
+              ]
+            },
+            "description": "Moves an UNDER_REVIEW referral to ACCEPTED. A SENT referral is acknowledged first, then accepted (two recorded transitions); if the accept step fails, the referral is left UNDER_REVIEW. Requires a provider-scoped key at STANDARD tier; firm and admin keys get 403 wrong_scope and restricted-access practices 403 restricted_access. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject a med referral (provider)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reasonCode\": \"capacity\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/reject",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "reject"
+              ]
+            },
+            "description": "Moves an UNDER_REVIEW referral to REJECTED. Requires a provider-scoped key at STANDARD tier; firm and admin keys get 403 wrong_scope and restricted-access practices 403 restricted_access. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start treatment on a med referral (provider)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notify\": true\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/start-treatment",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "start-treatment"
+              ]
+            },
+            "description": "Moves an ACCEPTED referral to IN_TREATMENT. Not available for pharmacy referrals (400). Requires a provider-scoped key at STANDARD tier; firm and admin keys get 403 wrong_scope and restricted-access practices 403 restricted_access. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complete treatment on a med referral (provider)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"summary\": \"Client asked about appointment times\",\n  \"notify\": true\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/complete-treatment",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "complete-treatment"
+              ]
+            },
+            "description": "Moves an IN_TREATMENT referral to TREATMENT_COMPLETE. The optional summary is filed as a note in the firm's connected case-management system, if any. Not available for pharmacy referrals (400). Requires a provider-scoped key at STANDARD tier; firm and admin keys get 403 wrong_scope and restricted-access practices 403 restricted_access. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     },
@@ -2821,7 +3081,7 @@
                 "{{appointment_id}}"
               ]
             },
-            "description": "Full-object update. doctorId and providerLocationId are required. On a Premier-synced appointment, omit appointmentDate, appointmentTime, attended and cancelled — sending any of them returns 400 premier_owned_field. Provider-scoped key only. Tier: STANDARD."
+            "description": "Full-object update. doctorId and providerLocationId are required. On a Premier-synced appointment, omit appointmentDate, appointmentTime, attended and cancelled \u2014 sending any of them returns 400 premier_owned_field. Provider-scoped key only. Tier: STANDARD."
           },
           "event": [
             {
@@ -4356,6 +4616,48 @@
               }
             }
           ]
+        },
+        {
+          "name": "Find referrals by client identifiers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifiers\": {\n    \"firstName\": \"Jane\",\n    \"lastName\": \"Smith\",\n    \"dateOfBirth\": \"2026-01-15\",\n    \"email\": \"jane.smith@example.com\",\n    \"phone\": \"555-123-4567\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/referrals/match",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "referrals",
+                "match"
+              ]
+            },
+            "description": "Searches the caller's firm's referrals for clients matching the supplied identifiers and returns ranked candidates with a confidence score and the fields that matched. At least one identifier is required. Requires STANDARD tier (POST requests are rate-classified as writes even though this is a search). Note: the response body is `{ candidates, meta }` \u2014 the candidate array is not nested under `data`. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     },
@@ -4978,7 +5280,7 @@
                 "{{target_firm_id}}"
               ]
             },
-            "description": "Creates or fully replaces the outbound network relationship with the specified target firm. Tier: FULL."
+            "description": "Creates or fully replaces the outbound network relationship with the specified target firm. Tier: STANDARD."
           },
           "event": [
             {
@@ -6128,6 +6430,1394 @@
         }
       ],
       "description": "Partner single sign-on links. Provider-scoped keys only."
+    },
+    {
+      "name": "Med Pharmacy Ledger",
+      "item": [
+        {
+          "name": "List pharmacy fills on a referral",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/fills",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "fills"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (1-indexed)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page (max 100)",
+                  "disabled": true
+                },
+                {
+                  "key": "fillDateFrom",
+                  "value": "2026-01-15",
+                  "description": "Inclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "fillDateTo",
+                  "value": "2026-01-15",
+                  "description": "Inclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "externalId",
+                  "value": "EXT-1001",
+                  "description": "Exact match; use it to look up a fill you already sent.",
+                  "disabled": true
+                },
+                {
+                  "key": "includeVoided",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Firm keys read their own cases; a provider key reads its own referral. Admin keys receive 403 wrong_scope. Restricted-access practices receive 403 restricted_access. Reads are allowed in any referral status. Newest fillDate first. Voided fills are included unless includeVoided=false. Unknown query parameters are rejected with 400 validation_error. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Record a dispensed fill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rxNumber\": \"RX-100234\",\n  \"fillDate\": \"2026-01-15\",\n  \"drugName\": \"Ibuprofen 800 mg\",\n  \"billedAmount\": \"40.00\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/fills",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "fills"
+              ]
+            },
+            "description": "Records a prescription the pharmacy dispensed and billed on this referral; billedAmount counts toward the balance. Requires a provider-scoped key (cxpp_) for a pharmacy practice at STANDARD tier, on the practice's own referral. Firm keys receive 403 wrong_scope; a non-pharmacy practice receives 403 pharmacy_only; another practice's referral is 404. Writes are accepted while the referral is accepted, in treatment, treatment complete, closed or withdrawn \u2014 payments often arrive after the firm closes the case \u2014 and refused with 409 referral_not_writable while sent, under review, rejected or archived. Restricted-access practices receive 403 restricted_access. Idempotent on externalId: 201 on create, 200 with meta.replayed=true on a replay of the same payload, 409 external_id_conflict (error.details.existingId) for the same externalId with a different payload. Compared after normalisation (money as 2-decimal strings, NDC hyphens removed, absent and null equal). A replay is compared with the record as it is now, so re-sending the original POST after any PATCH to that record returns 409 external_id_conflict; to recover, PATCH the record at error.details.existingId instead of re-posting. Referenced ids (prescriptionId, claimDocumentId, fillId, reversesTransactionId) are part of the compared payload, so a replay after the referenced record was deleted (its link cleared) also returns 409 external_id_conflict. Emits a pharmacy_fill.created webhook to the pharmacy. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns the created record', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.id).to.be.a('string');",
+                  "  pm.environment.set('pharmacy_fill_id', json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get a pharmacy fill",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/fills/{{pharmacy_fill_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "fills",
+                "{{pharmacy_fill_id}}"
+              ]
+            },
+            "description": "Firm keys read their own cases; a provider key reads its own referral. Admin keys receive 403 wrong_scope. Restricted-access practices receive 403 restricted_access. Reads are allowed in any referral status. Includes the fill's transactions and its own totals (billed, paid, adjustments, computedBalance). Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit a pharmacy fill",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rxNumber\": \"RX-100234\",\n  \"fillDate\": \"2026-01-15\",\n  \"ndc\": \"00093-0058-01\",\n  \"drugName\": \"Ibuprofen 800 mg\",\n  \"quantity\": \"30\",\n  \"daysSupply\": 1,\n  \"prescriberName\": \"Dr. Alex Rivera\",\n  \"billedAmount\": \"40.00\",\n  \"prescriptionId\": \"00000000-0000-0000-0000-000000000000\",\n  \"claimDocumentId\": \"00000000-0000-0000-0000-000000000000\",\n  \"notes\": \"Created from the API\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/fills/{{pharmacy_fill_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "fills",
+                "{{pharmacy_fill_id}}"
+              ]
+            },
+            "description": "Changes any fill field except externalId and the void fields; send at least one field. Changing billedAmount changes the balance, and the activity log records the old and new amount. Requires a provider-scoped key (cxpp_) for a pharmacy practice at STANDARD tier, on the practice's own referral. Firm keys receive 403 wrong_scope; a non-pharmacy practice receives 403 pharmacy_only; another practice's referral is 404. Writes are accepted while the referral is accepted, in treatment, treatment complete, closed or withdrawn \u2014 payments often arrive after the firm closes the case \u2014 and refused with 409 referral_not_writable while sent, under review, rejected or archived. Restricted-access practices receive 403 restricted_access. A voided fill cannot be edited (409 fill_voided). Emits a pharmacy_fill.updated webhook. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Void a pharmacy fill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Entered in error\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/fills/{{pharmacy_fill_id}}/void",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "fills",
+                "{{pharmacy_fill_id}}",
+                "void"
+              ]
+            },
+            "description": "Marks the fill as voided with a reason, for example when the claim was reversed at the pharmacy. A voided fill no longer counts toward billed, is kept for audit, and cannot be edited or un-voided. Transactions already linked to it are kept. Requires a provider-scoped key (cxpp_) for a pharmacy practice at STANDARD tier, on the practice's own referral. Firm keys receive 403 wrong_scope; a non-pharmacy practice receives 403 pharmacy_only; another practice's referral is 404. Writes are accepted while the referral is accepted, in treatment, treatment complete, closed or withdrawn \u2014 payments often arrive after the firm closes the case \u2014 and refused with 409 referral_not_writable while sent, under review, rejected or archived. Restricted-access practices receive 403 restricted_access. Voiding an already voided fill returns 409 fill_voided. Emits a pharmacy_fill.voided webhook. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List pharmacy transactions on a referral",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/transactions",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (1-indexed)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page (max 100)",
+                  "disabled": true
+                },
+                {
+                  "key": "fillId",
+                  "value": "00000000-0000-0000-0000-000000000000",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "PAYMENT",
+                  "disabled": true
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "2026-01-15",
+                  "description": "transactionDate, inclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "dateTo",
+                  "value": "2026-01-15",
+                  "description": "transactionDate, inclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "externalId",
+                  "value": "EXT-1001",
+                  "description": "Exact match; use it to look up a transaction you already sent.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Firm keys read their own cases; a provider key reads its own referral. Admin keys receive 403 wrong_scope. Restricted-access practices receive 403 restricted_access. Reads are allowed in any referral status. Newest transactionDate first. Unknown query parameters are rejected with 400 validation_error. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Record a payment or adjustment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"externalId\": \"pio-remit-88412-1\",\n  \"type\": \"PAYMENT\",\n  \"amount\": \"40.00\",\n  \"transactionDate\": \"2026-10-02\",\n  \"fillId\": \"3f1c2b8e-6a0d-4c1e-9b7a-2d5e8f9a1c34\",\n  \"payer\": \"Aetna\",\n  \"reference\": \"EFT 991204\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/transactions",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "transactions"
+              ]
+            },
+            "description": "Records a payment, adjustment, write-off, refund or reversal. Sign convention: a positive amount reduces the balance, a negative amount increases it. The API stores the amount exactly as sent and does not check the sign against the type, so post the sign you mean. Examples: a payment received is PAYMENT \"40.00\"; a payer taking a payment back is PAYMENT \"-40.00\" or REVERSAL \"-40.00\"; a contractual write-down is ADJUSTMENT \"15.00\"; a write-off is WRITE_OFF with a positive amount; a refund the pharmacy sends out is REFUND \"-10.00\" (REFUND \"10.00\" would reduce the balance). To correct a posted transaction, post a REVERSAL with reversesTransactionId set; a REVERSAL counts under the same bucket (paid or adjustments) as the transaction it reverses. A REVERSAL with no reversesTransactionId, or whose target is not in the ledger, counts under paid. reversesTransactionId is accepted only when type is REVERSAL. Requires a provider-scoped key (cxpp_) for a pharmacy practice at STANDARD tier, on the practice's own referral. Firm keys receive 403 wrong_scope; a non-pharmacy practice receives 403 pharmacy_only; another practice's referral is 404. Writes are accepted while the referral is accepted, in treatment, treatment complete, closed or withdrawn \u2014 payments often arrive after the firm closes the case \u2014 and refused with 409 referral_not_writable while sent, under review, rejected or archived. Restricted-access practices receive 403 restricted_access. Idempotent on externalId: 201 on create, 200 with meta.replayed=true on a replay of the same payload, 409 external_id_conflict (error.details.existingId) for a different payload. A replay is compared with the record as it is now, so re-sending the original POST after any PATCH to that record returns 409 external_id_conflict; to recover, PATCH the record at error.details.existingId instead of re-posting. Referenced ids (prescriptionId, claimDocumentId, fillId, reversesTransactionId) are part of the compared payload, so a replay after the referenced record was deleted (its link cleared) also returns 409 external_id_conflict. Emits a pharmacy_transaction.created webhook. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns the created record', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.id).to.be.a('string');",
+                  "  pm.environment.set('pharmacy_transaction_id', json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get a pharmacy transaction",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/transactions/{{pharmacy_transaction_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "transactions",
+                "{{pharmacy_transaction_id}}"
+              ]
+            },
+            "description": "Firm keys read their own cases; a provider key reads its own referral. Admin keys receive 403 wrong_scope. Restricted-access practices receive 403 restricted_access. Reads are allowed in any referral status. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit a transaction's details",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fillId\": \"00000000-0000-0000-0000-000000000000\",\n  \"payer\": \"Acme Insurance\",\n  \"reference\": \"CHK-5521\",\n  \"note\": \"Called the pharmacy to confirm the fill\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/transactions/{{pharmacy_transaction_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "transactions",
+                "{{pharmacy_transaction_id}}"
+              ]
+            },
+            "description": "Only payer, reference, note and fillId can change; send at least one. type, amount, transactionDate and reversesTransactionId are immutable: sending any of them returns 400 immutable_field (error.details.fields), so correct money by posting a REVERSAL. Requires a provider-scoped key (cxpp_) for a pharmacy practice at STANDARD tier, on the practice's own referral. Firm keys receive 403 wrong_scope; a non-pharmacy practice receives 403 pharmacy_only; another practice's referral is 404. Writes are accepted while the referral is accepted, in treatment, treatment complete, closed or withdrawn \u2014 payments often arrive after the firm closes the case \u2014 and refused with 409 referral_not_writable while sent, under review, rejected or archived. Restricted-access practices receive 403 restricted_access. Emits a pharmacy_transaction.updated webhook. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get the ledger balance for a referral",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/balance",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "balance"
+              ]
+            },
+            "description": "Firm keys read their own cases; a provider key reads its own referral. Admin keys receive 403 wrong_scope. Restricted-access practices receive 403 restricted_access. Reads are allowed in any referral status. computedBalance = billed (non-voided fills) \u2212 paid \u2212 adjustments, so a positive transaction amount reduces the balance. reported is the latest balance snapshot by asOf, and difference = reported \u2212 computed (null when no snapshot exists), which shows how far the pharmacy's own figure is from the ledger. Money in responses is always a decimal string with exactly two fractional digits (e.g. \"40.00\", \"-15.00\"), whatever precision was sent. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List reported balance snapshots",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/balance-snapshots",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "balance-snapshots"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (1-indexed)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page (max 100)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Firm keys read their own cases; a provider key reads its own referral. Admin keys receive 403 wrong_scope. Restricted-access practices receive 403 restricted_access. Reads are allowed in any referral status. History of balances the pharmacy reported, newest asOf first. Unknown query parameters are rejected with 400 validation_error. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Report your current balance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"balance\": \"40.00\",\n  \"asOf\": \"2026-10-02T12:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/referrals/{{med_referral_id}}/pharmacy/balance-snapshots",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "referrals",
+                "{{med_referral_id}}",
+                "pharmacy",
+                "balance-snapshots"
+              ]
+            },
+            "description": "Posts the balance your own system reports as outstanding on this referral, as of a point in time. It does not change the computed balance; it is compared against it (GET .../balance returns the latest snapshot as reported, and the gap as difference). Requires a provider-scoped key (cxpp_) for a pharmacy practice at STANDARD tier, on the practice's own referral. Firm keys receive 403 wrong_scope; a non-pharmacy practice receives 403 pharmacy_only; another practice's referral is 404. Writes are accepted while the referral is accepted, in treatment, treatment complete, closed or withdrawn \u2014 payments often arrive after the firm closes the case \u2014 and refused with 409 referral_not_writable while sent, under review, rejected or archived. Restricted-access practices receive 403 restricted_access. Idempotent on externalId: 201 on create, 200 with meta.replayed=true on a replay of the same payload, 409 external_id_conflict (error.details.existingId) for a different payload. Emits a pharmacy_balance.reported webhook. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Med Prescriptions",
+      "item": [
+        {
+          "name": "List prescriptions routed to your pharmacy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/prescriptions",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "prescriptions"
+              ]
+            },
+            "description": "Lists the prescriptions on this case that were routed to the calling pharmacy, newest datePrescribed first, so an integration can find the prescriptionId to link a fill to. Requires a provider-scoped key (cxpp_) for a pharmacy practice; firm and admin keys receive 403 wrong_scope and a non-pharmacy provider receives 403 pharmacy_only. Returns an empty list unless the pharmacy has a live referral on the case (under review, accepted, in treatment or treatment complete). Each item carries only drug fields (drugName, dosage, directions, lengthDays, numRefills, lastRefillDate, datePrescribed), the prescriber as {id, name}, and the appointmentDate. Not paginated. Restricted-access practices receive 403 restricted_access. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Handoffs",
+      "item": [
+        {
+          "name": "Register a warm-transfer handoff",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receivingFirmId\": \"00000000-0000-0000-0000-000000000000\",\n  \"sourceRecordId\": \"a0B5f00000XyZ12AAB\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/handoffs",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "handoffs"
+              ]
+            },
+            "description": "Registers (or refreshes) a handoff from the caller's firm to a receiving firm and returns a 4-digit code, valid for 15 minutes from the latest call. Calling again for the same `sourceRecordId` and receiving firm refreshes the window. Returns 200 with `handoff: null` when the receiving firm does not take handoffs from your firm: it has no Retell connection, or it accepts handoffs only from firms that have an active referral relationship with it. Returns 404 when the receiving firm is not visible to the caller. Returns 429 `handoff_limit_exceeded` when the caller already has 10 open handoffs to that firm (refreshing one of them still works). Requires STANDARD tier; limited to 60 requests per minute per key. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cases",
+      "item": [
+        {
+          "name": "List cases",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/cases",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (1-indexed)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page (max 100)",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "draft",
+                  "description": "Filter by CaseStatus enum value",
+                  "disabled": true
+                },
+                {
+                  "key": "closingStatus",
+                  "value": "won_settled",
+                  "description": "Filter by ClosingStatus",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "smith",
+                  "description": "Keyword search across title, reference number, client name",
+                  "disabled": true
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "2026-01-15",
+                  "disabled": true
+                },
+                {
+                  "key": "dateTo",
+                  "value": "2026-01-15",
+                  "disabled": true
+                },
+                {
+                  "key": "view",
+                  "value": "sent",
+                  "description": "Perspective filter (default: all)",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "createdAt",
+                  "disabled": true
+                },
+                {
+                  "key": "order",
+                  "value": "asc",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns a paginated list of cases accessible to the caller. Supports filtering by status, date range, and keyword search. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create a case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/cases",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases"
+              ]
+            },
+            "description": "Creates a new case referral. Requires STANDARD tier. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns the created record', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.id).to.be.a('string');",
+                  "  pm.environment.set('case_id', json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get case by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/cases/{{case_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases",
+                "{{case_id}}"
+              ]
+            },
+            "description": "Returns a single case by UUID. When the caller is the receiving firm, case details are masked while the case is SENT (until the referral is acknowledged with POST /referrals/{id}/acknowledge), and also when it was withdrawn or expired directly from SENT before the receiving firm acknowledged it: clientFirstName is 'Referral', clientLastName is 'Details Hidden', clientEmail is 'hidden@acknowledgereceipt.com', clientPhone is '***-***-****', description is 'Acknowledge receipt to view full case details.' while SENT, 'This referral was withdrawn before it was acknowledged.' once withdrawn and 'This referral expired before it was acknowledged.' once expired, and clientDateOfBirth, county, incidentDate, warmTransferUnsuccessfulReason and warmTransferUnsuccessfulReasonType are null. The placeholders are not real data: check status rather than the field values. After acknowledgment the real values are returned; a referral withdrawn or expired after it was acknowledged, or from any later status, is not masked. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update a case",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Smith v. Jones - Personal Injury\",\n  \"description\": \"Rear-end collision on I-95\",\n  \"caseType\": \"Personal Injury\",\n  \"jurisdiction\": \"NY\",\n  \"clientFirstName\": \"John\",\n  \"clientLastName\": \"Smith\",\n  \"clientEmail\": \"jane.smith@example.com\",\n  \"clientPhone\": \"555-987-6543\",\n  \"clientDateOfBirth\": \"2026-01-15\",\n  \"incidentDate\": \"2026-01-15\",\n  \"notes\": \"Created from the API\",\n  \"source\": \"Website Lead\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/cases/{{case_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases",
+                "{{case_id}}"
+              ]
+            },
+            "description": "Updates editable fields on a case. Unknown fields are rejected. Which fields a firm may edit depends on whether it sent or received the case and on the case status: the resolution fields (lead attorney through payoutType) are for the receiving firm after it acknowledges, and custom fields only once the case is SIGNED or later; disallowed edits return 403. When both are supplied, attorneyFees must not exceed settlementAmount. Requires STANDARD tier. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete a case",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/cases/{{case_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases",
+                "{{case_id}}"
+              ]
+            },
+            "description": "Permanently deletes a DRAFT case. Requires FULL tier. Tier: FULL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get case status history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/cases/{{case_id}}/status-history",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases",
+                "{{case_id}}",
+                "status-history"
+              ]
+            },
+            "description": "Returns all historical status transitions for a case. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Acknowledge a case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/cases/{{case_id}}/acknowledge",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases",
+                "{{case_id}}",
+                "acknowledge"
+              ]
+            },
+            "description": "Marks a SENT case as acknowledged by the receiving firm, transitioning it to UNDER_EVALUATION (INVESTIGATING when the retainer was pre-signed). Requires STANDARD tier. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update case status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"draft\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/cases/{{case_id}}/status",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases",
+                "{{case_id}}",
+                "status"
+              ]
+            },
+            "description": "Transitions a case to a new status. Invalid transitions are rejected. Requires STANDARD tier. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close a case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"closingStatus\": \"won_settled\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/cases/{{case_id}}/close",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "cases",
+                "{{case_id}}",
+                "close"
+              ]
+            },
+            "description": "Initiates the closing workflow for a case. Requires STANDARD tier. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MedEx Documents",
+      "item": [
+        {
+          "name": "List MedEx case documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/documents",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (1-indexed)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page (max 100)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Lists documents on a MedEx case visible to the caller (firm or provider scope). Metadata only. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload a MedEx case document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "category",
+                  "value": "medical_records",
+                  "type": "text"
+                },
+                {
+                  "key": "appointmentId",
+                  "value": "00000000-0000-0000-0000-000000000000",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "note",
+                  "value": "Called the pharmacy to confirm the fill",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "externalId",
+                  "value": "EXT-1001",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "supersedesDocumentId",
+                  "value": "a",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "notify",
+                  "value": "true",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/documents",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "documents"
+              ]
+            },
+            "description": "Uploads one file to a MedEx case (multipart/form-data), optionally attached to an appointment on that case. Firm and practice keys, STANDARD tier or above. Maximum 25 MB. The Content-Type of the `file` part must be one of: application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-powerpoint, application/vnd.openxmlformats-officedocument.presentationml.presentation, text/plain, text/csv, application/rtf, image/jpeg, image/png, image/gif, image/bmp, image/tiff, image/svg+xml, application/zip, application/x-rar-compressed (many clients default to application/octet-stream, which is refused); the file content must match it. Restricted-access practices may upload to the case but not attach to an appointment. Notifies the other side of the case. A practice key upload also fires the document.uploaded webhook to that practice's own subscriptions; a firm key upload fires no webhook. Idempotent on externalId: 201 on create, 200 with meta.replayed=true on a replay of the same upload. Tier: STANDARD."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns the created record', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.id).to.be.a('string');",
+                  "  pm.environment.set('med_document_id', json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retrieve a MedEx case document",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/med-cases/{{med_case_id}}/documents/{{med_document_id}}",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "med-cases",
+                "{{med_case_id}}",
+                "documents",
+                "{{med_document_id}}"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "url",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns a short-lived presigned S3 URL by default (?format=url), or the document inline as base64 (?format=base64, capped at 20 MB raw). Files over the cap must use ?format=url. Tier: READ_ONLY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Salesforce",
+      "item": [
+        {
+          "name": "Get the active sending-profile mapping for an object/record-type",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{public_api_url}}/salesforce/send-mapping?sfObjectApiName=litify_pm__Matter__c",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "salesforce",
+                "send-mapping"
+              ],
+              "query": [
+                {
+                  "key": "sfObjectApiName",
+                  "value": "litify_pm__Matter__c",
+                  "description": "Salesforce object API name, e.g. litify_pm__Matter__c"
+                },
+                {
+                  "key": "sfRecordTypeDevName",
+                  "value": "Personal_Injury",
+                  "description": "Optional record type developer name. Falls back to a profile with no record type set (\"Any record type\"); omit to match only that profile.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Org-facing mapping fetch for the managed package's send LWC: match key, prefill fields, writeback fields, and the resolved send-field catalog for the firm's active, activated, interactive-send-enabled v2 sending profile matching the given object and record type. An exact record-type match wins; if no profile matches that record type exactly, a profile configured with no record type (\"Any record type\") serves as the wildcard fallback. Requires FULL tier. Tier: FULL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send a Salesforce record to CaseXchange as a new case or re-referral",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceRecordId\": \"a0B5f00000XyZ12AAB\",\n  \"sfObjectApiName\": \"litify_pm__Matter__c\",\n  \"targetFirmIds\": [\n    \"00000000-0000-0000-0000-000000000000\"\n  ],\n  \"idempotencyKey\": \"00000000-0000-0000-0000-000000000000\"\n}"
+            },
+            "url": {
+              "raw": "{{public_api_url}}/salesforce/interactive-sends",
+              "host": [
+                "{{public_api_url}}"
+              ],
+              "path": [
+                "salesforce",
+                "interactive-sends"
+              ]
+            },
+            "description": "Turns an org-side \"send this record to CaseXchange\" submit into a durable, idempotent CaseXchange case creation (or re-referral to a new firm) \u2014 spec \u00a77.2. Reads the source record from Salesforce using the firm's active, activated, interactive-send-enabled v2 sending profile, applies its confirmed prefill links plus any `overrides`, and creates (or re-refers) a case.\n\nIdempotency: pass a fresh `idempotencyKey` (UUID) on every distinct submit. Replaying the same key returns the original outcome with `200` and `attempt.replay: true` instead of creating a duplicate case; a genuinely new submit must use a new key.\n\nObserving write-back: there is NO status-check endpoint. Once this call returns, the CaseXchange case exists, but its bridge fields (match key, status, reference number, deep link) are stamped back onto the source Salesforce record asynchronously by the write-back job \u2014 observe completion by reading those fields on the source record (typically within ~5 minutes). A send that exhausts its write-back retries moves to `needs_attention` and is paused for an admin; that state sends NO signal to the org side, so clients should surface a send whose fields remain unstamped after a timeout as stale rather than wait indefinitely.\n\nError codes (409s carry a per-code `error.details` object \u2014 see the 409 response):\n- `400 match_key_missing` \u2014 the resolved sending profile has no match key configured at all (send is not supported); an external-ID or lookup match key is required.\n- `400 validation_error` \u2014 the built create payload failed validation; `error.details.errors` carries the field-level issues.\n- `400 bad_request` \u2014 a re-refer business-rule rejection propagated from the re-referral service (e.g. the case is not in a re-referable status, or no prior referral exists); the message is descriptive.\n- `404 send_mapping_not_configured` \u2014 no active, activated, interactive-send-enabled v2 sending profile matches the given object/record type (exact record-type match, falling back to the \"Any record type\" profile).\n- `404 source_record_not_found` \u2014 sourceRecordId does not exist (or is not visible) in Salesforce.\n- `404 linked_case_not_found` \u2014 reRefer was requested but no linked CaseXchange case exists for this record (or it no longer exists).\n- `409 record_already_sent` \u2014 the record is already linked to a CaseXchange case and reRefer was not requested. `error.details`: `{ baseCaseId, referenceNumber }` (the existing case, so the client can offer re-refer).\n- `409 record_already_linked` \u2014 the record already carries a match-key value from a prior send with no active link. `error.details`: `{ matchKeyValue }`.\n- `409 send_in_progress` \u2014 a send for this record (or idempotency key) is already in flight. `error.details`: `{ retryAfterMs }` \u2014 the remaining in-flight window (floored at 0) to back off before retrying.\n- `409 attempt_failed` \u2014 a previous send with this idempotency key failed; submit a fresh key to retry. `error.details`: `{ failureCode, lastError }`.\n- `409 duplicate_client_referral` \u2014 your firm already referred this client to the target firm from another case of the same case type (live, or sent within 7 days; two cases that both have incident dates more than 30 days apart never match, and a missing incident date does not exempt the send). `error.details`: `{ matches, overrideField }`. Checked before the attempt is recorded; to send anyway, submit again with `allowDuplicateClient: true` and a fresh idempotencyKey.\n- `502 salesforce_unavailable` \u2014 no usable Salesforce access token for this connection.\n- `502 salesforce_read_failed` \u2014 the Salesforce SOQL read of the source record failed.\n\nRequires FULL tier. Tier: FULL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
