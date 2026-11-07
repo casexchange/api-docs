@@ -990,7 +990,7 @@
                   "value": "Medical Records",
                   "type": "text",
                   "disabled": true,
-                  "description": "Optional. Docrio category for the copy sent to a firm on the case that keeps its documents in Docrio. Must match one of that firm's synced categories exactly (400 invalid_docrio_category otherwise). Omit to leave it blank; ignored when no firm on the case uses Docrio."
+                  "description": "Optional. Docrio category for the copy sent to a firm that received one of the case's referrals and keeps its documents in Docrio. Must match one of that firm's synced categories exactly (400 invalid_docrio_category otherwise). Omit to leave it blank; ignored when no firm on the case uses Docrio."
                 }
               ]
             },

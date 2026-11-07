@@ -11732,10 +11732,11 @@ paths:
                   type: string
                   maxLength: 255
                   description: >-
-                    Optional. When a firm on the case's referrals keeps its documents in Docrio (Litify Docs), the copy
-                    sent to that firm's Docrio is filed under this category. Must match one of that firm's synced
-                    categories exactly (400 `invalid_docrio_category` otherwise). Omit it to leave the Docrio category
-                    blank. Ignored when no firm on the case uses Docrio.
+                    Optional. When a firm that received one of the case's referrals keeps its documents in Docrio (Litify
+                    Docs), the copy sent to that firm's Docrio is filed under this category. Must match one of that firm's
+                    synced categories exactly (400 `invalid_docrio_category` otherwise). Omit it to leave the Docrio
+                    category blank. Ignored when no firm that received a referral uses Docrio, including when only the
+                    sending firm does.
       responses:
         "201":
           description: Uploaded document metadata
