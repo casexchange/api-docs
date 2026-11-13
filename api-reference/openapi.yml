@@ -1465,11 +1465,15 @@ components:
       description: >-
         How to warm-transfer a caller to this firm: its published phone, backup phone, after-hours phone, weekend phone,
         office locations, instructions, time zone and warm-transfer hours, with your firm's relationship overrides
-        applied field by field (the time zone and hours are the firm's own and are never overridden). Returned only when
-        the firm is in your active network (an ACTIVE relationship from your firm to it) or is listed in Network
-        Xchange; otherwise null, as when the firm has published none of these. An explicitly empty office-locations list
-        on a relationship override hides the firm's default office locations rather than inheriting them. The API
-        returns every number and the hours; choosing which one to dial for the current time is up to the caller.
+        applied field by field (the time zone and hours are the firm's own and are never overridden). When the case is
+        known (GET /routing/evaluate, GET /routing/re-refer, and GET /firms/available with caseType and jurisdiction), a
+        firm can send cases of some types or states to other numbers or instructions: its first custom rule that covers
+        the case replaces the published details it sets, and your relationship overrides still win over it. Returned
+        only when the firm is in your active network (an ACTIVE relationship from your firm to it) or is listed in
+        Network Xchange; otherwise null, as when the firm has published none of these. An explicitly empty
+        office-locations list on a relationship override hides the firm's default office locations rather than
+        inheriting them. The API returns every number and the hours; choosing which one to dial for the current time is
+        up to the caller.
       properties:
         phone:
           type: string
@@ -10957,6 +10961,22 @@ paths:
             enum:
               - network
               - directory
+        - in: query
+          name: caseType
+          schema:
+            type: string
+            maxLength: 255
+          description: >-
+            The case type of the case being referred, by system name (personal_injury) or display name (Personal
+            Injury). With jurisdiction, each firm's warmTransfer follows its custom rule for this case.
+        - in: query
+          name: jurisdiction
+          schema:
+            type: string
+            maxLength: 255
+          description: >-
+            The state of the case being referred, by code (PA) or name (Pennsylvania). With caseType, each firm's
+            warmTransfer follows its custom rule for this case.
       responses:
         "200":
           description: Available firms
@@ -11732,10 +11752,11 @@ paths:
                   type: string
                   maxLength: 255
                   description: >-
-                    Optional. When a firm on the case's referrals keeps its documents in Docrio (Litify Docs), the copy
-                    sent to that firm's Docrio is filed under this category. Must match one of that firm's synced
-                    categories exactly (400 `invalid_docrio_category` otherwise). Omit it to leave the Docrio category
-                    blank. Ignored when no firm on the case uses Docrio.
+                    Optional. When a firm that received one of the case's referrals keeps its documents in Docrio
+                    (Litify Docs), the copy sent to that firm's Docrio is filed under this category. Must match one of
+                    that firm's synced categories exactly (400 `invalid_docrio_category` otherwise). Omit it to leave
+                    the Docrio category blank. Ignored when no firm that received a referral uses Docrio, including when
+                    only the sending firm does.
       responses:
         "201":
           description: Uploaded document metadata
@@ -13298,7 +13319,8 @@ paths:
       operationId: getNotificationPreferences
       summary: Get notification preferences
       description: >-
-        Returns the notification preferences for the caller's firm. `records_request_update` is returned only for a firm with medical-records requests switched on.
+        Returns the notification preferences for the caller's firm. `records_request_update` is returned only for a firm
+        with medical-records requests switched on.
       tags:
         - Notifications
       security: *ref_40
@@ -13377,7 +13399,8 @@ paths:
                           Case-insensitive. Takes precedence over isEnabled when both are sent. `digest_only` is not
                           valid for `daily_digest`, `escalation_patient_missed_appt`,
                           `escalation_patient_reschedule_nudge`, `escalation_handler_missed_appt`,
-                          `escalation_case_overdue`, `records_request_update`. Without it, isEnabled true uses the alert type's default mode.
+                          `escalation_case_overdue`, `records_request_update`. Without it, isEnabled true uses the alert
+                          type's default mode.
                       recipientType:
                         type: string
                         enum:
@@ -14845,7 +14868,8 @@ paths:
         it no longer exists).
 
         - `409 record_already_sent` — the record is already linked to a CaseXchange case and reRefer was not requested.
-        `error.details`: `{ baseCaseId, referenceNumber }` (the existing case, so the client can offer re-refer).
+        `error.details`: `{ baseCaseId, referenceNumber, baseCaseReferenceNumber }` (the existing case, so the client
+        can offer re-refer; `referenceNumber` is the linked referral's number, `baseCaseReferenceNumber` the case's).
 
         - `409 record_already_linked` — the record already carries a match-key value from a prior send with no active
         link. `error.details`: `{ matchKeyValue }`.
@@ -14997,7 +15021,8 @@ paths:
             Conflict — the `error.code` selects one of five cases, each with a distinct `error.details` shape:
 
             - `record_already_sent` (already linked; pass reRefer to re-refer instead) — `details: { baseCaseId,
-            referenceNumber }`.
+            referenceNumber, baseCaseReferenceNumber }` (`referenceNumber` is the linked referral's number,
+            `baseCaseReferenceNumber` the case's).
 
             - `record_already_linked` (claimed by a prior send with no active link) — `details: { matchKeyValue }`.
 
