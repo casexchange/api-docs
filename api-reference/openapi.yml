@@ -730,9 +730,14 @@ components:
             - FIRM_UNABLE_TO_ANSWER
             - CLIENT_UNABLE_TO_CONTINUE
             - OTHER
+            - TRACKING_ONLY
+            - SPIN_OFF_PRIMARY_TRANSFERRED
           description: >-
-            Reason category for an unsuccessful warm transfer. Null until the referral is acknowledged (PII masking)
-            when viewed by the receiving firm.
+            Reason category when the warm transfer did not succeed. FIRM_UNABLE_TO_ANSWER, CLIENT_UNABLE_TO_CONTINUE and
+            OTHER record a failed warm transfer. TRACKING_ONLY (sent after the fact, for tracking only) and
+            SPIN_OFF_PRIMARY_TRANSFERRED (a spin-off case whose primary case was warm transferred) mean no warm transfer
+            was meant to happen, and are not failures. Null until the referral is acknowledged (PII masking) when viewed
+            by the receiving firm.
         sendingFirmPercentage:
           type: number
           nullable: true
@@ -1173,7 +1178,13 @@ components:
             - FIRM_UNABLE_TO_ANSWER
             - CLIENT_UNABLE_TO_CONTINUE
             - OTHER
-          description: Reason category for an unsuccessful warm transfer. Unmasked here — this is the sending firm's own data.
+            - TRACKING_ONLY
+            - SPIN_OFF_PRIMARY_TRANSFERRED
+          description: >-
+            Reason category when the warm transfer did not succeed. FIRM_UNABLE_TO_ANSWER, CLIENT_UNABLE_TO_CONTINUE and
+            OTHER record a failed warm transfer. TRACKING_ONLY (sent after the fact, for tracking only) and
+            SPIN_OFF_PRIMARY_TRANSFERRED (a spin-off case whose primary case was warm transferred) mean no warm transfer
+            was meant to happen, and are not failures. Unmasked here — this is the sending firm's own data.
         netFeeToSendingFirm:
           type: number
           nullable: true
@@ -1291,7 +1302,13 @@ components:
             - FIRM_UNABLE_TO_ANSWER
             - CLIENT_UNABLE_TO_CONTINUE
             - OTHER
-          description: Reason category for an unsuccessful warm transfer.
+            - TRACKING_ONLY
+            - SPIN_OFF_PRIMARY_TRANSFERRED
+          description: >-
+            Reason category when the warm transfer did not succeed. FIRM_UNABLE_TO_ANSWER, CLIENT_UNABLE_TO_CONTINUE and
+            OTHER record a failed warm transfer. TRACKING_ONLY (sent after the fact, for tracking only) and
+            SPIN_OFF_PRIMARY_TRANSFERRED (a spin-off case whose primary case was warm transferred) mean no warm transfer
+            was meant to happen, and are not failures.
         createdAt:
           type: string
           format: date-time
@@ -2185,7 +2202,9 @@ components:
       description: >-
         Warm-transfer outcome metrics. A referral counts as an "attempt" when it was marked successful or has an
         unsuccessful reason recorded (typed or free text); referrals with no warm-transfer outcome recorded are excluded
-        from every aggregate.
+        from every aggregate. Referrals marked TRACKING_ONLY or SPIN_OFF_PRIMARY_TRANSFERRED were never meant to be warm
+        transferred: they are not attempts, are left out of kpis, reasonBreakdown, byPartnerFirm and trend, and are
+        counted only in notAttempted.
       properties:
         kpis:
           type: object
@@ -2246,6 +2265,18 @@ components:
               successful:
                 type: integer
               successRate: *ref_16
+        notAttempted:
+          type: object
+          description: Referrals no warm transfer was meant for, by kind. Not counted anywhere else in this object.
+          properties:
+            trackingOnly:
+              type: integer
+              description: "Referrals marked TRACKING_ONLY: sent after the fact for tracking."
+            spinOff:
+              type: integer
+              description: >-
+                Referrals marked SPIN_OFF_PRIMARY_TRANSFERRED: a client's spin-off case, sent after the primary case was
+                warm transferred.
     Error: &ref_37
       type: object
       properties:
@@ -2488,9 +2519,14 @@ components:
             - FIRM_UNABLE_TO_ANSWER
             - CLIENT_UNABLE_TO_CONTINUE
             - OTHER
+            - TRACKING_ONLY
+            - SPIN_OFF_PRIMARY_TRANSFERRED
           description: >-
-            Reason category for an unsuccessful warm transfer. Masked (null) for the receiving firm while the referral
-            is still SENT, or after it was withdrawn or expired directly from SENT without being acknowledged.
+            Reason category when the warm transfer did not succeed. FIRM_UNABLE_TO_ANSWER, CLIENT_UNABLE_TO_CONTINUE and
+            OTHER record a failed warm transfer. TRACKING_ONLY (sent after the fact, for tracking only) and
+            SPIN_OFF_PRIMARY_TRANSFERRED (a spin-off case whose primary case was warm transferred) mean no warm transfer
+            was meant to happen, and are not failures. Masked (null) for the receiving firm while the referral is still
+            SENT, or after it was withdrawn or expired directly from SENT without being acknowledged.
         phase:
           type: string
           nullable: true
@@ -2892,9 +2928,14 @@ components:
             - FIRM_UNABLE_TO_ANSWER
             - CLIENT_UNABLE_TO_CONTINUE
             - OTHER
+            - TRACKING_ONLY
+            - SPIN_OFF_PRIMARY_TRANSFERRED
           description: >-
-            Reason category for an unsuccessful warm transfer. Masked (null) for the receiving firm while the referral
-            is still SENT, or after it was withdrawn or expired directly from SENT without being acknowledged.
+            Reason category when the warm transfer did not succeed. FIRM_UNABLE_TO_ANSWER, CLIENT_UNABLE_TO_CONTINUE and
+            OTHER record a failed warm transfer. TRACKING_ONLY (sent after the fact, for tracking only) and
+            SPIN_OFF_PRIMARY_TRANSFERRED (a spin-off case whose primary case was warm transferred) mean no warm transfer
+            was meant to happen, and are not failures. Masked (null) for the receiving firm while the referral is still
+            SENT, or after it was withdrawn or expired directly from SENT without being acknowledged.
       required:
         - id
         - referenceNumber
@@ -3192,9 +3233,14 @@ components:
             - FIRM_UNABLE_TO_ANSWER
             - CLIENT_UNABLE_TO_CONTINUE
             - OTHER
+            - TRACKING_ONLY
+            - SPIN_OFF_PRIMARY_TRANSFERRED
           description: >-
-            Reason category for an unsuccessful warm transfer. Masked (null) for the receiving firm while the referral
-            is still SENT, or after it was withdrawn or expired directly from SENT without being acknowledged.
+            Reason category when the warm transfer did not succeed. FIRM_UNABLE_TO_ANSWER, CLIENT_UNABLE_TO_CONTINUE and
+            OTHER record a failed warm transfer. TRACKING_ONLY (sent after the fact, for tracking only) and
+            SPIN_OFF_PRIMARY_TRANSFERRED (a spin-off case whose primary case was warm transferred) mean no warm transfer
+            was meant to happen, and are not failures. Masked (null) for the receiving firm while the referral is still
+            SENT, or after it was withdrawn or expired directly from SENT without being acknowledged.
         clientFeeAgreementPercentage: *ref_5
         sendingFirmPercentage:
           type: number
@@ -4170,8 +4216,13 @@ components:
             - FIRM_UNABLE_TO_ANSWER
             - CLIENT_UNABLE_TO_CONTINUE
             - OTHER
+            - TRACKING_ONLY
+            - SPIN_OFF_PRIMARY_TRANSFERRED
           description: >-
-            Reason category for an unsuccessful warm transfer. Never masked here: the masked snapshot omits these fields
+            Reason category when the warm transfer did not succeed. FIRM_UNABLE_TO_ANSWER, CLIENT_UNABLE_TO_CONTINUE and
+            OTHER record a failed warm transfer. TRACKING_ONLY (sent after the fact, for tracking only) and
+            SPIN_OFF_PRIMARY_TRANSFERRED (a spin-off case whose primary case was warm transferred) mean no warm transfer
+            was meant to happen, and are not failures. Never masked here: the masked snapshot omits these fields
             entirely.
         clientFeeAgreementPercentage: *ref_5
         sendingFirmPercentage: *ref_19
