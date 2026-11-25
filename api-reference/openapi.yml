@@ -8439,7 +8439,8 @@ paths:
       summary: Create or update an outbound relationship
       description: >-
         Creates an outbound relationship request to the target firm (status `pending` until the target accepts) or, if
-        one already exists, updates the supplied fields. Only provided fields are written; `null` clears a field.
+        one already exists, updates the supplied fields. Only provided fields are written; `null` clears a field. When
+        the target firm had already asked to join your private network, the new relationship is `active` at once.
 
 
         Errors: `400 self_relationship` when `firmId` is the caller; `400 global_testing_firm_relationship_not_allowed`
@@ -8590,8 +8591,10 @@ paths:
       summary: Update or accept/reject an inbound relationship
       description: >-
         Updates the caller-side fields of an existing inbound relationship. Set `status` to `active` to accept a pending
-        request or `inactive` to decline/deactivate it. At least one field is required. Returns `404
-        relationship_not_found` when no inbound relationship exists. Requires a firm-scoped API key and STANDARD tier.
+        request or `inactive` to decline/deactivate it. An inactive relationship can't be set back to `active` (`409
+        relationship_not_pending`): the other firm has to invite yours again. At least one field is required. Returns
+        `404 relationship_not_found` when no inbound relationship exists. Requires a firm-scoped API key and STANDARD
+        tier.
       tags:
         - Network
       security: *ref_40
@@ -8639,6 +8642,9 @@ paths:
         "403": *ref_76
         "404":
           description: Firm or relationship not found (`firm_not_found`, `relationship_not_found`)
+          content: *ref_38
+        "409":
+          description: The relationship is not pending (`relationship_not_pending`)
           content: *ref_38
   /external-links/list:
     get:
@@ -14437,12 +14443,12 @@ paths:
         application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document,
         application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,
         application/vnd.ms-powerpoint, application/vnd.openxmlformats-officedocument.presentationml.presentation,
-        text/plain, text/csv, application/rtf, image/jpeg, image/png, image/gif, image/bmp, image/tiff, image/svg+xml,
-        application/zip, application/x-rar-compressed (many clients default to application/octet-stream, which is
-        refused); the file content must match it. Restricted-access practices may upload to the case but not attach to
-        an appointment. Notifies the other side of the case. A practice key upload also fires the document.uploaded
-        webhook to that practice's own subscriptions; a firm key upload fires no webhook. Idempotent on externalId: 201
-        on create, 200 with meta.replayed=true on a replay of the same upload.
+        text/plain, text/csv, application/rtf, text/rtf, image/jpeg, image/png, image/gif, image/bmp, image/tiff,
+        image/svg+xml, application/zip, application/x-rar-compressed (many clients default to application/octet-stream,
+        which is refused); the file content must match it. Restricted-access practices may upload to the case but not
+        attach to an appointment. Notifies the other side of the case. A practice key upload also fires the
+        document.uploaded webhook to that practice's own subscriptions; a firm key upload fires no webhook. Idempotent
+        on externalId: 201 on create, 200 with meta.replayed=true on a replay of the same upload.
       tags:
         - MedEx Documents
       security: *ref_40
